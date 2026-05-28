@@ -46,13 +46,36 @@ export const FIXED_SCHEMA_HEADERS = [
     'Coloumn 10' // Intentionally duplicated
 ];
 
-export function processCSVData(rawData: RawLead[], headerMapping: Record<string, string>): ProcessingResult {
+function parseTimeToMinutes(time: string): number | null {
+    const match = time.match(/^(\d{2}):(\d{2})$/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return hours * 60 + minutes;
+}
+
+function extractCreatedTimeMinutes(createdTimeValue: string): number | null {
+    const match = createdTimeValue.match(/T(\d{2}):(\d{2})(?::\d{2})?/);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return hours * 60 + minutes;
+}
+
+export function processCSVData(
+    rawData: RawLead[],
+    headerMapping: Record<string, string>,
+    selectedTime: string | null = null
+): ProcessingResult {
     const logs: ProcessingLog[] = [];
     const processedData: string[][] = [];
     const sortKeys: string[] = [];
     let processedRows = 0;
     let skippedRows = 0;
     let failedRows = 0;
+    const selectedTimeMinutes = selectedTime ? parseTimeToMinutes(selectedTime) : null;
 
     const timestamp = new Date().toLocaleTimeString();
     logs.push({
@@ -68,6 +91,15 @@ export function processCSVData(rawData: RawLead[], headerMapping: Record<string,
             if (values.length === 0) {
                 skippedRows++;
                 return; // Silent skip for empty rows
+            }
+
+            if (selectedTimeMinutes !== null) {
+                const createdTimeRaw = String(row['created_time'] || "");
+                const createdTimeMinutes = extractCreatedTimeMinutes(createdTimeRaw);
+                if (createdTimeMinutes === null || createdTimeMinutes < selectedTimeMinutes) {
+                    skippedRows++;
+                    return;
+                }
             }
 
             const fullname = String(row[headerMapping['full_name']] || "");

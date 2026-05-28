@@ -35,6 +35,35 @@ function uniqueId(name: string) {
     return `${Date.now()}-${name}`;
 }
 
+function to24HourTime(hour12: string, minute: string, meridiem: 'AM' | 'PM'): string {
+    const parsedHour = Number(hour12);
+    const parsedMinute = Number(minute);
+    if (!Number.isInteger(parsedHour) || parsedHour < 1 || parsedHour > 12) return '';
+    if (!Number.isInteger(parsedMinute) || parsedMinute < 0 || parsedMinute > 59) return '';
+    let hour24 = parsedHour % 12;
+    if (meridiem === 'PM') hour24 += 12;
+    return `${String(hour24).padStart(2, '0')}:${String(parsedMinute).padStart(2, '0')}`;
+}
+
+function from24HourTime(time: string): { hour12: string; minute: string; meridiem: 'AM' | 'PM' } {
+    const match = time.match(/^(\d{2}):(\d{2})$/);
+    if (!match) {
+        return { hour12: '10', minute: '00', meridiem: 'AM' };
+    }
+    const hour24 = Number(match[1]);
+    const minute = match[2];
+    const meridiem: 'AM' | 'PM' = hour24 >= 12 ? 'PM' : 'AM';
+    const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+    return { hour12: String(hour12), minute, meridiem };
+}
+
+interface SourceFile {
+    id: string;
+    fileName: string;
+    data: ParsedFile['data'];
+    mapping: ParsedFile['mapping'];
+}
+
 // ─── FileCard ────────────────────────────────────────────────────────────────
 
 function FileCard({ fr }: { fr: FileResult }) {
@@ -127,7 +156,13 @@ function FileCard({ fr }: { fr: FileResult }) {
 
 export default function ProcessingDashboard() {
     const [fileResults, setFileResults] = useState<FileResult[]>([]);
+    const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([]);
     const [globalError, setGlobalError] = useState<string | null>(null);
+    const [selectedTime, setSelectedTime] = useState<string>('');
+    const [timeFilterEnabled, setTimeFilterEnabled] = useState(false);
+    const [selectedHour, setSelectedHour] = useState('10');
+    const [selectedMinute, setSelectedMinute] = useState('00');
+    const [selectedMeridiem, setSelectedMeridiem] = useState<'AM' | 'PM'>('AM');
 
     const isProcessing = fileResults.some((f) => f.status === 'processing');
     const successResults = fileResults.filter((f) => f.status === 'success' && f.result);
@@ -141,48 +176,56 @@ export default function ProcessingDashboard() {
     const skippedOrFailedRows = skippedRows + failedRows;
 
     // ── Handle multiple uploaded files ──
+    const reprocessAll = useCallback((files: SourceFile[], timeValue: string) => {
+        const results: FileResult[] = files.map((sf) => {
+            try {
+                const result = processCSVData(sf.data, sf.mapping, timeValue || null);
+                return {
+                    id: sf.id,
+                    fileName: sf.fileName,
+                    status: 'success',
+                    result
+                };
+            } catch (err) {
+                return {
+                    id: sf.id,
+                    fileName: sf.fileName,
+                    status: 'error',
+                    error: err instanceof Error ? err.message : 'Unexpected error',
+                };
+            }
+        });
+        setFileResults(results);
+    }, []);
+
     const handleFilesReady = useCallback((parsedFiles: ParsedFile[]) => {
         setGlobalError(null);
-
-        // Create placeholder entries in "processing" state
-        const placeholders: FileResult[] = parsedFiles.map((pf) => ({
+        const newlyAdded: SourceFile[] = parsedFiles.map((pf) => ({
             id: uniqueId(pf.fileName),
             fileName: pf.fileName,
-            status: 'processing',
+            data: pf.data,
+            mapping: pf.mapping,
         }));
-
-        setFileResults((prev) => [...prev, ...placeholders]);
-
-        // Process each file independently (with a small stagger for UX)
-        parsedFiles.forEach((pf, idx) => {
-            const id = placeholders[idx].id;
-            setTimeout(() => {
-                try {
-                    const result = processCSVData(pf.data, pf.mapping);
-                    setFileResults((prev) =>
-                        prev.map((fr) =>
-                            fr.id === id ? { ...fr, status: 'success', result } : fr
-                        )
-                    );
-                } catch (err) {
-                    setFileResults((prev) =>
-                        prev.map((fr) =>
-                            fr.id === id
-                                ? {
-                                      ...fr,
-                                      status: 'error',
-                                      error:
-                                          err instanceof Error
-                                              ? err.message
-                                              : 'Unexpected error',
-                                  }
-                                : fr
-                        )
-                    );
-                }
-            }, idx * 200); // stagger 200ms per file for smoother UX
+        setSourceFiles((prev) => {
+            const combined = [...prev, ...newlyAdded];
+            reprocessAll(combined, selectedTime);
+            return combined;
         });
-    }, []);
+    }, [reprocessAll, selectedTime]);
+
+    const applyClockTime = useCallback(
+        (hour: string, minute: string, meridiem: 'AM' | 'PM') => {
+            const nextTime = to24HourTime(hour, minute, meridiem);
+            if (!nextTime) return;
+            setSelectedHour(hour);
+            setSelectedMinute(minute);
+            setSelectedMeridiem(meridiem);
+            setSelectedTime(nextTime);
+            setTimeFilterEnabled(true);
+            reprocessAll(sourceFiles, nextTime);
+        },
+        [reprocessAll, sourceFiles]
+    );
 
     // ── Download all files merged into one CSV ──
     const handleDownloadAll = () => {
@@ -206,6 +249,12 @@ export default function ProcessingDashboard() {
 
     const reset = () => {
         setFileResults([]);
+        setSourceFiles([]);
+        setSelectedTime('');
+        setTimeFilterEnabled(false);
+        setSelectedHour('10');
+        setSelectedMinute('00');
+        setSelectedMeridiem('AM');
         setGlobalError(null);
     };
 
@@ -241,6 +290,98 @@ export default function ProcessingDashboard() {
                 onError={setGlobalError}
                 isLoading={isProcessing}
             />
+
+            <div className="bg-card-bg/60 backdrop-blur-md border border-card-border rounded-2xl p-4 md:p-5">
+                <div className="flex flex-col gap-4">
+                    <div className="min-w-0">
+                        <p className="text-sm font-semibold text-text-base">Time Filter (created_time)</p>
+                        <p className="text-xs text-muted-text mt-0.5">
+                            Select time only (inclusive). Example: `10:00` keeps leads from 10:00 onward.
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <label className="inline-flex items-center gap-2 text-sm text-text-base font-medium">
+                            <input
+                                type="checkbox"
+                                checked={timeFilterEnabled}
+                                onChange={(e) => {
+                                    const enabled = e.target.checked;
+                                    setTimeFilterEnabled(enabled);
+                                    if (!enabled) {
+                                        setSelectedTime('');
+                                        reprocessAll(sourceFiles, '');
+                                        return;
+                                    }
+                                    const nextTime = to24HourTime(selectedHour, selectedMinute, selectedMeridiem);
+                                    setSelectedTime(nextTime);
+                                    reprocessAll(sourceFiles, nextTime);
+                                }}
+                                className="h-4 w-4 rounded border-card-border"
+                            />
+                            Enable time filter
+                        </label>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <select
+                            value={selectedHour}
+                            disabled={!timeFilterEnabled}
+                            onChange={(e) => applyClockTime(e.target.value, selectedMinute, selectedMeridiem)}
+                            className="px-3 py-2 rounded-xl border border-card-border bg-bg-base text-text-base text-sm disabled:opacity-50"
+                        >
+                            {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
+                                <option key={h} value={h}>{h}</option>
+                            ))}
+                        </select>
+                        <span className="text-muted-text font-semibold">:</span>
+                        <select
+                            value={selectedMinute}
+                            disabled={!timeFilterEnabled}
+                            onChange={(e) => applyClockTime(selectedHour, e.target.value, selectedMeridiem)}
+                            className="px-3 py-2 rounded-xl border border-card-border bg-bg-base text-text-base text-sm disabled:opacity-50"
+                        >
+                            {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0')).map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                            ))}
+                        </select>
+                        <select
+                            value={selectedMeridiem}
+                            disabled={!timeFilterEnabled}
+                            onChange={(e) => applyClockTime(selectedHour, selectedMinute, e.target.value as 'AM' | 'PM')}
+                            className="px-3 py-2 rounded-xl border border-card-border bg-bg-base text-text-base text-sm disabled:opacity-50"
+                        >
+                            <option value="AM">AM</option>
+                            <option value="PM">PM</option>
+                        </select>
+                        <button
+                            onClick={() => {
+                                setSelectedTime('');
+                                setTimeFilterEnabled(false);
+                                reprocessAll(sourceFiles, '');
+                            }}
+                            className="px-3 py-2 rounded-xl border border-card-border text-sm font-semibold text-muted-text hover:text-text-base hover:bg-bg-base/70 transition-all"
+                        >
+                            None (All)
+                        </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {['09:00', '10:00', '12:00', '15:00', '18:00'].map((preset) => (
+                            <button
+                                key={preset}
+                                onClick={() => {
+                                    const parsed = from24HourTime(preset);
+                                    applyClockTime(parsed.hour12, parsed.minute, parsed.meridiem);
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg border border-card-border text-xs font-semibold text-muted-text hover:text-text-base hover:bg-bg-base/70 transition-all"
+                            >
+                                {preset}
+                            </button>
+                        ))}
+                        {selectedTime && timeFilterEnabled && (
+                            <span className="text-xs text-muted-text">Active: {selectedTime}</span>
+                        )}
+                    </div>
+                </div>
+            </div>
 
             {/* ── Global Error ── */}
             {globalError && (

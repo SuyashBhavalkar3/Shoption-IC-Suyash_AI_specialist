@@ -21,11 +21,21 @@ Business-safe web app to sanitize raw lead CSVs into a strict fixed schema for C
 ## Multi-file Download Behavior
 
 - Each processed file keeps its own **Download** button.
-- When 2+ files are processed, **Download All** appears.
-- **Download All** creates one combined CSV (Excel-openable) where rows are sorted by:
+- When 2+ files are processed, **Download Combined Sanitized** appears.
+- **Download Combined Sanitized** creates one combined CSV (Excel-openable) where rows are sorted by:
   1. `campaign_name` (primary)
   2. `ad_name` (fallback when campaign name is missing)
 - Sort order is ascending (`A -> Z`).
+
+## Time Filter (created_time)
+
+- A time-only filter widget is available in the dashboard.
+- If time is selected (example `10:00`), only rows with `created_time` time `>= 10:00` are included.
+- Date is ignored for filtering; only the time part from `created_time` is used.
+- If no time is selected (`None (All)`), all rows are included.
+- This applies to both:
+  - individual sanitized file downloads
+  - combined sanitized download
 
 ## Output Schema Notes
 
