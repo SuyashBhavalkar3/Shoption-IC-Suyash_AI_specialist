@@ -95,10 +95,10 @@ export default function CSVUpload({ onUpload, onError, isLoading }: CSVUploadPro
             onDragLeave={onDragLeave}
             onDrop={onDrop}
             className={`
-        relative border-2 border-dashed rounded-xl p-12 transition-all duration-200
-        ${isDragging ? 'border-blue-500 bg-blue-50/50' : 'border-gray-200 hover:border-gray-300 bg-white'}
-        ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-      `}
+                relative border-2 border-dashed rounded-2xl p-12 transition-all duration-300
+                ${isDragging ? 'border-primary-brand bg-primary-brand/[0.04] scale-[0.99]' : 'border-card-border hover:border-muted-border hover:scale-[1.01] bg-card-bg/60 backdrop-blur-md shadow-lg shadow-black/[0.02]'}
+                ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+            `}
         >
             <input
                 type="file"
@@ -109,7 +109,7 @@ export default function CSVUpload({ onUpload, onError, isLoading }: CSVUploadPro
             />
 
             <div className="flex flex-col items-center justify-center space-y-4">
-                <div className={`p-4 rounded-full ${isDragging ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
+                <div className={`p-4 rounded-2xl transition-all duration-300 ${isDragging ? 'bg-primary-brand/10 text-primary-brand scale-110' : 'bg-bg-base text-muted-text'}`}>
                     {isLoading ? (
                         <Loader2 className="w-8 h-8 animate-spin" />
                     ) : (
@@ -118,16 +118,16 @@ export default function CSVUpload({ onUpload, onError, isLoading }: CSVUploadPro
                 </div>
 
                 <div className="text-center">
-                    <p className="text-lg font-medium text-gray-900">
+                    <p className="text-lg font-semibold text-text-base">
                         {isLoading ? 'Processing CSV...' : 'Drag and drop your Meta lead CSV'}
                     </p>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-muted-text mt-1">
                         Accepts only .csv files
                     </p>
                 </div>
 
                 {!isLoading && (
-                    <button className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+                    <button className="px-5 py-2.5 bg-primary-brand text-white rounded-xl text-sm font-semibold hover:bg-primary-brand/95 hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary-brand/15">
                         Select File
                     </button>
                 )}

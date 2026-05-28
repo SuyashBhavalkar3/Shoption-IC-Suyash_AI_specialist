@@ -64,16 +64,18 @@ export default function ProcessingDashboard() {
     return (
         <div className="max-w-6xl mx-auto space-y-8 p-4 md:p-8">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-card-border pb-6">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">CRM CSV Sanitizer</h1>
-                    <p className="text-gray-500 mt-1">Production-safe lead data transformation tool</p>
+                    <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-primary-brand via-indigo-500 to-violet-600 bg-clip-text text-transparent">
+                        CRM CSV Sanitizer
+                    </h1>
+                    <p className="text-muted-text mt-1 text-sm font-medium">Production-safe lead data transformation tool</p>
                 </div>
 
                 {result && (
                     <button
                         onClick={reset}
-                        className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                        className="flex items-center space-x-2 px-4 py-2.5 text-sm font-semibold text-muted-text hover:text-text-base bg-card-bg border border-card-border hover:bg-bg-base/80 rounded-xl transition-all shadow-sm active:scale-95"
                     >
                         <RefreshCcw className="w-4 h-4" />
                         <span>Process New File</span>
@@ -82,13 +84,13 @@ export default function ProcessingDashboard() {
             </div>
 
             {!result ? (
-                <div className="space-y-6">
+                <div className="space-y-8">
                     <CSVUpload onUpload={handleUpload} onError={setError} isLoading={isLoading} />
 
                     {error && (
-                        <div className="p-4 bg-red-50 border border-red-100 rounded-xl flex items-start space-x-3 text-red-700">
-                            <AlertCircle className="w-5 h-5 shrink-0" />
-                            <p className="text-sm font-medium">{error}</p>
+                        <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-start space-x-3 text-rose-500 animate-in fade-in slide-in-from-top-2 duration-300">
+                            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                            <p className="text-sm font-semibold">{error}</p>
                         </div>
                     )}
 
@@ -99,12 +101,12 @@ export default function ProcessingDashboard() {
                             { title: "Safe Sanitization", desc: "Predictable cleaning for phone numbers and campaign IDs.", icon: CheckCircle2 },
                             { title: "Real-time Logs", desc: "Detailed processing logs and validation error reporting.", icon: Activity },
                         ].map((feature, i) => (
-                            <div key={i} className="p-6 bg-white border border-gray-100 rounded-2xl shadow-sm">
-                                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center mb-4">
+                            <div key={i} className="p-6 bg-card-bg/60 backdrop-blur-md border border-card-border rounded-2xl shadow-lg shadow-black/[0.01] hover:scale-[1.02] transition-all duration-300">
+                                <div className="w-12 h-12 bg-primary-brand/10 text-primary-brand rounded-xl flex items-center justify-center mb-4 shadow-inner">
                                     <feature.icon className="w-6 h-6" />
                                 </div>
-                                <h3 className="font-semibold text-gray-900 mb-2">{feature.title}</h3>
-                                <p className="text-sm text-gray-500 leading-relaxed">{feature.desc}</p>
+                                <h3 className="font-bold text-text-base mb-2">{feature.title}</h3>
+                                <p className="text-sm text-muted-text leading-relaxed font-medium">{feature.desc}</p>
                             </div>
                         ))}
                     </div>
@@ -113,33 +115,37 @@ export default function ProcessingDashboard() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     {/* Summary Cards */}
                     <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                            <p className="text-sm font-medium text-gray-500">Total Rows</p>
-                            <p className="text-3xl font-bold text-gray-900 mt-1">{result.summary.totalRows}</p>
+                        <div className="bg-card-bg/60 backdrop-blur-md p-6 rounded-2xl border border-card-border shadow-md">
+                            <p className="text-sm font-semibold text-muted-text">Total Rows</p>
+                            <p className="text-3xl font-extrabold text-text-base mt-1">{result.summary.totalRows}</p>
                         </div>
-                        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm border-l-4 border-l-green-500">
-                            <p className="text-sm font-medium text-gray-500">Processed Successfully</p>
-                            <p className="text-3xl font-bold text-green-600 mt-1">{result.summary.processedRows}</p>
+                        <div className="bg-card-bg/60 backdrop-blur-md p-6 rounded-2xl border border-card-border border-l-4 border-l-emerald-500 shadow-md">
+                            <p className="text-sm font-semibold text-muted-text">Processed Successfully</p>
+                            <p className="text-3xl font-extrabold text-emerald-500 mt-1">{result.summary.processedRows}</p>
                         </div>
-                        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm border-l-4 border-l-red-500">
-                            <p className="text-sm font-medium text-gray-500">Skipped/Failed</p>
-                            <p className="text-3xl font-bold text-red-600 mt-1">{result.summary.failedRows}</p>
+                        <div className="bg-card-bg/60 backdrop-blur-md p-6 rounded-2xl border border-card-border border-l-4 border-l-rose-500 shadow-md">
+                            <p className="text-sm font-semibold text-muted-text">Skipped/Failed</p>
+                            <p className="text-3xl font-extrabold text-rose-500 mt-1">{result.summary.failedRows}</p>
                         </div>
                     </div>
 
                     {/* Main Action Area */}
                     <div className="lg:col-span-2 space-y-8">
-                        <div className="bg-blue-600 rounded-2xl p-8 text-white flex flex-col items-center justify-center text-center space-y-6 shadow-xl shadow-blue-100">
-                            <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
-                                <CheckCircle2 className="w-10 h-10" />
+                        <div className="bg-gradient-to-br from-primary-brand via-indigo-600 to-indigo-800 rounded-3xl p-8 text-white flex flex-col items-center justify-center text-center space-y-6 shadow-xl shadow-primary-brand/10 relative overflow-hidden">
+                            {/* Glowing accents inside the card */}
+                            <div className="absolute top-[-20%] right-[-20%] w-64 h-64 rounded-full bg-white/5 blur-[50px] pointer-events-none" />
+                            <div className="absolute bottom-[-20%] left-[-20%] w-64 h-64 rounded-full bg-black/10 blur-[50px] pointer-events-none" />
+                            
+                            <div className="w-16 h-16 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-lg">
+                                <CheckCircle2 className="w-10 h-10 text-emerald-400" />
                             </div>
-                            <div>
-                                <h2 className="text-2xl font-bold">Processing Complete!</h2>
-                                <p className="text-blue-100 mt-1">Your sanitized CSV for &quot;{fileName}&quot; is ready.</p>
+                            <div className="relative z-10">
+                                <h2 className="text-2xl font-extrabold tracking-tight">Processing Complete!</h2>
+                                <p className="text-indigo-100 mt-1.5 font-medium">Your sanitized CSV for &quot;{fileName}&quot; is ready.</p>
                             </div>
                             <button
                                 onClick={handleDownload}
-                                className="group flex items-center space-x-3 px-8 py-4 bg-white text-blue-600 rounded-xl font-bold text-lg hover:bg-blue-50 transition-all transform hover:scale-105 shadow-lg active:scale-95"
+                                className="group flex items-center space-x-3 px-8 py-4 bg-white text-indigo-700 rounded-2xl font-extrabold text-lg hover:bg-slate-50 transition-all transform hover:scale-[1.03] shadow-xl hover:shadow-2xl active:scale-[0.98]"
                             >
                                 <Download className="w-5 h-5 group-hover:animate-bounce" />
                                 <span>Download Sanitized CSV</span>
