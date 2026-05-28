@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useCallback } from 'react';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, Loader2 } from 'lucide-react';
 import Papa from 'papaparse';
 import { validateHeaders } from '@/lib/utils/sanitization';
+import { RawLead } from '@/lib/types';
 
 interface CSVUploadProps {
-    onUpload: (data: any[], fileName: string, mapping: Record<string, string>) => void;
+    onUpload: (data: RawLead[], fileName: string, mapping: Record<string, string>) => void;
     onError: (error: string) => void;
     isLoading: boolean;
 }
@@ -14,7 +15,7 @@ interface CSVUploadProps {
 export default function CSVUpload({ onUpload, onError, isLoading }: CSVUploadProps) {
     const [isDragging, setIsDragging] = useState(false);
 
-    const processFile = (file: File) => {
+    const processFile = useCallback((file: File) => {
         if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
             onError('Please upload a valid CSV file.');
             return;
@@ -51,7 +52,7 @@ export default function CSVUpload({ onUpload, onError, isLoading }: CSVUploadPro
                 // Convert the remaining rows to objects using the found header row
                 const headers = rows[headerRowIndex];
                 const dataRows = rows.slice(headerRowIndex + 1).map(row => {
-                    const obj: any = {};
+                    const obj: RawLead = {};
                     headers.forEach((header, index) => {
                         obj[header] = row[index];
                     });
@@ -64,7 +65,7 @@ export default function CSVUpload({ onUpload, onError, isLoading }: CSVUploadPro
                 onError(`Error parsing CSV: ${error.message}`);
             }
         });
-    };
+    }, [onUpload, onError]);
 
     const onDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -81,7 +82,7 @@ export default function CSVUpload({ onUpload, onError, isLoading }: CSVUploadPro
         setIsDragging(false);
         const file = e.dataTransfer.files[0];
         if (file) processFile(file);
-    }, []);
+    }, [processFile]);
 
     const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];

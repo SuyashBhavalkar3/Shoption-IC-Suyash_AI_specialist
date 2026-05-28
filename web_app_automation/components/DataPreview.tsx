@@ -3,7 +3,7 @@
 import React from 'react';
 
 interface DataPreviewProps {
-    data: any[][];
+    data: string[][];
     headers: string[];
 }
 

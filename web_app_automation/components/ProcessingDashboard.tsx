@@ -7,7 +7,7 @@ import CSVUpload from './CSVUpload';
 import LogConsole from './LogConsole';
 import DataPreview from './DataPreview';
 import { processCSVData } from '@/lib/utils/csv-processor';
-import { ProcessingResult, ProcessingLog } from '@/lib/types';
+import { ProcessingResult, RawLead } from '@/lib/types';
 
 export default function ProcessingDashboard() {
     const [isLoading, setIsLoading] = useState(false);
@@ -15,7 +15,7 @@ export default function ProcessingDashboard() {
     const [fileName, setFileName] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
 
-    const handleUpload = (rawData: any[], name: string, mapping: Record<string, string>) => {
+    const handleUpload = (rawData: RawLead[], name: string, mapping: Record<string, string>) => {
         setIsLoading(true);
         setError(null);
         setFileName(name);
@@ -135,7 +135,7 @@ export default function ProcessingDashboard() {
                             </div>
                             <div>
                                 <h2 className="text-2xl font-bold">Processing Complete!</h2>
-                                <p className="text-blue-100 mt-1">Your sanitized CSV for "{fileName}" is ready.</p>
+                                <p className="text-blue-100 mt-1">Your sanitized CSV for &quot;{fileName}&quot; is ready.</p>
                             </div>
                             <button
                                 onClick={handleDownload}

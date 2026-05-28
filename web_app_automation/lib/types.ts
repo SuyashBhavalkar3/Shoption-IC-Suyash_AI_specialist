@@ -5,7 +5,7 @@ export interface RawLead {
   campaign_id?: string;
   platform?: string;
   street_address?: string;
-  [key: string]: any; // For dynamic Marathi questions
+  [key: string]: string | number | boolean | undefined | null; // Replaced any with specific types
 }
 
 export interface SanitizedLead {
@@ -44,9 +44,8 @@ export interface SanitizedLead {
   'Coloumn 7': string;
   'Coloumn 8': string;
   'Coloumn 9': string;
-  'Coloumn 10': string; // Duplicate column 10 as per requirement
-  'Coloumn 10 ': string; // To handle the duplicate key in a JS object while maintaining the schema for CSV export
-  // Actually, for CSV generation, we might need an array of values to preserve order and duplicates.
+  'Coloumn 10': string;
+  'Coloumn 10 ': string;
 }
 
 export interface ProcessingLog {
@@ -56,7 +55,7 @@ export interface ProcessingLog {
 }
 
 export interface ProcessingResult {
-  data: any[][]; // Array of arrays to handle duplicate column names and exact order
+  data: string[][]; // Changed from any[][]
   headers: string[];
   logs: ProcessingLog[];
   summary: {

@@ -1,4 +1,4 @@
-import { RawLead, ProcessingResult, ProcessingLog } from '../types';
+import { ProcessingResult, ProcessingLog, RawLead } from '../types';
 import {
     sanitizePhoneNumber,
     sanitizeCampaignId,
@@ -46,9 +46,9 @@ export const FIXED_SCHEMA_HEADERS = [
     'Coloumn 10' // Intentionally duplicated
 ];
 
-export function processCSVData(rawData: any[], headerMapping: Record<string, string>): ProcessingResult {
+export function processCSVData(rawData: RawLead[], headerMapping: Record<string, string>): ProcessingResult {
     const logs: ProcessingLog[] = [];
-    const processedData: any[][] = [];
+    const processedData: string[][] = [];
     let processedRows = 0;
     let failedRows = 0;
 
@@ -67,14 +67,14 @@ export function processCSVData(rawData: any[], headerMapping: Record<string, str
                 return; // Silent skip for empty rows
             }
 
-            const fullname = row[headerMapping['full_name']] || "";
-            const rawPhone = row[headerMapping['phone_number']] || "";
+            const fullname = String(row[headerMapping['full_name']] || "");
+            const rawPhone = String(row[headerMapping['phone_number']] || "");
             const phone = sanitizePhoneNumber(rawPhone);
             const email = generateEmailFromPhone(phone);
-            const campaignId = sanitizeCampaignId(row[headerMapping['campaign_id']]);
-            const source = row[headerMapping['platform']] || "";
-            const city = extractCity(row['street_address'] || row['City'] || "");
-            const col1 = row['ad_name'] || row['campaign_name'] || "";
+            const campaignId = sanitizeCampaignId(String(row[headerMapping['campaign_id']] || ""));
+            const source = String(row[headerMapping['platform']] || "");
+            const city = extractCity(String(row['street_address'] || row['City'] || ""));
+            const col1 = String(row['ad_name'] || row['campaign_name'] || "");
 
             // Identify Marathi questions (columns with non-ASCII or specific patterns)
             // Usually these are columns that are NOT in our mapping or other standard fields
@@ -89,10 +89,10 @@ export function processCSVData(rawData: any[], headerMapping: Record<string, str
             const q3 = potentialMarathiKeys[2] || "";
             const q4 = potentialMarathiKeys[3] || "";
 
-            const a1 = q1 ? row[q1] : "";
-            const a2 = q2 ? row[q2] : "";
-            const a3 = q3 ? row[q3] : "";
-            const a4 = q4 ? row[q4] : "";
+            const a1 = q1 ? String(row[q1] || "") : "";
+            const a2 = q2 ? String(row[q2] || "") : "";
+            const a3 = q3 ? String(row[q3] || "") : "";
+            const a4 = q4 ? String(row[q4] || "") : "";
 
             // Map to strict array order corresponding to FIXED_SCHEMA_HEADERS
             const rowOutput = [
