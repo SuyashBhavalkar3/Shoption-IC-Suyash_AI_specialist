@@ -1,4 +1,17 @@
+# Data files
 *.csv
 *.xlsx
 *.xls
-*.json
+
+# Next.js
+web_app_automation/.next/
+web_app_automation/node_modules/
+web_app_automation/build/
+web_app_automation/dist/
+
+# OS
+.DS_Store
+
+# Do NOT ignore .json files as they are needed for package.json, tsconfig.json, etc.
+# If you want to ignore specific data JSONs, add them explicitly or by folder.
+# *.json 
