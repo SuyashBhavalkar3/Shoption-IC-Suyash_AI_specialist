@@ -13,7 +13,7 @@ class CallDatabase(context: Context) :
 
     companion object {
         const val DATABASE_NAME = "call_tracker.db"
-        const val DATABASE_VERSION = 2
+        const val DATABASE_VERSION = 3
         const val TABLE_NAME = "call_logs"
         const val COL_ID = "id"
         const val COL_PHONE_NUMBER = "phone_number"
@@ -21,6 +21,7 @@ class CallDatabase(context: Context) :
         const val COL_TIMESTAMP = "timestamp"
         const val COL_DURATION = "duration_seconds"
         const val COL_SYSTEM_CALL_ID = "system_call_id"
+        const val COL_IS_SYNCED = "is_synced"
     }
 
     override fun onCreate(db: SQLiteDatabase?) {
@@ -32,7 +33,8 @@ class CallDatabase(context: Context) :
                 $COL_CALL_TYPE TEXT,
                 $COL_TIMESTAMP TEXT,
                 $COL_DURATION INTEGER,
-                $COL_SYSTEM_CALL_ID TEXT UNIQUE
+                $COL_SYSTEM_CALL_ID TEXT UNIQUE,
+                $COL_IS_SYNCED INTEGER DEFAULT 0
             )
             """.trimIndent()
         )
@@ -43,6 +45,9 @@ class CallDatabase(context: Context) :
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_SYSTEM_CALL_ID TEXT")
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_system_call_id ON $TABLE_NAME($COL_SYSTEM_CALL_ID)")
+        }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_IS_SYNCED INTEGER DEFAULT 0")
         }
     }
 
