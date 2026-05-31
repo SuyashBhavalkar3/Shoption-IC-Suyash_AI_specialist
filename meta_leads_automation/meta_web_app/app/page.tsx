@@ -29,6 +29,7 @@ interface Lead {
   form_id?: string;
   ad_id?: string;
   ad_name?: string;
+  platform?: string;
 }
 
 export default function Home() {
@@ -40,8 +41,19 @@ export default function Home() {
   const [loadingCampaigns, setLoadingCampaigns] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  interface DateRangeState {
+    fromDate?: string;
+    fromHour?: string;
+    fromMin?: string;
+    fromPeriod?: string;
+    toDate?: string;
+    toHour?: string;
+    toMin?: string;
+    toPeriod?: string;
+  }
+
   // Per-campaign state for date ranges and download status
-  const [dateRanges, setDateRanges] = useState<{ [campaignId: string]: { from: string; to: string } }>({});
+  const [dateRanges, setDateRanges] = useState<{ [campaignId: string]: DateRangeState }>({});
   const [downloadingCampaignId, setDownloadingCampaignId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
@@ -87,7 +99,7 @@ export default function Home() {
     }
   };
 
-  const handleDateChange = (campaignId: string, field: "from" | "to", value: string) => {
+  const handleDateChange = (campaignId: string, field: keyof DateRangeState, value: string) => {
     setDateRanges((prev) => ({
       ...prev,
       [campaignId]: {
@@ -110,23 +122,37 @@ export default function Home() {
       const data = await res.json();
       const rawLeads: Lead[] = data.data || [];
 
-      // Filter leads by date range
-      const range = dateRanges[campaignId] || { from: "", to: "" };
+      // Filter leads by date and time
+      const range = dateRanges[campaignId] || {};
+      
+      const parseCampaignDateTime = (r: DateRangeState, type: "from" | "to") => {
+        const dateStr = type === "from" ? r.fromDate : r.toDate;
+        if (!dateStr) return null;
+        
+        const hour = type === "from" ? (r.fromHour || "12") : (r.toHour || "11");
+        const min = type === "from" ? (r.fromMin || "00") : (r.toMin || "59");
+        const period = type === "from" ? (r.fromPeriod || "AM") : (r.toPeriod || "PM");
+        
+        let hourNum = parseInt(hour, 10);
+        if (period === "PM" && hourNum !== 12) {
+          hourNum += 12;
+        } else if (period === "AM" && hourNum === 12) {
+          hourNum = 0;
+        }
+        
+        const [year, month, day] = dateStr.split("-").map(Number);
+        return new Date(year, month - 1, day, hourNum, parseInt(min, 10), 0, 0);
+      };
+
+      const start = parseCampaignDateTime(range, "from");
+      const end = parseCampaignDateTime(range, "to");
+
       return rawLeads.filter((lead) => {
         if (!lead.created_time) return true;
         const leadDate = new Date(lead.created_time);
 
-        if (range.from) {
-          const start = new Date(range.from);
-          start.setHours(0, 0, 0, 0);
-          if (leadDate < start) return false;
-        }
-
-        if (range.to) {
-          const end = new Date(range.to);
-          end.setHours(23, 59, 59, 999);
-          if (leadDate > end) return false;
-        }
+        if (start && leadDate < start) return false;
+        if (end && leadDate > end) return false;
 
         return true;
       });
@@ -219,7 +245,7 @@ export default function Home() {
       "Source",
       "City",
       "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10",
-      "Answer 1", "Answer 2", "Answer 3", "Answer 4", "Answer 5", "Answer 6", "Answer 7", "Answer 8", "Answer 9", "Answer 10",
+      "Answer  1", "Answer  2", "Answer  3", "Answer  4", "Answer  5", "Answer  6", "Answer  7", "Answer  8", "Answer  9", "Answer  10",
       "Coloumn 1", "Coloumn 2", "Coloumn 3", "Coloumn 4", "Coloumn 5", "Coloumn 6", "Coloumn 7", "Coloumn 8", "Coloumn 9", "Coloumn 10", "Coloumn 10"
     ];
 
@@ -236,8 +262,17 @@ export default function Home() {
 
       const nameVal = findFieldVal(["full_name", "name", "नाव", "नाम"]);
       const rawPhone = findFieldVal(["phone_number", "phone", "mobile", "contact", "नंबर", "फोन", "मोबाईल"]);
-      const phoneVal = rawPhone.replace(/[^\d+]/g, ""); // Clean phone (only digits and +)
-      const emailVal = findFieldVal(["email", "ईमेल"]);
+      
+      // Clean phone: extract digits and take the last 10 characters
+      const cleanPhone = (phoneStr: string) => {
+        const digits = phoneStr.replace(/\D/g, "");
+        return digits.length >= 10 ? digits.slice(-10) : digits;
+      };
+      const phoneVal = cleanPhone(rawPhone);
+      
+      // Generate email as phoneno@gmail.com
+      const emailVal = phoneVal ? `${phoneVal}@gmail.com` : "";
+      
       const cityVal = findFieldVal(["city", "town", "address", "पता", "शहर", "गाव", "गांव"]);
 
       // Identify custom questions (fields that are not standard)
@@ -266,7 +301,7 @@ export default function Home() {
         phoneVal,                // Phone Number
         emailVal,                // Email
         campaign.id,             // Campaign ID
-        "Meta",                  // Source
+        lead.platform || "Meta", // Source (maps to platform ig/fb)
         cityVal,                 // City
         ...qValues,              // Q1 to Q10
         ...aValues,              // Answer 1 to Answer 10
@@ -400,7 +435,7 @@ export default function Home() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {campaigns.map((campaign) => {
-                  const range = dateRanges[campaign.id] || { from: "", to: "" };
+                  const range = dateRanges[campaign.id] || {};
                   const isDownloading = downloadingCampaignId === campaign.id;
 
                   return (
@@ -424,28 +459,97 @@ export default function Home() {
                       </div>
 
                       {/* Date Range Selectors */}
-                      <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-900">
-                        <div className="space-y-1">
+                      <div className="grid grid-cols-1 gap-4 pt-2 border-t border-slate-900">
+                        {/* From Section */}
+                        <div className="space-y-1.5">
                           <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                            From Date
+                            From Date & Time
                           </label>
-                          <input
-                            type="date"
-                            value={range.from}
-                            onChange={(e) => handleDateChange(campaign.id, "from", e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-850 text-slate-100 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 transition-all font-mono cursor-pointer"
-                          />
+                          <div className="flex flex-col gap-1.5">
+                            <input
+                              type="date"
+                              value={range.fromDate || ""}
+                              onChange={(e) => handleDateChange(campaign.id, "fromDate", e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-850 text-slate-100 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 transition-all font-mono cursor-pointer"
+                            />
+                            <div className="grid grid-cols-3 gap-1">
+                              <select
+                                value={range.fromHour || ""}
+                                onChange={(e) => handleDateChange(campaign.id, "fromHour", e.target.value)}
+                                className="bg-slate-900 border border-slate-850 text-slate-100 rounded-lg p-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono cursor-pointer"
+                              >
+                                <option value="">HH</option>
+                                {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                                  <option key={h} value={h}>{h}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={range.fromMin || ""}
+                                onChange={(e) => handleDateChange(campaign.id, "fromMin", e.target.value)}
+                                className="bg-slate-900 border border-slate-850 text-slate-100 rounded-lg p-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono cursor-pointer"
+                              >
+                                <option value="">MM</option>
+                                {Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0')).map((m) => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={range.fromPeriod || ""}
+                                onChange={(e) => handleDateChange(campaign.id, "fromPeriod", e.target.value)}
+                                className="bg-slate-900 border border-slate-850 text-slate-100 rounded-lg p-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono cursor-pointer"
+                              >
+                                <option value="">AM/PM</option>
+                                <option value="AM">AM</option>
+                                <option value="PM">PM</option>
+                              </select>
+                            </div>
+                          </div>
                         </div>
-                        <div className="space-y-1">
+
+                        {/* To Section */}
+                        <div className="space-y-1.5">
                           <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                            To Date
+                            To Date & Time
                           </label>
-                          <input
-                            type="date"
-                            value={range.to}
-                            onChange={(e) => handleDateChange(campaign.id, "to", e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-850 text-slate-100 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 transition-all font-mono cursor-pointer"
-                          />
+                          <div className="flex flex-col gap-1.5">
+                            <input
+                              type="date"
+                              value={range.toDate || ""}
+                              onChange={(e) => handleDateChange(campaign.id, "toDate", e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-850 text-slate-100 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 transition-all font-mono cursor-pointer"
+                            />
+                            <div className="grid grid-cols-3 gap-1">
+                              <select
+                                value={range.toHour || ""}
+                                onChange={(e) => handleDateChange(campaign.id, "toHour", e.target.value)}
+                                className="bg-slate-900 border border-slate-850 text-slate-100 rounded-lg p-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono cursor-pointer"
+                              >
+                                <option value="">HH</option>
+                                {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                                  <option key={h} value={h}>{h}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={range.toMin || ""}
+                                onChange={(e) => handleDateChange(campaign.id, "toMin", e.target.value)}
+                                className="bg-slate-900 border border-slate-850 text-slate-100 rounded-lg p-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono cursor-pointer"
+                              >
+                                <option value="">MM</option>
+                                {Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0')).map((m) => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={range.toPeriod || ""}
+                                onChange={(e) => handleDateChange(campaign.id, "toPeriod", e.target.value)}
+                                className="bg-slate-900 border border-slate-850 text-slate-100 rounded-lg p-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono cursor-pointer"
+                              >
+                                <option value="">AM/PM</option>
+                                <option value="AM">AM</option>
+                                <option value="PM">PM</option>
+                              </select>
+                            </div>
+                          </div>
                         </div>
                       </div>
 

@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
     // 3. Retrieve leads from all associated lead forms
     let allLeads: any[] = [];
     for (const formId of Array.from(formIds)) {
-      let url = `https://graph.facebook.com/v23.0/${formId}/leads?fields=id,created_time,field_data,ad_id,ad_name,form_id&access_token=${pageToken}&limit=250`;
+      let url = `https://graph.facebook.com/v23.0/${formId}/leads?fields=id,created_time,field_data,ad_id,ad_name,form_id,platform&access_token=${pageToken}&limit=250`;
       let hasNext = true;
       let pagesFetched = 0;
 
