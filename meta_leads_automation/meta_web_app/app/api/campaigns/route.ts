@@ -45,9 +45,15 @@ export async function GET(request: NextRequest) {
               id: campaign.id,
               name: campaign.name,
               status: campaign.status || "ACTIVE",
-              adName: ad.name
+              ads: []
             });
           }
+          activeCampaignsMap.get(campaign.id).ads.push({
+            id: ad.id,
+            name: ad.name,
+            status: ad.status,
+            effectiveStatus: ad.effective_status
+          });
         }
       }
     }
