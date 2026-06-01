@@ -76,8 +76,7 @@ export default function Home() {
     toPeriod?: string;
   }
 
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
-  const [selectedAdId, setSelectedAdId] = useState<string>("");
+  const [selectedAds, setSelectedAds] = useState<FlattenedAd[]>([]);
   const [dateRange, setDateRange] = useState<DateRangeState>({});
   const [downloading, setDownloading] = useState<boolean>(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -129,8 +128,7 @@ export default function Home() {
 
   // Fetch Campaigns
   const fetchCampaigns = async () => {
-    setSelectedCampaignId("");
-    setSelectedAdId("");
+    setSelectedAds([]);
     setDateRange({});
     try {
       setLoadingCampaigns(true);
@@ -201,24 +199,41 @@ export default function Home() {
     });
   };
 
-  // Helper to fetch leads for a campaign and filter them by selected ad and date/time range
-  const fetchFilteredLeads = async (campaignId: string, campaignName: string, adId: string) => {
+  // Helper to fetch leads and filter them by selected ads and date/time range
+  const fetchFilteredLeads = async () => {
+    if (selectedAds.length === 0) return null;
     setDownloadError(null);
     setDownloading(true);
-    try {
-      const res = await fetch(`/api/leads?campaignId=${campaignId}&campaignName=${encodeURIComponent(campaignName)}`);
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to fetch leads");
-      }
-      const data = await res.json();
-      const rawLeads: Lead[] = data.data || [];
 
-      // Filter by selected ad ID
-      let filtered = rawLeads;
-      if (adId) {
-        filtered = filtered.filter((lead) => lead.ad_id === adId);
-      }
+    try {
+      // Group selected ads by campaignId
+      const adsByCampaign = new Map<string, { campaignName: string; adIds: Set<string> }>();
+      selectedAds.forEach((ad) => {
+        if (!adsByCampaign.has(ad.campaignId)) {
+          adsByCampaign.set(ad.campaignId, {
+            campaignName: ad.campaignName,
+            adIds: new Set<string>(),
+          });
+        }
+        adsByCampaign.get(ad.campaignId)!.adIds.add(ad.id);
+      });
+
+      // Parallel concurrent fetching of leads for all unique campaigns
+      const fetchPromises = Array.from(adsByCampaign.entries()).map(async ([campaignId, info]) => {
+        const res = await fetch(`/api/leads?campaignId=${campaignId}&campaignName=${encodeURIComponent(info.campaignName)}`);
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || `Failed to fetch leads for campaign: ${info.campaignName}`);
+        }
+        const data = await res.json();
+        const rawLeads: Lead[] = data.data || [];
+
+        // Keep only leads matching our selected ads inside this campaign
+        return rawLeads.filter((lead) => lead.ad_id && info.adIds.has(lead.ad_id));
+      });
+
+      const results = await Promise.all(fetchPromises);
+      const allLeads: Lead[] = results.flat();
 
       // Filter leads by date and time
       const range = dateRange;
@@ -262,7 +277,7 @@ export default function Home() {
       const start = parseCampaignDateTime(range, "from");
       const end = parseCampaignDateTime(range, "to");
 
-      return filtered.filter((lead) => {
+      return allLeads.filter((lead) => {
         if (!lead.created_time) return true;
         const leadDate = new Date(lead.created_time);
 
@@ -306,8 +321,8 @@ export default function Home() {
   };
 
   // Export Raw CSV
-  const handleDownloadRaw = async (campaignId: string, campaignName: string, ad: AdDetail) => {
-    const leads = await fetchFilteredLeads(campaignId, campaignName, ad.id);
+  const handleDownloadRaw = async () => {
+    const leads = await fetchFilteredLeads();
     if (!leads) return;
 
     if (leads.length === 0) {
@@ -336,14 +351,19 @@ export default function Home() {
     });
 
     const csv = convertToCSV(headers, rows);
-    const safeName = ad.name.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+    const safeName = selectedAds.length === 1 ? selectedAds[0].name.replace(/[^a-z0-9]/gi, "_").toLowerCase() : "combined_ads";
     triggerDownload(csv, `leads_raw_${safeName}.csv`);
-    recordHistory(campaignName, ad.name, "Raw", leads.length, csv);
+
+    const uniqueCampaigns = Array.from(new Set(selectedAds.map(a => a.campaignName)));
+    const campaignDisplay = uniqueCampaigns.length === 1 ? uniqueCampaigns[0] : `Multiple (${uniqueCampaigns.length} campaigns)`;
+    const adDisplay = selectedAds.length === 1 ? selectedAds[0].name : `Combined (${selectedAds.length} ads)`;
+    recordHistory(campaignDisplay, adDisplay, "Raw", leads.length, csv);
+    setIsModalOpen(false);
   };
 
   // Export Sanitized CSV
-  const handleDownloadSanitized = async (campaignId: string, campaignName: string, ad: AdDetail) => {
-    const leads = await fetchFilteredLeads(campaignId, campaignName, ad.id);
+  const handleDownloadSanitized = async () => {
+    const leads = await fetchFilteredLeads();
     if (!leads) return;
 
     if (leads.length === 0) {
@@ -407,12 +427,12 @@ export default function Home() {
         nameVal,                 // Full Name
         phoneVal,                // Phone Number
         emailVal,                // Email
-        campaignId,              // Campaign ID
+        lead.campaign_id || "",  // Campaign ID
         lead.platform || "Meta", // Source
         cityVal,                 // City
         ...qValues,              // Q1 to Q10
         ...aValues,              // Answer 1 to Answer 10
-        lead.ad_name || ad.name || campaignName, // Coloumn 1
+        lead.ad_name || lead.campaign_name || "", // Coloumn 1
         "",                      // Coloumn 2
         "",                      // Coloumn 3
         "",                      // Coloumn 4
@@ -427,9 +447,14 @@ export default function Home() {
     });
 
     const csv = convertToCSV(headers, rows);
-    const safeName = ad.name.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+    const safeName = selectedAds.length === 1 ? selectedAds[0].name.replace(/[^a-z0-9]/gi, "_").toLowerCase() : "combined_ads";
     triggerDownload(csv, `leads_sanitized_${safeName}.csv`);
-    recordHistory(campaignName, ad.name, "Sanitized", leads.length, csv);
+
+    const uniqueCampaigns = Array.from(new Set(selectedAds.map(a => a.campaignName)));
+    const campaignDisplay = uniqueCampaigns.length === 1 ? uniqueCampaigns[0] : `Multiple (${uniqueCampaigns.length} campaigns)`;
+    const adDisplay = selectedAds.length === 1 ? selectedAds[0].name : `Combined (${selectedAds.length} ads)`;
+    recordHistory(campaignDisplay, adDisplay, "Sanitized", leads.length, csv);
+    setIsModalOpen(false);
   };
 
   const flattenedAds: FlattenedAd[] = campaigns.flatMap((campaign) =>
@@ -439,15 +464,6 @@ export default function Home() {
       campaignName: campaign.name,
     }))
   );
-
-  const selectedCampaign = campaigns.find(c => c.id === selectedCampaignId);
-  const selectedAd = selectedCampaign?.ads.find(a => a.id === selectedAdId);
-
-  const openDownloadModal = (campaignId: string, adId: string) => {
-    setSelectedCampaignId(campaignId);
-    setSelectedAdId(adId);
-    setIsModalOpen(true);
-  };
 
   return (
     <div className="min-h-screen bg-[#ffffff] text-[#000000] flex flex-col font-sans selection:bg-[#1877f2] selection:text-[#ffffff]">
@@ -524,9 +540,19 @@ export default function Home() {
         <div className="border border-[#000000] flex flex-col bg-[#ffffff]">
           <div className="bg-[#1877f2] p-3.5 border-b border-[#000000] flex items-center justify-between">
             <h2 className="text-[11px] font-black uppercase tracking-wider text-white">Manage Campaigns, Ads & Download</h2>
-            <span className="text-[9px] font-mono bg-white text-black px-1.5 py-0.5 border border-black">
-              {flattenedAds.length} Active Ads
-            </span>
+            <div className="flex items-center gap-3">
+              {selectedAds.length > 0 && (
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="px-3 py-1 bg-black text-white hover:bg-white hover:text-black border border-white font-black text-[9px] uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  Export Selected Leads ({selectedAds.length})
+                </button>
+              )}
+              <span className="text-[9px] font-mono bg-white text-black px-1.5 py-0.5 border border-black">
+                {flattenedAds.length} Active Ads
+              </span>
+            </div>
           </div>
 
           <div className="overflow-auto max-h-[580px]">
@@ -543,9 +569,18 @@ export default function Home() {
                 <thead>
                   <tr className="border-b border-[#000000] bg-white text-black text-[10px] uppercase font-black">
                     <th className="p-3 w-12 text-center border-r border-[#000000]">
-                      <div className="h-4 w-4 border border-[#000000] mx-auto bg-white flex items-center justify-center">
-                        <div className="h-2 w-2 bg-[#1877f2]"></div>
-                      </div>
+                      <input
+                        type="checkbox"
+                        checked={flattenedAds.length > 0 && selectedAds.length === flattenedAds.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedAds(flattenedAds);
+                          } else {
+                            setSelectedAds([]);
+                          }
+                        }}
+                        className="h-4 w-4 border border-[#000000] accent-[#1877f2] cursor-pointer"
+                      />
                     </th>
                     <th className="p-3 w-16 text-center border-r border-[#000000]">Off/On</th>
                     <th className="p-3 border-r border-[#000000] w-1/3">Campaign</th>
@@ -556,7 +591,7 @@ export default function Home() {
                 </thead>
                 <tbody>
                   {flattenedAds.map((ad) => {
-                    const isSelected = selectedAdId === ad.id;
+                    const isSelected = selectedAds.some((a) => a.id === ad.id);
                     return (
                       <tr
                         key={ad.id}
@@ -567,9 +602,12 @@ export default function Home() {
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => {
-                              setSelectedCampaignId(ad.campaignId);
-                              setSelectedAdId(ad.id);
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedAds((prev) => [...prev, ad]);
+                              } else {
+                                setSelectedAds((prev) => prev.filter((a) => a.id !== ad.id));
+                              }
                             }}
                             className="h-4 w-4 border border-[#000000] accent-[#1877f2] cursor-pointer"
                           />
@@ -618,7 +656,10 @@ export default function Home() {
                         {/* Download Trigger Column */}
                         <td className="p-3 text-center">
                           <button
-                            onClick={() => openDownloadModal(ad.campaignId, ad.id)}
+                            onClick={() => {
+                              setSelectedAds([ad]);
+                              setIsModalOpen(true);
+                            }}
                             className="px-3 py-1 bg-[#1877f2] hover:bg-black text-white hover:border-black font-black border border-[#1877f2] rounded-none text-[10px] uppercase tracking-wider cursor-pointer"
                           >
                             Download
@@ -635,7 +676,7 @@ export default function Home() {
       </main>
 
       {/* Date/Time Selector Modal Overlay */}
-      {isModalOpen && selectedCampaign && selectedAd && (
+      {isModalOpen && selectedAds.length > 0 && (
         <div className="fixed inset-0 z-50 bg-[#000000]/60 flex items-center justify-center p-4">
           <div className="bg-[#ffffff] border-2 border-[#000000] max-w-md w-full flex flex-col">
             <div className="bg-[#1877f2] p-3 border-b border-[#000000] flex justify-between items-center">
@@ -651,8 +692,19 @@ export default function Home() {
             <div className="p-4 space-y-4">
               <div className="border border-[#000000] p-2 bg-[#ffffff] text-[11px] space-y-1">
                 <div className="font-bold text-black uppercase">Active Entity Context:</div>
-                <div className="text-[#1877f2] font-black break-all">CAMPAIGN: {selectedCampaign.name}</div>
-                <div className="text-black font-black break-all">AD: {selectedAd.name}</div>
+                {selectedAds.length === 1 ? (
+                  <>
+                    <div className="text-[#1877f2] font-black break-all">CAMPAIGN: {selectedAds[0].campaignName}</div>
+                    <div className="text-black font-black break-all font-mono text-[9px]">{selectedAds[0].name}</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-[#1877f2] font-black break-all">SELECTED ADS: {selectedAds.length} Ads</div>
+                    <div className="text-black font-black font-mono text-[9px] max-h-20 overflow-y-auto border border-black p-1.5 bg-white whitespace-pre">
+                      {selectedAds.map(a => `${a.campaignName} > ${a.name}`).join("\n")}
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Date/Time inputs */}
@@ -745,14 +797,14 @@ export default function Home() {
               {/* Action Buttons */}
               <div className="flex flex-col gap-2 pt-2">
                 <button
-                  onClick={() => handleDownloadRaw(selectedCampaignId, selectedCampaign.name, selectedAd)}
+                  onClick={handleDownloadRaw}
                   disabled={downloading}
                   className="w-full py-2 bg-black hover:bg-[#1877f2] text-white font-black border border-black text-xs uppercase tracking-wider transition-all disabled:opacity-40 cursor-pointer"
                 >
                   {downloading ? "Processing..." : "Download Raw CSV"}
                 </button>
                 <button
-                  onClick={() => handleDownloadSanitized(selectedCampaignId, selectedCampaign.name, selectedAd)}
+                  onClick={handleDownloadSanitized}
                   disabled={downloading}
                   className="w-full py-2 bg-[#1877f2] hover:bg-black text-white font-black border border-[#1877f2] text-xs uppercase tracking-wider transition-all disabled:opacity-40 cursor-pointer"
                 >
