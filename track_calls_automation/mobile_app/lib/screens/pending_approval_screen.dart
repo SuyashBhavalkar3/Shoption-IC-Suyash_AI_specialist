@@ -58,7 +58,7 @@ class PendingApprovalScreen extends StatelessWidget {
                 errorBuilder: (_, __, ___) => const Icon(
                   Icons.phone_callback_rounded,
                   size: 80,
-                  color: Color(0xFFFF6B00),
+                  color: Color(0xFF2F5C36),
                 ),
               ),
               const SizedBox(height: 40),
@@ -74,7 +74,7 @@ class PendingApprovalScreen extends StatelessWidget {
                     Icon(
                       Icons.hourglass_empty_rounded,
                       size: 48,
-                      color: Color(0xFFFF6B00),
+                      color: Color(0xFF2F5C36),
                     ),
                     SizedBox(height: 16),
                     Text(

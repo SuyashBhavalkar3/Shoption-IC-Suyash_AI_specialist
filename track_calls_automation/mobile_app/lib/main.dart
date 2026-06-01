@@ -75,7 +75,7 @@ class CallTrackerApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.white,
         colorScheme: const ColorScheme.light(
           primary: Color(0xFF111111),
-          secondary: Color(0xFFFF6B00),
+          secondary: Color(0xFF2F5C36),
           surface: Colors.white,
           background: Colors.white,
         ),
@@ -88,7 +88,7 @@ class CallTrackerApp extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
               body: Center(
-                child: CircularProgressIndicator(color: Color(0xFFFF6B00)),
+                child: CircularProgressIndicator(color: Color(0xFF2F5C36)),
               ),
             );
           }
@@ -159,7 +159,7 @@ class _RoleRouterWidgetState extends State<RoleRouterWidget> {
     if (_isLoading) {
       return const Scaffold(
         body: Center(
-          child: CircularProgressIndicator(color: Color(0xFFFF6B00)),
+          child: CircularProgressIndicator(color: Color(0xFF2F5C36)),
         ),
       );
     }
@@ -227,7 +227,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
       body: _screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        selectedItemColor: const Color(0xFFFF6B00),
+        selectedItemColor: const Color(0xFF2F5C36),
         unselectedItemColor: const Color(0xFF666666),
         backgroundColor: Colors.white,
         elevation: 8,

@@ -27,7 +27,7 @@ class ShoptionAppBar extends StatelessWidget implements PreferredSizeWidget {
             fit: BoxFit.contain,
             errorBuilder: (_, __, ___) => const Icon(
               Icons.phone_callback_rounded,
-              color: Color(0xFFFF6B00),
+              color: Color(0xFF2F5C36),
               size: 28,
             ),
           ),
@@ -55,7 +55,7 @@ class ShoptionAppBar extends StatelessWidget implements PreferredSizeWidget {
                   style: const TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFFFF6B00),
+                    color: Color(0xFF2F5C36),
                     letterSpacing: 0.5,
                   ),
                 ),

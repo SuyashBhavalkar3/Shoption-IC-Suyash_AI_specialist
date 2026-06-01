@@ -96,7 +96,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     errorBuilder: (_, __, ___) => const Icon(
                       Icons.phone_callback_rounded,
                       size: 60,
-                      color: Color(0xFFFF6B00),
+                      color: Color(0xFF2F5C36),
                     ),
                   ),
                 ),
@@ -159,7 +159,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 1.5),
+                      borderSide: const BorderSide(color: Color(0xFF2F5C36), width: 1.5),
                     ),
                   ),
                   validator: (val) {
@@ -190,7 +190,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 1.5),
+                      borderSide: const BorderSide(color: Color(0xFF2F5C36), width: 1.5),
                     ),
                   ),
                   validator: (val) {
@@ -220,7 +220,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 1.5),
+                      borderSide: const BorderSide(color: Color(0xFF2F5C36), width: 1.5),
                     ),
                   ),
                   items: _roles.map((r) {
@@ -260,7 +260,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 1.5),
+                      borderSide: const BorderSide(color: Color(0xFF2F5C36), width: 1.5),
                     ),
                   ),
                   validator: (val) {
@@ -311,7 +311,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       child: const Text(
                         'Sign In',
                         style: TextStyle(
-                          color: Color(0xFFFF6B00),
+                          color: Color(0xFF2F5C36),
                           fontWeight: FontWeight.bold,
                           decoration: TextDecoration.underline,
                         ),

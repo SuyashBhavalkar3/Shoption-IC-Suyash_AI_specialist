@@ -100,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     errorBuilder: (_, __, ___) => const Icon(
                       Icons.phone_callback_rounded,
                       size: 80,
-                      color: Color(0xFFFF6B00),
+                      color: Color(0xFF2F5C36),
                     ),
                   ),
                 ),
@@ -122,7 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFFFF6B00),
+                      color: Color(0xFF2F5C36),
                       letterSpacing: 0.8,
                     ),
                   ),
@@ -187,7 +187,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 1.5),
+                      borderSide: const BorderSide(color: Color(0xFF2F5C36), width: 1.5),
                     ),
                   ),
                   validator: (val) {
@@ -219,7 +219,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFFF6B00), width: 1.5),
+                      borderSide: const BorderSide(color: Color(0xFF2F5C36), width: 1.5),
                     ),
                   ),
                   validator: (val) {
@@ -269,7 +269,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: const Text(
                         'Register Now',
                         style: TextStyle(
-                          color: Color(0xFFFF6B00),
+                          color: Color(0xFF2F5C36),
                           fontWeight: FontWeight.bold,
                           decoration: TextDecoration.underline,
                         ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../widgets/shoption_app_bar.dart';
 
@@ -17,6 +18,49 @@ class _ReportsScreenState extends State<ReportsScreen> {
   String? _userRole;
   String? _selectedLeaderId;
   String? _selectedWarriorId;
+
+  String _formatDuration(num seconds) {
+    if (seconds == 0) return '0s';
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    final s = (seconds % 60).toInt();
+    
+    final List<String> parts = [];
+    if (h > 0) parts.add('${h}h');
+    if (m > 0) parts.add('${m}m');
+    if (s > 0 || parts.isEmpty) parts.add('${s}s');
+    return parts.join(' ');
+  }
+
+  Future<void> _exportReport(String type) async {
+    try {
+      final token = await ApiService.getToken();
+      if (token == null) {
+        throw Exception('Session token is missing');
+      }
+      
+      final leaderId = _selectedLeaderId ?? 'all';
+      final warriorId = _selectedWarriorId ?? 'all';
+      
+      final baseUrl = ApiService.baseUrl;
+      final exportUrl = Uri.parse(
+        '$baseUrl/calls/reports/export/$type?token=$token&leader_id=$leaderId&warrior_id=$warriorId'
+      );
+      
+      if (!await launchUrl(exportUrl, mode: LaunchMode.externalApplication)) {
+        throw Exception('Could not launch export URL');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: ${e.toString()}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -68,9 +112,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _fetchReports,
-        color: const Color(0xFFFF6B00),
+        color: const Color(0xFF2F5C36),
         child: _isLoading && _reportsData == null
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B00)))
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF2F5C36)))
             : _errorMessage != null
                 ? ListView(
                     padding: const EdgeInsets.all(24),
@@ -150,10 +194,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
     // Determine available warriors based on selected leader
     final List<dynamic> availableWarriorsForDropdown = (_selectedLeaderId == 'all' || _userRole == 'group_leader')
         ? allWarriors
-        : allWarriors.where((w) => w['manager_id']?.toString() == _selectedLeaderId).toList();
+        : allWarriors.where((w) {
+            final mId = w['manager_id']?.toString().toLowerCase();
+            return mId == _selectedLeaderId?.toLowerCase();
+          }).toList();
 
     // Reset selected warrior if it is not in the available warriors list
-    if (_selectedWarriorId != 'all' && !availableWarriorsForDropdown.any((w) => w['warrior_id']?.toString() == _selectedWarriorId)) {
+    if (_selectedWarriorId != 'all' && !availableWarriorsForDropdown.any((w) {
+      final wId = w['warrior_id']?.toString().toLowerCase();
+      return wId == _selectedWarriorId?.toLowerCase();
+    })) {
       _selectedWarriorId = 'all';
     }
 
@@ -161,11 +211,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
     List<dynamic> filteredWarriors = allWarriors;
     if (_userRole == 'admin' || _userRole == 'super_admin') {
       if (_selectedLeaderId != 'all' && _selectedLeaderId != null) {
-        filteredWarriors = filteredWarriors.where((w) => w['manager_id']?.toString() == _selectedLeaderId).toList();
+        filteredWarriors = filteredWarriors.where((w) {
+          final mId = w['manager_id']?.toString().toLowerCase();
+          return mId == _selectedLeaderId?.toLowerCase();
+        }).toList();
       }
     }
     if (_selectedWarriorId != 'all' && _selectedWarriorId != null) {
-      filteredWarriors = filteredWarriors.where((w) => w['warrior_id']?.toString() == _selectedWarriorId).toList();
+      filteredWarriors = filteredWarriors.where((w) {
+        final wId = w['warrior_id']?.toString().toLowerCase();
+        return wId == _selectedWarriorId?.toLowerCase();
+      }).toList();
     }
 
     // Compute dynamic aggregate stats
@@ -181,7 +237,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
       outgoingCallsCount += (w['outgoing_calls_count'] as num? ?? 0).toInt();
     }
 
-    double totalHours = totalSeconds / 3600.0;
 
     return ListView(
       padding: const EdgeInsets.all(16.0),
@@ -200,7 +255,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.filter_list, size: 16, color: Color(0xFFFF6B00)),
+                  const Icon(Icons.filter_list, size: 16, color: Color(0xFF2F5C36)),
                   const SizedBox(width: 6),
                   Text(
                     _userRole == 'group_leader' ? 'Filter Team' : 'Filter Leader & Team',
@@ -218,11 +273,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   value: _selectedLeaderId,
                   decoration: const InputDecoration(
                     labelText: 'Group Leader',
-                    labelStyle: TextStyle(color: Color(0xFFFF6B00), fontSize: 13, fontWeight: FontWeight.bold),
+                    labelStyle: TextStyle(color: Color(0xFF2F5C36), fontSize: 13, fontWeight: FontWeight.bold),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
                   ),
-                  icon: const Icon(Icons.arrow_drop_down, color: Color(0xFFFF6B00)),
+                  icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF2F5C36)),
                   items: [
                     const DropdownMenuItem(
                       value: 'all',
@@ -246,11 +301,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 value: _selectedWarriorId,
                 decoration: InputDecoration(
                   labelText: _userRole == 'group_leader' ? 'Select Warrior' : 'Warrior',
-                  labelStyle: const TextStyle(color: Color(0xFFFF6B00), fontSize: 13, fontWeight: FontWeight.bold),
+                  labelStyle: const TextStyle(color: Color(0xFF2F5C36), fontSize: 13, fontWeight: FontWeight.bold),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.zero,
                 ),
-                icon: const Icon(Icons.arrow_drop_down, color: Color(0xFFFF6B00)),
+                icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF2F5C36)),
                 items: [
                   const DropdownMenuItem(
                     value: 'all',
@@ -271,6 +326,48 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ),
         ),
 
+        // Export Buttons Row
+        Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _exportReport('csv'),
+                  icon: const Icon(Icons.download_rounded, size: 18, color: Colors.white),
+                  label: const Text('Export Excel', style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2F5C36),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _exportReport('pdf'),
+                  icon: const Icon(Icons.picture_as_pdf_rounded, size: 18, color: Color(0xFF2F5C36)),
+                  label: const Text('Export PDF', style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF2F5C36),
+                    side: const BorderSide(color: Color(0xFF2F5C36), width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
         // KPI Cards Row
         Row(
           children: [
@@ -279,14 +376,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 'Total Calls',
                 totalCalls.toString(),
                 Icons.phone_outlined,
-                const Color(0xFFFF6B00),
+                const Color(0xFF2F5C36),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _buildKpiCard(
-                'Total Hours',
-                totalHours.toStringAsFixed(1),
+                'Total Duration',
+                _formatDuration(totalSeconds),
                 Icons.hourglass_bottom_outlined,
                 const Color(0xFF111111),
               ),
@@ -337,7 +434,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           )
         else
           ...filteredWarriors.map((warrior) {
-            final wHours = warrior['total_calling_hours'] as num? ?? 0.0;
+
             return Card(
               color: const Color(0xFFF9F9F9),
               elevation: 0,
@@ -347,14 +444,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 side: const BorderSide(color: Color(0xFFEEEEEE)),
               ),
               child: ExpansionTile(
-                iconColor: const Color(0xFFFF6B00),
+                iconColor: const Color(0xFF2F5C36),
                 collapsedIconColor: const Color(0xFF111111),
                 title: Text(
                   warrior['full_name'],
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111111)),
                 ),
                 subtitle: Text(
-                  '${warrior['total_calls']} calls • ${wHours.toStringAsFixed(1)} hours' +
+                  '${warrior['total_calls']} calls • ${_formatDuration(warrior['total_calling_seconds'] as num? ?? 0)} attended' +
                       ((_userRole == 'admin' || _userRole == 'super_admin') && warrior['manager_name'] != null
                           ? ' • Leader: ${warrior['manager_name']}'
                           : ''),

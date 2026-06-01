@@ -151,7 +151,7 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
                           _handleApproval(user['id'], user['role'], selectedLeaderId);
                         },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF6B00),
+                    backgroundColor: const Color(0xFF2F5C36),
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: Colors.grey[300],
                   ),
@@ -175,9 +175,9 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _fetchData,
-        color: const Color(0xFFFF6B00),
+        color: const Color(0xFF2F5C36),
         child: _isLoading && _pendingUsers.isEmpty
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B00)))
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF2F5C36)))
             : _errorMessage != null
                 ? ListView(
                     padding: const EdgeInsets.all(24),
@@ -255,13 +255,13 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFFFF0E5),
+                                            color: const Color(0xFFEBF2EC),
                                             borderRadius: BorderRadius.circular(20),
                                           ),
                                           child: Text(
                                             user['role'].toString().toUpperCase(),
                                             style: const TextStyle(
-                                              color: Color(0xFFFF6B00),
+                                              color: Color(0xFF2F5C36),
                                               fontWeight: FontWeight.bold,
                                               fontSize: 10,
                                             ),

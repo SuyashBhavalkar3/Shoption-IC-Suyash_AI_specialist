@@ -23,6 +23,8 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   Database? database;
   String userName = 'Warrior';
   String userEmail = '';
+  String userId = '';
+
 
   @override
   void initState() {
@@ -40,6 +42,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
     setState(() {
       userName = prefs.getString('user_name') ?? 'Warrior';
       userEmail = prefs.getString('user_email') ?? '';
+      userId = prefs.getString('user_id') ?? '';
     });
   }
 
@@ -159,6 +162,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
 
       final mappedLogs = unsyncedLogs.map((log) {
         return {
+          'user_id': userId.isNotEmpty ? userId : null,
           'phone_number': log['phone_number'] ?? 'Unknown',
           'call_type': log['call_type'] ?? 'Unknown',
           'duration_seconds': log['duration_seconds'] ?? 0,
@@ -348,10 +352,10 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                   decoration: BoxDecoration(
-                    color: isTracking ? const Color(0xFFFFF0E5) : const Color(0xFFF9F9F9),
+                    color: isTracking ? const Color(0xFFEBF2EC) : const Color(0xFFF9F9F9),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: isTracking ? const Color(0xFFFF6B00).withOpacity(0.2) : const Color(0xFFEEEEEE),
+                      color: isTracking ? const Color(0xFF2F5C36).withOpacity(0.2) : const Color(0xFFEEEEEE),
                       width: 1.5,
                     ),
                   ),
@@ -360,7 +364,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: isTracking ? const Color(0xFFFF6B00) : const Color(0xFFE5E5E5),
+                          color: isTracking ? const Color(0xFF2F5C36) : const Color(0xFFE5E5E5),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
@@ -378,7 +382,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: isTracking ? const Color(0xFFFF6B00) : const Color(0xFF111111),
+                                color: isTracking ? const Color(0xFF2F5C36) : const Color(0xFF111111),
                               ),
                             ),
                             const SizedBox(height: 2),
@@ -391,7 +395,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                       ),
                       Switch.adaptive(
                         value: isTracking,
-                        activeColor: const Color(0xFFFF6B00),
+                        activeColor: const Color(0xFF2F5C36),
                         onChanged: (val) {
                           if (val) {
                             _startTracking();
@@ -430,7 +434,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                         'Unsynced',
                         unsyncedCalls.toString(),
                         Icons.sync_problem_outlined,
-                        unsyncedCalls > 0 ? const Color(0xFFFF6B00) : const Color(0xFF666666),
+                        unsyncedCalls > 0 ? const Color(0xFF2F5C36) : const Color(0xFF666666),
                       ),
                     ),
                   ],
@@ -457,7 +461,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                   )
                 : RefreshIndicator(
                     onRefresh: _syncCallLogs,
-                    color: const Color(0xFFFF6B00),
+                    color: const Color(0xFF2F5C36),
                     child: ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       itemCount: callLogs.length,
@@ -465,7 +469,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                         final log = callLogs[index];
                         final isIncoming = log['call_type'] == 'INCOMING';
                         final isSynced = log['is_synced'] == 1;
-
+ 
                         return Card(
                           color: const Color(0xFFF9F9F9),
                           elevation: 0,
@@ -508,7 +512,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                             ),
                             trailing: Icon(
                               isSynced ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
-                              color: isSynced ? Colors.green : const Color(0xFFFF6B00),
+                              color: isSynced ? Colors.green : const Color(0xFF2F5C36),
                               size: 20,
                             ),
                           ),
