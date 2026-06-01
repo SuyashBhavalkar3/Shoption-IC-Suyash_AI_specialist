@@ -69,8 +69,16 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   }
 
   Future<void> _requestPermissions() async {
-    await platform.invokeMethod<bool>('requestRequiredPermissions');
-    await Permission.notification.request();
+    try {
+      await platform.invokeMethod<bool>('requestRequiredPermissions');
+    } catch (e) {
+      debugPrint('MethodChannel requestRequiredPermissions is not supported on this platform: $e');
+    }
+    try {
+      await Permission.notification.request();
+    } catch (e) {
+      debugPrint('Permission handler is not supported on this platform: $e');
+    }
     if (mounted) {
       setState(() {});
     }
@@ -256,12 +264,16 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    });
   }
 
   Future<void> _handleLogout() async {
@@ -506,7 +518,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
           const SizedBox(height: 6),
           Text(
             value,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.black, color: Color(0xFF111111)),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF111111)),
           ),
         ],
       ),

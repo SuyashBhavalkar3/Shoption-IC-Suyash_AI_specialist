@@ -269,7 +269,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             value,
             style: const TextStyle(
               fontSize: 24,
-              fontWeight: FontWeight.black,
+              fontWeight: FontWeight.w900,
               color: Color(0xFF111111),
             ),
           ),
