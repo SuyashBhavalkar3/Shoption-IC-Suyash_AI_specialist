@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User
 from app.schemas import UserCreate, UserOut, Token, LoginRequest
-from app.auth import get_password_hash, verify_password, create_access_token
+from app.auth import get_password_hash, verify_password, create_access_token, get_current_user
 
 router = APIRouter(
     prefix="/auth",
@@ -83,3 +83,14 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
         data={"sub": str(user.id), "role": user.role}
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+def logout(current_user: User = Depends(get_current_user)):
+    """
+    Logout endpoint. JWT is stateless so the actual token invalidation happens
+    client-side (delete from SharedPreferences). This endpoint acts as a
+    server-side acknowledgment and can be extended to support a token blacklist
+    in the future.
+    """
+    return {"detail": f"User '{current_user.email}' logged out successfully."}

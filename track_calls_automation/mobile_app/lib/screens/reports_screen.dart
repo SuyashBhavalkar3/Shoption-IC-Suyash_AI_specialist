@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../widgets/shoption_app_bar.dart';
 
@@ -13,6 +14,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Map<String, dynamic>? _reportsData;
   bool _isLoading = true;
   String? _errorMessage;
+  String? _userRole;
+  String? _selectedLeaderId;
+  String? _selectedWarriorId;
 
   @override
   void initState() {
@@ -27,9 +31,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
     });
 
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final role = prefs.getString('user_role');
       final data = await ApiService.getReports();
       setState(() {
+        _userRole = role;
         _reportsData = data;
+        _selectedLeaderId ??= 'all';
+        _selectedWarriorId ??= 'all';
       });
     } catch (e) {
       setState(() {
@@ -46,9 +55,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: const ShoptionAppBar(
+      appBar: ShoptionAppBar(
         title: 'Team Analytics',
         subtitle: 'Call Performance Reports',
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            tooltip: 'Logout',
+            onPressed: _handleLogout,
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _fetchReports,
@@ -87,21 +103,181 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text('Logout', style: TextStyle(color: Color(0xFF111111))),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF666666))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await ApiService.logout();
+      Navigator.pushReplacementNamed(context, '/login');
+    }
+  }
+
   Widget _buildReportContent() {
-    final warriorsList = _reportsData!['warriors'] as List<dynamic>? ?? [];
-    final hours = _reportsData!['overall_total_calling_hours'] as num? ?? 0.0;
-    final avgSec = _reportsData!['overall_average_call_seconds'] as num? ?? 0.0;
+    final allWarriors = _reportsData!['warriors'] as List<dynamic>? ?? [];
+
+    // Extract unique managers/leaders
+    final Set<String> leaderIds = {};
+    final List<Map<String, String>> leadersList = [];
+    for (var w in allWarriors) {
+      final mId = w['manager_id'];
+      final mName = w['manager_name'];
+      if (mId != null && mName != null && !leaderIds.contains(mId.toString())) {
+        leaderIds.add(mId.toString());
+        leadersList.add({'id': mId.toString(), 'name': mName.toString()});
+      }
+    }
+
+    // Determine available warriors based on selected leader
+    final List<dynamic> availableWarriorsForDropdown = (_selectedLeaderId == 'all' || _userRole == 'group_leader')
+        ? allWarriors
+        : allWarriors.where((w) => w['manager_id']?.toString() == _selectedLeaderId).toList();
+
+    // Reset selected warrior if it is not in the available warriors list
+    if (_selectedWarriorId != 'all' && !availableWarriorsForDropdown.any((w) => w['warrior_id']?.toString() == _selectedWarriorId)) {
+      _selectedWarriorId = 'all';
+    }
+
+    // Filter warriors list for rendering and aggregate computation
+    List<dynamic> filteredWarriors = allWarriors;
+    if (_userRole == 'admin' || _userRole == 'super_admin') {
+      if (_selectedLeaderId != 'all' && _selectedLeaderId != null) {
+        filteredWarriors = filteredWarriors.where((w) => w['manager_id']?.toString() == _selectedLeaderId).toList();
+      }
+    }
+    if (_selectedWarriorId != 'all' && _selectedWarriorId != null) {
+      filteredWarriors = filteredWarriors.where((w) => w['warrior_id']?.toString() == _selectedWarriorId).toList();
+    }
+
+    // Compute dynamic aggregate stats
+    int totalCalls = 0;
+    num totalSeconds = 0;
+    int incomingCallsCount = 0;
+    int outgoingCallsCount = 0;
+
+    for (var w in filteredWarriors) {
+      totalCalls += (w['total_calls'] as num? ?? 0).toInt();
+      totalSeconds += (w['total_calling_seconds'] as num? ?? 0);
+      incomingCallsCount += (w['incoming_calls_count'] as num? ?? 0).toInt();
+      outgoingCallsCount += (w['outgoing_calls_count'] as num? ?? 0).toInt();
+    }
+
+    double totalHours = totalSeconds / 3600.0;
 
     return ListView(
       padding: const EdgeInsets.all(16.0),
       children: [
+        // Dropdown Filters Card
+        Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF9F9F9),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFEEEEEE)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.filter_list, size: 16, color: Color(0xFFFF6B00)),
+                  const SizedBox(width: 6),
+                  Text(
+                    _userRole == 'group_leader' ? 'Filter Team' : 'Filter Leader & Team',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF666666),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_userRole == 'admin' || _userRole == 'super_admin') ...[
+                DropdownButtonFormField<String>(
+                  value: _selectedLeaderId,
+                  decoration: const InputDecoration(
+                    labelText: 'Group Leader',
+                    labelStyle: TextStyle(color: Color(0xFFFF6B00), fontSize: 13, fontWeight: FontWeight.bold),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  icon: const Icon(Icons.arrow_drop_down, color: Color(0xFFFF6B00)),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'all',
+                      child: Text('All Leaders', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    ),
+                    ...leadersList.map((leader) => DropdownMenuItem(
+                          value: leader['id'],
+                          child: Text(leader['name']!, style: const TextStyle(fontSize: 14)),
+                        )),
+                  ],
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedLeaderId = val;
+                      _selectedWarriorId = 'all';
+                    });
+                  },
+                ),
+                const Divider(height: 1, color: Color(0xFFEEEEEE)),
+              ],
+              DropdownButtonFormField<String>(
+                value: _selectedWarriorId,
+                decoration: InputDecoration(
+                  labelText: _userRole == 'group_leader' ? 'Select Warrior' : 'Warrior',
+                  labelStyle: const TextStyle(color: Color(0xFFFF6B00), fontSize: 13, fontWeight: FontWeight.bold),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                icon: const Icon(Icons.arrow_drop_down, color: Color(0xFFFF6B00)),
+                items: [
+                  const DropdownMenuItem(
+                    value: 'all',
+                    child: Text('All Warriors', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  ),
+                  ...availableWarriorsForDropdown.map((w) => DropdownMenuItem(
+                        value: w['warrior_id'].toString(),
+                        child: Text(w['full_name'].toString(), style: const TextStyle(fontSize: 14)),
+                      )),
+                ],
+                onChanged: (val) {
+                  setState(() {
+                    _selectedWarriorId = val;
+                  });
+                },
+              ),
+            ],
+          ),
+        ),
+
         // KPI Cards Row
         Row(
           children: [
             Expanded(
               child: _buildKpiCard(
                 'Total Calls',
-                _reportsData!['overall_total_calls'].toString(),
+                totalCalls.toString(),
                 Icons.phone_outlined,
                 const Color(0xFFFF6B00),
               ),
@@ -110,7 +286,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             Expanded(
               child: _buildKpiCard(
                 'Total Hours',
-                hours.toStringAsFixed(1),
+                totalHours.toStringAsFixed(1),
                 Icons.hourglass_bottom_outlined,
                 const Color(0xFF111111),
               ),
@@ -123,7 +299,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             Expanded(
               child: _buildKpiCard(
                 'Incoming',
-                _reportsData!['overall_incoming_calls_count'].toString(),
+                incomingCallsCount.toString(),
                 Icons.call_received_outlined,
                 Colors.green,
               ),
@@ -132,7 +308,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             Expanded(
               child: _buildKpiCard(
                 'Outgoing',
-                _reportsData!['overall_outgoing_calls_count'].toString(),
+                outgoingCallsCount.toString(),
                 Icons.call_made_outlined,
                 Colors.blueAccent,
               ),
@@ -149,18 +325,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        if (warriorsList.isEmpty)
+        if (filteredWarriors.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 40.0),
             child: Center(
               child: Text(
-                'No warriors report to you currently.',
+                'No warriors matched this selection.',
                 style: TextStyle(color: Color(0xFF666666)),
               ),
             ),
           )
         else
-          ...warriorsList.map((warrior) {
+          ...filteredWarriors.map((warrior) {
             final wHours = warrior['total_calling_hours'] as num? ?? 0.0;
             return Card(
               color: const Color(0xFFF9F9F9),
@@ -178,7 +354,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111111)),
                 ),
                 subtitle: Text(
-                  '${warrior['total_calls']} calls • ${wHours.toStringAsFixed(1)} hours',
+                  '${warrior['total_calls']} calls • ${wHours.toStringAsFixed(1)} hours' +
+                      ((_userRole == 'admin' || _userRole == 'super_admin') && warrior['manager_name'] != null
+                          ? ' • Leader: ${warrior['manager_name']}'
+                          : ''),
                   style: const TextStyle(color: Color(0xFF666666), fontSize: 13),
                 ),
                 children: [

@@ -277,10 +277,38 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   }
 
   Future<void> _handleLogout() async {
-    await ApiService.clearSession();
+    final confirmed = await _confirmLogout();
+    if (!confirmed) return;
+    await ApiService.logout();
     if (mounted) {
       Navigator.pushReplacementNamed(context, '/login');
     }
+  }
+
+  Future<bool> _confirmLogout() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: Colors.white,
+            title: const Text('Logout', style: TextStyle(color: Color(0xFF111111))),
+            content: const Text('Are you sure you want to log out?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel', style: TextStyle(color: Color(0xFF666666))),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Logout'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   @override

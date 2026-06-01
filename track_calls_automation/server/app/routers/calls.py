@@ -19,7 +19,6 @@ def sync_call_logs(logs_in: List[CallLogCreate], db: Session = Depends(get_db), 
     for log_data in logs_in:
         # Check if user + system_call_id combination already exists to prevent duplicate syncs
         exists = db.query(CallLog).filter(
-            CallLog.user_id == current_user.id,
             CallLog.system_call_id == log_data.system_call_id
         ).first()
         
@@ -106,7 +105,9 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
                 total_calling_seconds=total_seconds,
                 total_calling_hours=round(total_hours, 2),
                 average_call_seconds=round(avg_seconds, 2),
-                calls=calls_details
+                calls=calls_details,
+                manager_id=warrior.manager_id,
+                manager_name=warrior.manager.full_name if warrior.manager else None
             )
         )
 

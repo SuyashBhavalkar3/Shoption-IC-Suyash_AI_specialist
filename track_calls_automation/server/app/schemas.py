@@ -122,6 +122,8 @@ class WarriorReport(BaseModel):
     total_calling_hours: float
     average_call_seconds: float
     calls: List[CallDetail]
+    manager_id: Optional[UUID] = None
+    manager_name: Optional[str] = None
 
 class LeaderReportResponse(BaseModel):
     leader_id: UUID

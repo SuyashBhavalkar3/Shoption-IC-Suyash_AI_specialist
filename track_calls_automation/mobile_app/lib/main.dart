@@ -192,6 +192,35 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
     const PendingUsersScreen(),
   ];
 
+  Future<void> _handleLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text('Logout', style: TextStyle(color: Color(0xFF111111))),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF666666))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await ApiService.clearSession();
+      Navigator.pushReplacementNamed(context, '/login');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -203,6 +232,11 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
         backgroundColor: Colors.white,
         elevation: 8,
         onTap: (index) {
+          if (index == 2) {
+            // Logout tab
+            _handleLogout();
+            return;
+          }
           setState(() {
             _currentIndex = index;
           });
@@ -217,6 +251,10 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
             icon: Icon(Icons.pending_actions_outlined),
             activeIcon: Icon(Icons.pending_actions),
             label: 'Approvals',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.logout, color: Colors.redAccent),
+            label: 'Logout',
           ),
         ],
       ),

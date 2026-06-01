@@ -190,4 +190,9 @@ class CallTrackingService : Service() {
     }
 
     override fun onBind(intent: Intent?) = null
+
+    override fun onDestroy() {
+        stopTracking()
+        super.onDestroy()
+    }
 }

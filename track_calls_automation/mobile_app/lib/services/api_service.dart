@@ -37,6 +37,19 @@ class ApiService {
     await prefs.remove('user_id');
   }
 
+  /// Calls POST /auth/logout then clears local session.
+  /// Safe to call even if server is unreachable — local session is always cleared.
+  static Future<void> logout() async {
+    try {
+      final url = Uri.parse('$baseUrl/auth/logout');
+      await http.post(url, headers: await _headers());
+    } catch (e) {
+      debugPrint('Server logout acknowledgment failed (ignored): $e');
+    } finally {
+      await clearSession();
+    }
+  }
+
   static Future<Map<String, String>> _headers() async {
     final headers = {
       'Content-Type': 'application/json',

@@ -35,6 +35,12 @@ class MainActivity: FlutterActivity() {
                         return@setMethodCallHandler
                     }
 
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean(KEY_TRACKING_ENABLED, true)
+                        .putLong("tracking_start_time", System.currentTimeMillis())
+                        .apply()
+
                     val intent = Intent(this, CallTrackingService::class.java)
                     intent.action = "START_TRACKING"
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -62,6 +68,9 @@ class MainActivity: FlutterActivity() {
                     }
                 }
                 "stopTracking" -> {
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit().putBoolean(KEY_TRACKING_ENABLED, false).apply()
+
                     val intent = Intent(this, CallTrackingService::class.java)
                     intent.action = "STOP_TRACKING"
                     stopService(intent)

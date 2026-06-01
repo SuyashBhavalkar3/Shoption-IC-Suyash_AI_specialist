@@ -13,6 +13,15 @@ object CallLogSync {
     private const val TAG = "CallLogSync"
 
     fun syncLatest(context: Context) {
+        val prefs = context.getSharedPreferences("call_tracker_prefs", Context.MODE_PRIVATE)
+        val isTrackingEnabled = prefs.getBoolean("tracking_enabled", false)
+        if (!isTrackingEnabled) {
+            Log.d(TAG, "tracking disabled; skipping call log sync")
+            return
+        }
+
+        val startTime = prefs.getLong("tracking_start_time", 0L)
+
         val hasPermission = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.READ_CALL_LOG
@@ -43,10 +52,13 @@ object CallLogSync {
             cursor.use {
                 while (it.moveToNext()) {
                     val systemId = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls._ID)).toString()
+                    val dateMillis = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DATE))
+                    if (dateMillis < startTime) {
+                        continue
+                    }
                     val number = it.getString(it.getColumnIndexOrThrow(CallLog.Calls.NUMBER)) ?: "Unknown"
                     val type = it.getInt(it.getColumnIndexOrThrow(CallLog.Calls.TYPE))
                     val callType = mapCallType(type) ?: continue
-                    val dateMillis = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DATE))
                     val duration = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DURATION)).toInt()
                     val timestamp = DateFormat.format("dd-MMM-yyyy HH:mm", Date(dateMillis)).toString()
 
