@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Fetch ads from Meta Graph API to filter by active delivery and learning stage
-  const url = `https://graph.facebook.com/v23.0/${adAccountId}/ads?fields=id,name,status,effective_status,adset{id,name,status,effective_status,learning_stage_info},campaign{id,name,status}&access_token=${token}&limit=500`;
+  // Fetch ads from Meta Graph API to filter by active delivery
+  const url = `https://graph.facebook.com/v23.0/${adAccountId}/ads?fields=id,name,status,effective_status,campaign{id,name,status,objective}&access_token=${token}&limit=500`;
 
   try {
     const res = await fetch(url, {
@@ -35,11 +35,28 @@ export async function GET(request: NextRequest) {
 
     for (const ad of ads) {
       const isAdActive = ad.effective_status === "ACTIVE";
-      const isLearning = ad.adset?.learning_stage_info?.status === "LEARNING";
 
-      if (isAdActive && !isLearning) {
+      if (isAdActive) {
         const campaign = ad.campaign;
         if (campaign) {
+          // 1. Ensure the campaign itself is active
+          if (campaign.status !== "ACTIVE") {
+            continue;
+          }
+
+          // 2. Ensure objective is lead generation (and not sales/conversions/landing page traffic)
+          const objective = campaign.objective;
+          const isLeadCampaign = objective === "OUTCOME_LEADS" || objective === "LEAD_GENERATION";
+          if (!isLeadCampaign) {
+            continue;
+          }
+
+          // 3. Exclude Auto Order campaigns by name filter as a safety fallback
+          const nameLower = campaign.name.toLowerCase();
+          if (nameLower.includes("auto_order") || nameLower.includes("auto order")) {
+            continue;
+          }
+
           if (!activeCampaignsMap.has(campaign.id)) {
             activeCampaignsMap.set(campaign.id, {
               id: campaign.id,

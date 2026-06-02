@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
     // 3. Retrieve leads from all associated lead forms
     let allLeads: any[] = [];
     for (const formId of Array.from(formIds)) {
-      let url = `https://graph.facebook.com/v23.0/${formId}/leads?fields=id,created_time,field_data,ad_id,ad_name,form_id,platform&access_token=${pageToken}&limit=250`;
+      let url = `https://graph.facebook.com/v23.0/${formId}/leads?fields=id,created_time,field_data,ad_id,ad_name,campaign_id,campaign_name,form_id,platform&access_token=${pageToken}&limit=250`;
       let hasNext = true;
       let pagesFetched = 0;
 
@@ -110,7 +110,12 @@ export async function GET(request: NextRequest) {
 
         const data = await res.json();
         if (data.data) {
-          allLeads = [...allLeads, ...data.data];
+          const leadsWithCampaign = data.data.map((lead: any) => ({
+            ...lead,
+            campaign_id: lead.campaign_id || campaignId,
+            campaign_name: lead.campaign_name || campaignName
+          }));
+          allLeads = [...allLeads, ...leadsWithCampaign];
         }
 
         if (data.paging?.next && data.data && data.data.length > 0) {
