@@ -304,7 +304,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
+                  backgroundColor: const Color(0xFF2F5C36),
                   foregroundColor: Colors.white,
                 ),
                 child: const Text('Logout'),
@@ -335,7 +335,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
         subtitle: 'Warrior Dashboard',
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            icon: const Icon(Icons.logout, color: Color(0xFF2F5C36)),
             onPressed: _handleLogout,
           ),
         ],

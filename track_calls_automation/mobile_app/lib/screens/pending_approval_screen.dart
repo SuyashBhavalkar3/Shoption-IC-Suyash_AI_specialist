@@ -118,11 +118,11 @@ class PendingApprovalScreen extends StatelessWidget {
               const Spacer(),
               TextButton.icon(
                 onPressed: () => _logout(context),
-                icon: const Icon(Icons.logout, color: Colors.redAccent),
+                icon: const Icon(Icons.logout, color: Color(0xFF2F5C36)),
                 label: const Text(
                   'Logout',
                   style: TextStyle(
-                    color: Colors.redAccent,
+                    color: Color(0xFF2F5C36),
                     fontWeight: FontWeight.bold,
                   ),
                 ),

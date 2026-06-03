@@ -207,7 +207,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
+              backgroundColor: const Color(0xFF2F5C36),
               foregroundColor: Colors.white,
             ),
             child: const Text('Logout'),
@@ -235,25 +235,25 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
           if (index == 2) {
             // Logout tab
             _handleLogout();
-            return;
+          } else {
+            setState(() {
+              _currentIndex = index;
+            });
           }
-          setState(() {
-            _currentIndex = index;
-          });
         },
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.analytics_outlined),
             activeIcon: Icon(Icons.analytics),
-            label: 'Analytics',
+            label: 'Reports',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.pending_actions_outlined),
-            activeIcon: Icon(Icons.pending_actions),
+            icon: Icon(Icons.people_outline),
+            activeIcon: Icon(Icons.people),
             label: 'Approvals',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.logout, color: Colors.redAccent),
+            icon: Icon(Icons.logout, color: Color(0xFF2F5C36)),
             label: 'Logout',
           ),
         ],
