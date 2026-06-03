@@ -18,6 +18,7 @@ class User(Base):
     # Approval flow: warrior registers → is_approved=False → admin approves + assigns → True
     is_approved  = Column(Boolean, nullable=False, server_default=text("false"))
     is_active    = Column(Boolean, nullable=False, server_default=text("true"))
+    is_tracking_enabled = Column(Boolean, nullable=False, server_default=text("true"), default=True)
     created_at   = Column(DateTime, server_default=text("now()"), nullable=False)
 
     # Self-referencing relationship

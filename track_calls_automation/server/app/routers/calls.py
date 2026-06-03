@@ -52,6 +52,11 @@ def sync_call_logs(logs_in: List[CallLogCreate], db: Session = Depends(get_db), 
             
     return created_logs
 
+@router.get("/", response_model=List[CallLogOut])
+def get_my_call_logs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Fetch all call logs belonging to the current logged-in user."""
+    return db.query(CallLog).filter(CallLog.user_id == current_user.id).order_by(CallLog.id.desc()).all()
+
 @router.get("/reports", response_model=LeaderReportResponse)
 def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # Determine which warriors to include based on user role
@@ -85,7 +90,7 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
         logs = db.query(CallLog).filter(CallLog.user_id == warrior.id).all()
         
         total_calls = len(logs)
-        incoming_count = sum(1 for l in logs if l.call_type.lower() == "incoming")
+        incoming_count = sum(1 for l in logs if l.call_type.lower() in ["incoming", "missed", "rejected", "blocked"])
         outgoing_count = sum(1 for l in logs if l.call_type.lower() == "outgoing")
         total_seconds = sum(l.duration_seconds for l in logs)
         
@@ -110,6 +115,7 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
             WarriorReport(
                 warrior_id=warrior.id,
                 full_name=warrior.full_name,
+                is_tracking_enabled=warrior.is_tracking_enabled,
                 total_calls=total_calls,
                 incoming_calls_count=incoming_count,
                 outgoing_calls_count=outgoing_count,
@@ -175,7 +181,7 @@ def export_reports_csv(
     
     writer.writerow([
         "Warrior Name", "Warrior Email", "Group Leader Name",
-        "Phone Number", "Call Type", "Duration (seconds)", "Timestamp"
+        "Phone Number", "Call Type", "Sub-Category", "Duration (seconds)", "Timestamp"
     ])
     
     for warrior in warriors:
@@ -185,13 +191,20 @@ def export_reports_csv(
         if not logs:
             writer.writerow([
                 warrior.full_name, warrior.email, manager_name,
-                "", "", "", ""
+                "", "", "", "", ""
             ])
         else:
             for log in logs:
+                raw_type = log.call_type.lower()
+                is_incoming = raw_type in ["incoming", "missed", "rejected", "blocked"]
+                if is_incoming:
+                    sub_cat = "Attended" if (raw_type == "incoming" and log.duration_seconds > 0) else "Missed"
+                else:
+                    sub_cat = "Connected" if (raw_type == "outgoing" and log.duration_seconds > 0) else "Dialed"
+                
                 writer.writerow([
                     warrior.full_name, warrior.email, manager_name,
-                    log.phone_number, log.call_type, log.duration_seconds, log.timestamp
+                    log.phone_number, log.call_type, sub_cat, log.duration_seconds, log.timestamp
                 ])
                 
     output.seek(0)
@@ -227,6 +240,10 @@ def export_reports_pdf(
     total_seconds = 0
     incoming_count = 0
     outgoing_count = 0
+    global_incoming_attended = 0
+    global_incoming_missed = 0
+    global_outgoing_connected = 0
+    global_outgoing_dialed = 0
     
     warrior_rows = []
     detailed_logs = []
@@ -234,8 +251,14 @@ def export_reports_pdf(
     for warrior in warriors:
         logs = db.query(CallLog).filter(CallLog.user_id == warrior.id).order_by(CallLog.timestamp.desc()).all()
         w_calls = len(logs)
-        w_incoming = sum(1 for l in logs if l.call_type.lower() == "incoming")
+        w_incoming = sum(1 for l in logs if l.call_type.lower() in ["incoming", "missed", "rejected", "blocked"])
+        w_incoming_attended = sum(1 for l in logs if l.call_type.lower() == "incoming" and l.duration_seconds > 0)
+        w_incoming_missed = w_incoming - w_incoming_attended
+        
         w_outgoing = sum(1 for l in logs if l.call_type.lower() == "outgoing")
+        w_outgoing_connected = sum(1 for l in logs if l.call_type.lower() == "outgoing" and l.duration_seconds > 0)
+        w_outgoing_dialed = w_outgoing - w_outgoing_connected
+        
         w_seconds = sum(l.duration_seconds for l in logs)
         w_hours = round(w_seconds / 3600.0, 2)
         w_avg = round(w_seconds / w_calls, 1) if w_calls > 0 else 0.0
@@ -245,6 +268,11 @@ def export_reports_pdf(
         incoming_count += w_incoming
         outgoing_count += w_outgoing
         
+        global_incoming_attended += w_incoming_attended
+        global_incoming_missed += w_incoming_missed
+        global_outgoing_connected += w_outgoing_connected
+        global_outgoing_dialed += w_outgoing_dialed
+        
         manager_name = warrior.manager.full_name if warrior.manager else "Unassigned"
         
         warrior_rows.append({
@@ -253,8 +281,8 @@ def export_reports_pdf(
             "leader": manager_name,
             "calls": w_calls,
             "hours": w_hours,
-            "incoming": w_incoming,
-            "outgoing": w_outgoing,
+            "incoming": f"{w_incoming} (Att: {w_incoming_attended}, Missed: {w_incoming_missed})",
+            "outgoing": f"{w_outgoing} (Conn: {w_outgoing_connected}, Dialed: {w_outgoing_dialed})",
             "avg": w_avg
         })
         
@@ -326,6 +354,12 @@ def export_reports_pdf(
                 font-size: 28px;
                 font-weight: 900;
                 color: #111111;
+            }}
+            .kpi-subtitle {{
+                font-size: 11px;
+                color: #666666;
+                margin-top: 4px;
+                font-weight: 500;
             }}
             h2 {{
                 font-size: 18px;
@@ -411,10 +445,12 @@ def export_reports_pdf(
             <div class="kpi-card">
                 <div class="kpi-title">INCOMING CALLS</div>
                 <div class="kpi-value">{incoming_count}</div>
+                <div class="kpi-subtitle">Attended: {global_incoming_attended} • Missed: {global_incoming_missed}</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-title">OUTGOING CALLS</div>
                 <div class="kpi-value">{outgoing_count}</div>
+                <div class="kpi-subtitle">Connected: {global_outgoing_connected} • Dialed: {global_outgoing_dialed}</div>
             </div>
         </div>
 
@@ -460,6 +496,7 @@ def export_reports_pdf(
                     <th>Group Leader</th>
                     <th>Phone Number</th>
                     <th>Call Type</th>
+                    <th>Sub-Category</th>
                     <th>Duration</th>
                     <th>Timestamp</th>
                 </tr>
@@ -468,13 +505,21 @@ def export_reports_pdf(
     """
     
     for l in detailed_logs:
-        badge_class = "badge-incoming" if l['type'].lower() == "incoming" else "badge-outgoing"
+        badge_class = "badge-incoming" if l['type'].lower() in ["incoming", "missed", "rejected", "blocked"] else "badge-outgoing"
+        raw_type = l['type'].lower()
+        is_incoming = raw_type in ["incoming", "missed", "rejected", "blocked"]
+        if is_incoming:
+            sub_cat = "Attended" if (raw_type == "incoming" and l['duration'] > 0) else "Missed"
+        else:
+            sub_cat = "Connected" if (raw_type == "outgoing" and l['duration'] > 0) else "Dialed"
+            
         html_content += f"""
                 <tr>
                     <td>{l['warrior']}</td>
                     <td>{l['leader']}</td>
                     <td><b>{l['phone']}</b></td>
                     <td><span class="badge {badge_class}">{l['type']}</span></td>
+                    <td>{sub_cat}</td>
                     <td>{l['duration']}s</td>
                     <td>{l['timestamp']}</td>
                 </tr>

@@ -20,7 +20,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   bool isTracking = false;
   bool isSyncing = false;
   List<Map<String, dynamic>> callLogs = [];
-  Database? database;
+  Database? database; 
   String userName = 'Warrior';
   String userEmail = '';
   String userId = '';
@@ -49,14 +49,48 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   Future<void> _bootstrap() async {
     await _initializeDatabase();
     await _loadCallLogs();
+    await _restoreFromBackend();
     await _syncCallLogs();
+    await _syncTrackingStatus();
+  }
+
+  Future<void> _restoreFromBackend() async {
+    if (database == null) return;
+    try {
+      final List<dynamic> serverLogs = await ApiService.getMyCallLogs();
+      debugPrint('📥 Received ${serverLogs.length} call logs from server for restore');
+      
+      await database!.transaction((txn) async {
+        for (final log in serverLogs) {
+          final entry = Map<String, dynamic>.from(log as Map);
+          final systemCallId = entry['system_call_id']?.toString();
+          if (systemCallId == null) continue;
+          
+          await txn.insert(
+            'call_logs',
+            {
+              'phone_number': entry['phone_number'] ?? 'Unknown',
+              'call_type': entry['call_type'] ?? 'Unknown',
+              'duration_seconds': entry['duration_seconds'] ?? 0,
+              'timestamp': entry['timestamp'] ?? 'Unknown',
+              'system_call_id': systemCallId,
+              'is_synced': 1, // Already synced
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+        }
+      });
+      await _loadCallLogs();
+    } catch (e) {
+      debugPrint('❌ Error restoring logs from backend: $e');
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _loadCallLogs().then((_) => _syncCallLogs());
-      _checkTrackingStatus();
+      _syncTrackingStatus();
     }
   }
 
@@ -230,6 +264,28 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
     } catch (_) {}
   }
 
+  Future<void> _syncTrackingStatus() async {
+    try {
+      final user = await ApiService.getMe();
+      final remoteTrackingEnabled = user['is_tracking_enabled'] as bool? ?? true;
+      final localStatus = await platform.invokeMethod<bool>('getTrackingStatus') ?? false;
+      
+      if (remoteTrackingEnabled && !localStatus) {
+        await _startTracking();
+      } else if (!remoteTrackingEnabled && localStatus) {
+        await _stopTracking();
+      } else {
+        if (mounted) {
+          setState(() {
+            isTracking = localStatus;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error syncing tracking status with server: $e');
+    }
+  }
+
   Future<void> _startTracking() async {
     try {
       final granted = await platform.invokeMethod<bool>('requestRequiredPermissions') ?? false;
@@ -322,11 +378,56 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
     super.dispose();
   }
 
+  String _formatDuration(num seconds) {
+    final int secs = seconds.toInt();
+    final int h = secs ~/ 3600;
+    final int m = (secs % 3600) ~/ 60;
+    final int s = secs % 60;
+    if (h > 0) {
+      return '${h}h ${m}m ${s}s';
+    } else if (m > 0) {
+      return '${m}m ${s}s';
+    }
+    return '${s}s';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final totalCalls = callLogs.length;
     final syncedCalls = callLogs.where((log) => log['is_synced'] == 1).length;
     final unsyncedCalls = callLogs.where((log) => log['is_synced'] != 1).length;
+
+    int totalIncoming = 0;
+    int attendedIncoming = 0;
+    int missedIncoming = 0;
+    int totalOutgoing = 0;
+    int connectedOutgoing = 0;
+    int dialedOutgoing = 0;
+    int totalIncomingSeconds = 0;
+    int totalOutgoingSeconds = 0;
+
+    for (final log in callLogs) {
+      final type = (log['call_type'] ?? '').toString().toLowerCase();
+      final duration = (log['duration_seconds'] as num? ?? 0).toInt();
+
+      if (type == 'incoming' || type == 'missed' || type == 'rejected' || type == 'blocked') {
+        totalIncoming++;
+        if (type == 'incoming' && duration > 0) {
+          attendedIncoming++;
+          totalIncomingSeconds += duration;
+        } else {
+          missedIncoming++;
+        }
+      } else if (type == 'outgoing') {
+        totalOutgoing++;
+        if (duration > 0) {
+          connectedOutgoing++;
+          totalOutgoingSeconds += duration;
+        } else {
+          dialedOutgoing++;
+        }
+      }
+    }
+    final totalDurationSeconds = totalIncomingSeconds + totalOutgoingSeconds;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -344,16 +445,16 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
         children: [
           // Header section
           Container(
-            padding: const EdgeInsets.all(20.0),
+            padding: const EdgeInsets.all(16.0),
             color: Colors.white,
             child: Column(
               children: [
                 // Call tracking status switch card
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: isTracking ? const Color(0xFFEBF2EC) : const Color(0xFFF9F9F9),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: isTracking ? const Color(0xFF2F5C36).withOpacity(0.2) : const Color(0xFFEEEEEE),
                       width: 1.5,
@@ -362,7 +463,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                   child: Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
                           color: isTracking ? const Color(0xFF2F5C36) : const Color(0xFFE5E5E5),
                           shape: BoxShape.circle,
@@ -370,9 +471,10 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                         child: Icon(
                           isTracking ? Icons.spatial_audio_off_rounded : Icons.spatial_audio_rounded,
                           color: Colors.white,
+                          size: 20,
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,15 +482,15 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                             Text(
                               isTracking ? 'Tracking Active' : 'Tracking Inactive',
                               style: TextStyle(
-                                fontSize: 16,
+                                fontSize: 15,
                                 fontWeight: FontWeight.bold,
                                 color: isTracking ? const Color(0xFF2F5C36) : const Color(0xFF111111),
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              isTracking ? 'Logging device call events...' : 'Start tracking to log calls.',
-                              style: const TextStyle(fontSize: 12, color: Color(0xFF666666)),
+                            const Text(
+                              'Managed by Group Leader',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666)),
                             ),
                           ],
                         ),
@@ -396,47 +498,124 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                       Switch.adaptive(
                         value: isTracking,
                         activeColor: const Color(0xFF2F5C36),
-                        onChanged: (val) {
-                          if (val) {
-                            _startTracking();
-                          } else {
-                            _stopTracking();
-                          }
-                        },
+                        onChanged: null,
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
-                // Analytics statistics widgets
+                const SizedBox(height: 16),
+                // Talk Time header card
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2F5C36).withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF2F5C36).withOpacity(0.15)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.timer_outlined, color: Color(0xFF2F5C36)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Total Talk Time (Incoming + Outgoing)',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666)),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _formatDuration(totalDurationSeconds),
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF111111)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Incoming and Outgoing breakdown row
                 Row(
                   children: [
                     Expanded(
-                      child: _buildStatWidget(
-                        'Total Logged',
-                        totalCalls.toString(),
-                        Icons.phone_iphone_rounded,
-                        const Color(0xFF111111),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9F9F9),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFEEEEEE)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.call_received_rounded, size: 16, color: Colors.green),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Incoming',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF111111)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Attended: $attendedIncoming', style: const TextStyle(fontSize: 12, color: Color(0xFF555555))),
+                            const SizedBox(height: 4),
+                            Text('Missed: $missedIncoming', style: const TextStyle(fontSize: 12, color: Color(0xFF555555))),
+                            const SizedBox(height: 6),
+                            Text('Duration: ${_formatDuration(totalIncomingSeconds)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666))),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: _buildStatWidget(
-                        'Synced',
-                        syncedCalls.toString(),
-                        Icons.cloud_done_outlined,
-                        Colors.green,
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9F9F9),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFEEEEEE)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.call_made_rounded, size: 16, color: Colors.blue),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Outgoing',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF111111)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Connected: $connectedOutgoing', style: const TextStyle(fontSize: 12, color: Color(0xFF555555))),
+                            const SizedBox(height: 4),
+                            Text('Dialed: $dialedOutgoing', style: const TextStyle(fontSize: 12, color: Color(0xFF555555))),
+                            const SizedBox(height: 6),
+                            Text('Duration: ${_formatDuration(totalOutgoingSeconds)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666))),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatWidget(
-                        'Unsynced',
-                        unsyncedCalls.toString(),
-                        Icons.sync_problem_outlined,
-                        unsyncedCalls > 0 ? const Color(0xFF2F5C36) : const Color(0xFF666666),
-                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Sync Status: $syncedCalls Synced • $unsyncedCalls Pending',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666)),
                     ),
+                    if (unsyncedCalls > 0)
+                      const Icon(Icons.sync_problem_outlined, size: 14, color: Color(0xFF2F5C36))
+                    else
+                      const Icon(Icons.check_circle_outline, size: 14, color: Colors.green),
                   ],
                 ),
               ],
@@ -467,9 +646,40 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                       itemCount: callLogs.length,
                       itemBuilder: (context, index) {
                         final log = callLogs[index];
-                        final isIncoming = log['call_type'] == 'INCOMING';
+                        final rawType = (log['call_type'] ?? '').toString().toLowerCase();
+                        final duration = (log['duration_seconds'] as num? ?? 0).toInt();
                         final isSynced = log['is_synced'] == 1;
- 
+
+                        bool isIncoming = rawType == 'incoming' || rawType == 'missed' || rawType == 'rejected' || rawType == 'blocked';
+                        bool isMissed = isIncoming && (rawType != 'incoming' || duration == 0);
+                        bool isDialed = !isIncoming && (rawType == 'outgoing' && duration == 0);
+
+                        String categoryLabel = '';
+                        Color categoryColor = Colors.grey;
+                        IconData iconData = Icons.call_end;
+
+                        if (isIncoming) {
+                          if (isMissed) {
+                            categoryLabel = 'Missed Call';
+                            categoryColor = Colors.redAccent;
+                            iconData = Icons.call_missed_rounded;
+                          } else {
+                            categoryLabel = 'Incoming (Attended)';
+                            categoryColor = Colors.green;
+                            iconData = Icons.call_received_rounded;
+                          }
+                        } else {
+                          if (isDialed) {
+                            categoryLabel = 'Dialed (Unconnected)';
+                            categoryColor = Colors.orange;
+                            iconData = Icons.call_missed_outgoing_rounded;
+                          } else {
+                            categoryLabel = 'Outgoing (Connected)';
+                            categoryColor = Colors.blue;
+                            iconData = Icons.call_made_rounded;
+                          }
+                        }
+
                         return Card(
                           color: const Color(0xFFF9F9F9),
                           elevation: 0,
@@ -482,12 +692,12 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                             leading: Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: isIncoming ? Colors.green.withOpacity(0.1) : Colors.blue.withOpacity(0.1),
+                                color: categoryColor.withOpacity(0.1),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
-                                isIncoming ? Icons.call_received_rounded : Icons.call_made_rounded,
-                                color: isIncoming ? Colors.green : Colors.blue,
+                                iconData,
+                                color: categoryColor,
                                 size: 18,
                               ),
                             ),
@@ -500,14 +710,20 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                               children: [
                                 const SizedBox(height: 4),
                                 Text(
-                                  log['timestamp'] ?? '',
+                                  isMissed 
+                                      ? 'Missed call from ${log['phone_number'] ?? ''} at ${log['timestamp'] ?? ''}'
+                                      : isDialed
+                                          ? 'Dialed ${log['phone_number'] ?? ''} at ${log['timestamp'] ?? ''}'
+                                          : 'Timestamp: ${log['timestamp'] ?? ''}',
                                   style: const TextStyle(fontSize: 11, color: Color(0xFF888888)),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Duration: ${log['duration_seconds']}s',
-                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666)),
-                                ),
+                                if (!isMissed && !isDialed) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Duration: ${_formatDuration(duration)}',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666)),
+                                  ),
+                                ],
                               ],
                             ),
                             trailing: Icon(
@@ -520,37 +736,6 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                       },
                     ),
                   ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatWidget(String label, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9F9F9),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEEEEEE)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF888888)),
-              ),
-              Icon(icon, size: 12, color: color),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF111111)),
           ),
         ],
       ),

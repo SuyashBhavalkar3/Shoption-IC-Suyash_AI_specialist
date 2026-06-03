@@ -229,12 +229,39 @@ class _ReportsScreenState extends State<ReportsScreen> {
     num totalSeconds = 0;
     int incomingCallsCount = 0;
     int outgoingCallsCount = 0;
+    int globalAttendedIncoming = 0;
+    int globalMissedIncoming = 0;
+    int globalConnectedOutgoing = 0;
+    int globalDialedOutgoing = 0;
+    int globalIncomingSeconds = 0;
+    int globalOutgoingSeconds = 0;
 
     for (var w in filteredWarriors) {
       totalCalls += (w['total_calls'] as num? ?? 0).toInt();
       totalSeconds += (w['total_calling_seconds'] as num? ?? 0);
       incomingCallsCount += (w['incoming_calls_count'] as num? ?? 0).toInt();
       outgoingCallsCount += (w['outgoing_calls_count'] as num? ?? 0).toInt();
+
+      final List<dynamic> calls = w['calls'] ?? [];
+      for (final call in calls) {
+        final type = call['call_type'].toString().toLowerCase();
+        final duration = (call['duration_seconds'] as num? ?? 0).toInt();
+        if (type == 'incoming' || type == 'missed' || type == 'rejected' || type == 'blocked') {
+          if (type == 'incoming' && duration > 0) {
+            globalAttendedIncoming++;
+            globalIncomingSeconds += duration;
+          } else {
+            globalMissedIncoming++;
+          }
+        } else if (type == 'outgoing') {
+          if (duration > 0) {
+            globalConnectedOutgoing++;
+            globalOutgoingSeconds += duration;
+          } else {
+            globalDialedOutgoing++;
+          }
+        }
+      }
     }
 
 
@@ -399,6 +426,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 incomingCallsCount.toString(),
                 Icons.call_received_outlined,
                 Colors.green,
+                subtitle: 'Attended: $globalAttendedIncoming  •  Missed: $globalMissedIncoming\nDuration: ${_formatDuration(globalIncomingSeconds)}',
               ),
             ),
             const SizedBox(width: 12),
@@ -408,6 +436,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 outgoingCallsCount.toString(),
                 Icons.call_made_outlined,
                 Colors.blueAccent,
+                subtitle: 'Connected: $globalConnectedOutgoing  •  Dialed: $globalDialedOutgoing\nDuration: ${_formatDuration(globalOutgoingSeconds)}',
               ),
             ),
           ],
@@ -467,15 +496,142 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Incoming: ${warrior['incoming_calls_count']}', style: const TextStyle(fontSize: 13)),
-                            Text('Outgoing: ${warrior['outgoing_calls_count']}', style: const TextStyle(fontSize: 13)),
-                            Text('Avg: ${(warrior['average_call_seconds'] as num? ?? 0).toStringAsFixed(0)}s', style: const TextStyle(fontSize: 13)),
+                            const Row(
+                              children: [
+                                Icon(Icons.spatial_audio_off_rounded, size: 16, color: Color(0xFF2F5C36)),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Warrior Call Tracking Status',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF111111)),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                Text(
+                                  (warrior['is_tracking_enabled'] as bool? ?? true) ? 'Enabled' : 'Disabled',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: (warrior['is_tracking_enabled'] as bool? ?? true) ? const Color(0xFF2F5C36) : Colors.redAccent,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Switch.adaptive(
+                                  value: warrior['is_tracking_enabled'] as bool? ?? true,
+                                  activeColor: const Color(0xFF2F5C36),
+                                  onChanged: (val) async {
+                                    try {
+                                      await ApiService.updateWarriorTracking(warrior['warrior_id'].toString(), val);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Updated call tracking for ${warrior['full_name']} to ${val ? "Enabled" : "Disabled"}.'),
+                                            behavior: SnackBarBehavior.floating,
+                                          ),
+                                        );
+                                      }
+                                      _fetchReports(); // Refresh the list
+                                    } catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Failed to update tracking: $e'),
+                                            backgroundColor: Colors.redAccent,
+                                            behavior: SnackBarBehavior.floating,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                         const SizedBox(height: 12),
+                        const Divider(height: 1, color: Color(0xFFEEEEEE)),
+                        const SizedBox(height: 12),
+                        (() {
+                          final List<dynamic> calls = warrior['calls'] ?? [];
+                          int attendedIncoming = 0;
+                          int missedIncoming = 0;
+                          int connectedOutgoing = 0;
+                          int dialedOutgoing = 0;
+                          int totalIncomingSecs = 0;
+                          int totalOutgoingSecs = 0;
+
+                          for (final call in calls) {
+                            final type = call['call_type'].toString().toLowerCase();
+                            final duration = (call['duration_seconds'] as num? ?? 0).toInt();
+
+                            if (type == 'incoming' || type == 'missed' || type == 'rejected' || type == 'blocked') {
+                              if (type == 'incoming' && duration > 0) {
+                                attendedIncoming++;
+                                totalIncomingSecs += duration;
+                              } else {
+                                missedIncoming++;
+                              }
+                            } else if (type == 'outgoing') {
+                              if (duration > 0) {
+                                connectedOutgoing++;
+                                totalOutgoingSecs += duration;
+                              } else {
+                                dialedOutgoing++;
+                              }
+                            }
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Incoming: ${warrior['incoming_calls_count']} calls',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF111111)),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text('• Attended: $attendedIncoming', style: const TextStyle(fontSize: 11, color: Color(0xFF666666))),
+                                        Text('• Missed: $missedIncoming', style: const TextStyle(fontSize: 11, color: Color(0xFF666666))),
+                                        Text('• Talk Time: ${_formatDuration(totalIncomingSecs)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666))),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Outgoing: ${warrior['outgoing_calls_count']} calls',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF111111)),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text('• Connected: $connectedOutgoing', style: const TextStyle(fontSize: 11, color: Color(0xFF666666))),
+                                        Text('• Dialed: $dialedOutgoing', style: const TextStyle(fontSize: 11, color: Color(0xFF666666))),
+                                        Text('• Talk Time: ${_formatDuration(totalOutgoingSecs)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666))),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Average Attended Call Duration: ${(warrior['average_call_seconds'] as num? ?? 0).toStringAsFixed(0)}s',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2F5C36)),
+                              ),
+                            ],
+                          );
+                        })(),
+                        const SizedBox(height: 12),
                         const Text(
                           'Recent Calls Log:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF111111)),
                         ),
                         const SizedBox(height: 8),
                         if ((warrior['calls'] as List).isEmpty)
@@ -485,27 +641,73 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             (warrior['calls'] as List).length > 5 ? 5 : (warrior['calls'] as List).length,
                             (index) {
                               final call = warrior['calls'][index];
-                              final isIncoming = call['call_type'].toString().toLowerCase() == 'incoming';
+                              final rawType = call['call_type'].toString().toLowerCase();
+                              final duration = (call['duration_seconds'] as num? ?? 0).toInt();
+
+                              bool isIncoming = rawType == 'incoming' || rawType == 'missed' || rawType == 'rejected' || rawType == 'blocked';
+                              bool isMissed = isIncoming && (rawType != 'incoming' || duration == 0);
+                              bool isDialed = !isIncoming && (rawType == 'outgoing' && duration == 0);
+
+                              String categoryText = '';
+                              Color categoryColor = Colors.grey;
+                              IconData iconData = Icons.call_end;
+
+                              if (isIncoming) {
+                                if (isMissed) {
+                                  categoryText = 'Missed call';
+                                  categoryColor = Colors.redAccent;
+                                  iconData = Icons.call_missed_rounded;
+                                } else {
+                                  categoryText = 'Incoming (Attended)';
+                                  categoryColor = Colors.green;
+                                  iconData = Icons.call_received_rounded;
+                                }
+                              } else {
+                                if (isDialed) {
+                                  categoryText = 'Dialed (Unconnected)';
+                                  categoryColor = Colors.orange;
+                                  iconData = Icons.call_missed_outgoing_rounded;
+                                } else {
+                                  categoryText = 'Outgoing (Connected)';
+                                  categoryColor = Colors.blue;
+                                  iconData = Icons.call_made_rounded;
+                                }
+                              }
+
                               return Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 4.0),
                                 child: Row(
                                   children: [
                                     Icon(
-                                      isIncoming ? Icons.call_received : Icons.call_made,
+                                      iconData,
                                       size: 14,
-                                      color: isIncoming ? Colors.green : Colors.blue,
+                                      color: categoryColor,
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
-                                      child: Text(
-                                        call['phone_number'],
-                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            call['phone_number'],
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                          ),
+                                          Text(
+                                            isMissed 
+                                                ? 'Missed call from ${call['phone_number']} at ${call['timestamp']}' 
+                                                : isDialed 
+                                                    ? 'Dialed ${call['phone_number']} at ${call['timestamp']}' 
+                                                    : '${categoryText} at ${call['timestamp']}',
+                                            style: const TextStyle(fontSize: 10, color: Colors.grey),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    Text(
-                                      '${call['duration_seconds']}s',
-                                      style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                    ),
+                                    if (!isMissed && !isDialed)
+                                      Text(
+                                        _formatDuration(duration),
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666)),
+                                      ),
                                   ],
                                 ),
                               );
@@ -522,7 +724,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _buildKpiCard(String label, String value, IconData icon, Color color) {
+  Widget _buildKpiCard(String label, String value, IconData icon, Color color, {String? subtitle}) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -544,11 +746,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
           Text(
             value,
             style: const TextStyle(
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: FontWeight.w900,
               color: Color(0xFF111111),
             ),
           ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 10, color: Color(0xFF666666), fontWeight: FontWeight.w500),
+            ),
+          ],
         ],
       ),
     );

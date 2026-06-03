@@ -38,6 +38,7 @@ class UserOut(UserBase):
     manager_id: Optional[UUID] = None
     is_approved: bool
     is_active: bool
+    is_tracking_enabled: bool
     created_at: datetime
 
     class Config:
@@ -50,6 +51,7 @@ class UserOutBasic(BaseModel):
     email: EmailStr
     role: str
     is_approved: bool
+    is_tracking_enabled: bool
 
     class Config:
         from_attributes = True
@@ -115,6 +117,7 @@ class CallDetail(BaseModel):
 class WarriorReport(BaseModel):
     warrior_id: UUID
     full_name: str
+    is_tracking_enabled: bool
     total_calls: int
     incoming_calls_count: int
     outgoing_calls_count: int

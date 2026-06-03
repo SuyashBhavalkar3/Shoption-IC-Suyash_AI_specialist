@@ -208,3 +208,38 @@ def deactivate_user(
     db.commit()
     db.refresh(target)
     return target
+
+
+@router.put("/{user_id}/tracking", response_model=UserOut)
+def update_user_tracking(
+    user_id: UUID,
+    enabled: bool,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Enable/disable call tracking for a warrior.
+    - Group Leaders can toggle tracking only for warriors reporting directly to them.
+    - Admins and Super Admins can toggle tracking for any warrior.
+    """
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        
+    # Check permissions
+    if current_user.role == "group_leader":
+        if target.manager_id != current_user.id or target.role != "warrior":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only toggle tracking for warriors reporting directly to you."
+            )
+    elif current_user.role not in ["admin", "super_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to toggle tracking status."
+        )
+        
+    target.is_tracking_enabled = enabled
+    db.commit()
+    db.refresh(target)
+    return target

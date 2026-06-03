@@ -162,6 +162,16 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> updateWarriorTracking(String userId, bool enabled) async {
+    final url = Uri.parse('$baseUrl/users/$userId/tracking?enabled=$enabled');
+    final response = await http.put(url, headers: await _headers());
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
   // ── Sync Calls ──
 
   static Future<List<dynamic>> syncCalls(List<Map<String, dynamic>> logs) async {
@@ -172,6 +182,16 @@ class ApiService {
       body: jsonEncode(logs),
     );
     if (response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
+  static Future<List<dynamic>> getMyCallLogs() async {
+    final url = Uri.parse('$baseUrl/calls/');
+    final response = await http.get(url, headers: await _headers());
+    if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
       throw Exception(_parseError(response.body));
