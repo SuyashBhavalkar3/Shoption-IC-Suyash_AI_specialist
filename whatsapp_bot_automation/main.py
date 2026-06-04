@@ -17,6 +17,10 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 API_VERSION = os.getenv("API_VERSION", "v25.0")
 
+# Groq API configuration
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+
 app = FastAPI(title="WhatsApp Bot Webhook")
 
 @app.get("/")
@@ -41,6 +45,47 @@ def verify_webhook(
     
     logger.warning("Webhook verification failed. Token mismatch.")
     raise HTTPException(status_code=403, detail="Verification token mismatch")
+
+async def generate_groq_response(user_message: str) -> str:
+    """
+    Calls Groq Chat Completions API to generate a dynamic message.
+    """
+    if not GROQ_API_KEY:
+        logger.warning("GROQ_API_KEY is not configured in .env. Falling back to default greeting.")
+        return "Hello! How can I assist you today?"
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful customer support assistant for Shoption, an e-commerce platform. Provide short, friendly, and helpful responses in the language of the user (e.g. English, Hindi, or Marathi)."
+            },
+            {
+                "role": "user",
+                "content": user_message
+            }
+        ],
+        "temperature": 0.7,
+        "max_tokens": 256
+    }
+
+    logger.info(f"Calling Groq API model {GROQ_MODEL} for query: '{user_message}'")
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=payload, timeout=15.0)
+            response.raise_for_status()
+            data = response.json()
+            reply = data["choices"][0]["message"]["content"]
+            return reply.strip()
+        except Exception as e:
+            logger.error(f"Error calling Groq API: {e}")
+            return "Namaste! I am having trouble connecting to my brain right now. How can I help you?"
 
 async def send_whatsapp_message(to_phone: str, text_body: str):
     """
@@ -111,12 +156,12 @@ async def receive_webhook(request: Request):
                             msg_body = message.get("text", {}).get("body", "").strip()
                             logger.info(f"Received text message: '{msg_body}'")
                             
-                            # Simple response routing:
-                            # If message is "hi" (case insensitive), reply with help message
-                            if msg_body.lower() == "hi":
-                                reply_text = "hello how can i assist you"
-                            else:
-                                reply_text = "hello how can i assist you"
+                            # Generate dynamic response using Groq LLM
+                            try:
+                                reply_text = await generate_groq_response(msg_body)
+                            except Exception as e:
+                                logger.error(f"Failed to generate Groq reply: {e}")
+                                reply_text = "Namaste! How can I help you today?"
                             
                             # Send reply asynchronously
                             try:
