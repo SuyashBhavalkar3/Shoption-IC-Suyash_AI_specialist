@@ -99,11 +99,12 @@ async def retrieve_context(query_vector: list, limit: int = 3) -> str:
         return ""
         
     try:
-        results = qdrant_client.search(
+        response = qdrant_client.query_points(
             collection_name=COLLECTION_NAME,
-            query_vector=query_vector,
+            query=query_vector,
             limit=limit
         )
+        results = response.points
         context_parts = []
         for res in results:
             content = res.payload.get("content", "")
