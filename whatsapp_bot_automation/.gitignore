@@ -9,6 +9,7 @@ logs/
 *.csv
 *.xlsx
 *.xls
+knowledge_base/
 web_app_automation/.next/
 web_app_automation/node_modules/
 web_app_automation/build/
