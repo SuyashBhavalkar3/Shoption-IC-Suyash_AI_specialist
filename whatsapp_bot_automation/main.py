@@ -19,7 +19,7 @@ API_VERSION = os.getenv("API_VERSION", "v25.0")
 
 # Groq API configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 app = FastAPI(title="WhatsApp Bot Webhook")
 
