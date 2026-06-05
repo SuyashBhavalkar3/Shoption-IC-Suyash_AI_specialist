@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request, Query, Response, HTTPException
 from fastapi.responses import PlainTextResponse
 import httpx
 from dotenv import load_dotenv
+from qdrant_client import QdrantClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -20,6 +21,21 @@ API_VERSION = os.getenv("API_VERSION", "v25.0")
 # Groq API configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+# OpenAI and Qdrant configuration
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+QDRANT_URL = os.getenv("QDRANT_URL")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+COLLECTION_NAME = "shoption_knowledge"
+
+# Initialize Qdrant Client
+qdrant_client = None
+if QDRANT_URL and QDRANT_API_KEY:
+    qdrant_client = QdrantClient(
+        url=QDRANT_URL,
+        api_key=QDRANT_API_KEY,
+        timeout=30.0
+    )
 
 app = FastAPI(title="WhatsApp Bot Webhook")
 
@@ -46,13 +62,83 @@ def verify_webhook(
     logger.warning("Webhook verification failed. Token mismatch.")
     raise HTTPException(status_code=403, detail="Verification token mismatch")
 
+async def get_openai_embedding(text: str) -> list:
+    """
+    Calls OpenAI API to generate a 1536-dimension embedding for text-embedding-3-small.
+    """
+    if not OPENAI_API_KEY:
+        logger.error("OPENAI_API_KEY is not configured!")
+        raise ValueError("OPENAI_API_KEY is missing")
+
+    url = "https://api.openai.com/v1/embeddings"
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "input": text,
+        "model": "text-embedding-3-small"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=payload, timeout=15.0)
+            response.raise_for_status()
+            data = response.json()
+            return data["data"][0]["embedding"]
+        except Exception as e:
+            logger.error(f"Error generating OpenAI embedding: {e}")
+            raise e
+
+async def retrieve_context(query_vector: list, limit: int = 3) -> str:
+    """
+    Queries Qdrant to find the top matching document chunks.
+    """
+    if not qdrant_client:
+        logger.warning("Qdrant client is not initialized.")
+        return ""
+        
+    try:
+        results = qdrant_client.search(
+            collection_name=COLLECTION_NAME,
+            query_vector=query_vector,
+            limit=limit
+        )
+        context_parts = []
+        for res in results:
+            content = res.payload.get("content", "")
+            source = res.payload.get("source", "Unknown source")
+            context_parts.append(f"[Source: {source}]\n{content}")
+        return "\n\n---\n\n".join(context_parts)
+    except Exception as e:
+        logger.error(f"Error searching Qdrant: {e}")
+        return ""
+
 async def generate_groq_response(user_message: str) -> str:
     """
-    Calls Groq Chat Completions API to generate a dynamic message.
+    Calls Groq Chat Completions API to generate a dynamic message using context retrieved from Qdrant.
     """
     if not GROQ_API_KEY:
         logger.warning("GROQ_API_KEY is not configured in .env. Falling back to default greeting.")
         return "Hello! How can I assist you today?"
+
+    # RAG: Retrieve context from Qdrant using OpenAI Embeddings
+    context = ""
+    try:
+        query_vector = await get_openai_embedding(user_message)
+        context = await retrieve_context(query_vector, limit=3)
+    except Exception as e:
+        logger.error(f"RAG retrieval failed: {e}. Proceeding without context.")
+
+    # System instruction enforces answering ONLY from the context
+    system_instruction = (
+        "You are a helpful customer support assistant for Shoption, an e-commerce platform. "
+        "You MUST answer the user's question ONLY using the factual context provided below. "
+        "Do NOT assume, hallucinate, or predict any details (such as prices, availability, specs, contact info) that are not explicitly stated in the context. "
+        "If the answer is not contained in the context, politely respond that you do not have that information. "
+        "Always respond in the language used by the user (English, Hindi, or Marathi).\n\n"
+        f"--- CONTEXT ---\n{context}\n--- END CONTEXT ---"
+    )
 
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -64,18 +150,18 @@ async def generate_groq_response(user_message: str) -> str:
         "messages": [
             {
                 "role": "system",
-                "content": "You are a helpful customer support assistant for Shoption, an e-commerce platform. Provide short, friendly, and helpful responses in the language of the user (e.g. English, Hindi, or Marathi)."
+                "content": system_instruction
             },
             {
                 "role": "user",
                 "content": user_message
             }
         ],
-        "temperature": 0.7,
-        "max_tokens": 256
+        "temperature": 0.0,  # Zero temperature for deterministic responses based ONLY on context
+        "max_tokens": 512
     }
 
-    logger.info(f"Calling Groq API model {GROQ_MODEL} for query: '{user_message}'")
+    logger.info(f"Calling Groq API model {GROQ_MODEL} for query: '{user_message}' with system instruction containing context.")
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(url, headers=headers, json=payload, timeout=15.0)
