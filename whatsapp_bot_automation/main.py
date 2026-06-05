@@ -127,7 +127,7 @@ async def generate_groq_response(user_message: str) -> str:
     context = ""
     try:
         query_vector = await get_openai_embedding(user_message)
-        context = await retrieve_context(query_vector, limit=3)
+        context = await retrieve_context(query_vector, limit=5)
     except Exception as e:
         logger.error(f"RAG retrieval failed: {e}. Proceeding without context.")
 
