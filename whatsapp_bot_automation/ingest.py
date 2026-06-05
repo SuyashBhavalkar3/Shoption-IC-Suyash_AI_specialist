@@ -92,24 +92,18 @@ def chunk_text(text: str, chunk_size: int = 800, chunk_overlap: int = 150) -> li
 
 def setup_collection():
     """
-    Creates the Qdrant collection if it doesn't exist.
+    Recreates the Qdrant collection to ensure a fresh index.
     """
     try:
-        collections = qdrant_client.get_collections().collections
-        exists = any(c.name == COLLECTION_NAME for c in collections)
-        
-        if not exists:
-            logger.info(f"Creating Qdrant collection: '{COLLECTION_NAME}'...")
-            qdrant_client.create_collection(
-                collection_name=COLLECTION_NAME,
-                vectors_config=models.VectorParams(
-                    size=1536,  # OpenAI text-embedding-3-small size
-                    distance=models.Distance.COSINE
-                )
+        logger.info(f"Recreating Qdrant collection: '{COLLECTION_NAME}'...")
+        qdrant_client.recreate_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=models.VectorParams(
+                size=1536,  # OpenAI text-embedding-3-small size
+                distance=models.Distance.COSINE
             )
-            logger.info("Collection created successfully.")
-        else:
-            logger.info(f"Qdrant collection '{COLLECTION_NAME}' already exists.")
+        )
+        logger.info("Collection recreated successfully.")
     except Exception as e:
         logger.error(f"Failed to set up Qdrant collection: {e}")
         raise e
@@ -138,10 +132,16 @@ def main():
         chunks = chunk_text(text)
         logger.info(f"Split {filename} into {len(chunks)} chunks.")
         
+        # Get the first line as the context title
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+        doc_title = lines[0] if lines else "Business Knowledge"
+        
         for i, chunk in enumerate(chunks):
             logger.info(f"Generating embedding for chunk {i+1}/{len(chunks)}...")
+            # Prepend context to the text
+            contextualized_text = f"Document: {doc_title}\n\n{chunk}"
             try:
-                embedding = get_openai_embedding(chunk)
+                embedding = get_openai_embedding(contextualized_text)
                 
                 # Create Qdrant Point
                 points.append(
@@ -149,7 +149,7 @@ def main():
                         id=point_id,
                         vector=embedding,
                         payload={
-                            "content": chunk,
+                            "content": contextualized_text,
                             "source": filename
                         }
                     )
