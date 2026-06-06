@@ -115,9 +115,12 @@ async def retrieve_context(query_vector: list, limit: int = 3) -> str:
         logger.error(f"Error searching Qdrant: {e}")
         return ""
 
+import json
+
 async def generate_groq_response(user_message: str) -> str:
     """
-    Calls Groq Chat Completions API to generate a dynamic message using context retrieved from Qdrant.
+    Calls Groq Chat Completions API with JSON mode.
+    Classifies intent (greeting, goodbye/thank you, catalog inquiry) and returns a clean, dynamic response.
     """
     if not GROQ_API_KEY:
         logger.warning("GROQ_API_KEY is not configured in .env. Falling back to default greeting.")
@@ -131,16 +134,22 @@ async def generate_groq_response(user_message: str) -> str:
     except Exception as e:
         logger.error(f"RAG retrieval failed: {e}. Proceeding without context.")
 
-    # System instruction enforces answering ONLY from the context
+    # System instruction enforces dynamic greetings/goodbyes and strictly constrained catalog retrieval
     system_instruction = (
         "You are a helpful customer support assistant for Shoption, an e-commerce platform. "
-        "You MUST answer the user's question ONLY using the factual context provided below. "
-        "Do NOT assume, hallucinate, or predict any details (such as prices, availability, specs, contact info) that are not explicitly stated in the context.\n\n"
-        "If the user asks something inappropriate, or if the answer is NOT explicitly contained in the context, you MUST respond exactly with the following fallback message in the user's language:\n"
-        "- For English: \"It seems like currently I am not able to answer your query. Please feel free to drop your query to our customer executives expert or give a missed call on 9890450985.\"\n"
-        "- For Hindi: \"ऐसा लगता है कि वर्तमान में मैं आपके प्रश्न का उत्तर देने में असमर्थ हूँ। कृपया हमारे ग्राहक कार्यकारी विशेषज्ञ को अपना प्रश्न भेजने में संकोच न करें या 9890450985 पर मिस्ड कॉल दें।\"\n"
-        "- For Marathi: \"असे दिसते आहे की सध्या मी तुमच्या प्रश्नाचे उत्तर देण्यास असमर्थ आहे. कृपया आमच्या ग्राहक सेवा तज्ज्ञांकडे तुमचा प्रश्न पाठवा किंवा 9890450985 वर मिस्ड कॉल द्या.\"\n\n"
-        "Always respond in the language used by the user (English, Hindi, or Marathi).\n\n"
+        "You MUST respond ONLY in a valid JSON object matching the following structure:\n"
+        "{\n"
+        "  \"intent\": \"greeting\" | \"goodbye\" | \"catalog_inquiry\" | \"out_of_scope\",\n"
+        "  \"found_in_context\": true if the catalog_inquiry was directly answered using ONLY the context, else false,\n"
+        "  \"answer\": \"your generated response (follow the rules below)\",\n"
+        "  \"language\": \"en\" (for English), \"hi\" (for Hindi), or \"mr\" (for Marathi) based on the query language\n"
+        "}\n\n"
+        "Rules for generating the \"answer\" field:\n"
+        "1. For \"greeting\": Generate a warm, friendly greeting in the query's language, welcoming the customer and asking how you can help them (e.g. asking about product specs or pricing).\n"
+        "2. For \"goodbye\": Generate a polite closing in the query's language (e.g., wishing them a good day, saying 'I hope I was able to solve your issue. If you still have questions or the problem persists, feel free to request a callback service or drop a query here').\n"
+        "3. For \"catalog_inquiry\": Answer the question factually using ONLY the context provided below. Set found_in_context to true. Do NOT assume, hallucinate, or predict any details (such as prices, availability, specs, contact info) that are not explicitly stated in the context.\n"
+        "4. For \"out_of_scope\" (or if catalog_inquiry is NOT found in the context): Set found_in_context to false and leave the answer field empty. The system will automatically send the fallback customer executive message.\n"
+        "5. Always output ONLY the raw JSON object, no explanation or markdown formatting.\n\n"
         f"--- CONTEXT ---\n{context}\n--- END CONTEXT ---"
     )
 
@@ -151,6 +160,7 @@ async def generate_groq_response(user_message: str) -> str:
     }
     payload = {
         "model": GROQ_MODEL,
+        "response_format": {"type": "json_object"},
         "messages": [
             {
                 "role": "system",
@@ -161,21 +171,44 @@ async def generate_groq_response(user_message: str) -> str:
                 "content": user_message
             }
         ],
-        "temperature": 0.0,  # Zero temperature for deterministic responses based ONLY on context
+        "temperature": 0.0,
         "max_tokens": 512
     }
 
-    logger.info(f"Calling Groq API model {GROQ_MODEL} for query: '{user_message}' with system instruction containing context.")
+    logger.info(f"Calling Groq API in JSON Mode for query: '{user_message}'")
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(url, headers=headers, json=payload, timeout=15.0)
             response.raise_for_status()
             data = response.json()
-            reply = data["choices"][0]["message"]["content"]
-            return reply.strip()
+            raw_reply = data["choices"][0]["message"]["content"].strip()
+            
+            # Parse the JSON response from LLM
+            parsed = json.loads(raw_reply)
+            intent = parsed.get("intent", "out_of_scope")
+            found_in_context = parsed.get("found_in_context", False)
+            answer = parsed.get("answer", "").strip()
+            lang = parsed.get("language", "en")
+
+            # Handle greeting / goodbye directly using LLM's dynamic response
+            if intent in ["greeting", "goodbye"] and answer:
+                return answer
+
+            # Handle catalog inquiry answered correctly
+            if intent == "catalog_inquiry" and found_in_context and answer:
+                return answer
+
+            # Fallback message configurations based on detected language
+            if lang == "hi":
+                return "ऐसा लगता है कि वर्तमान में मैं आपके प्रश्न का उत्तर देने में असमर्थ हूँ। कृपया हमारे ग्राहक कार्यकारी विशेषज्ञ को अपना प्रश्न भेजने में संकोच न करें या 9890450985 पर मिस्ड कॉल दें।"
+            elif lang == "mr":
+                return "असे दिसते आहे की सध्या मी तुमच्या प्रश्नाचे उत्तर देण्यास असमर्थ आहे। कृपया आमच्या ग्राहक सेवा तज्ज्ञांकडे तुमचा प्रश्न पाठवा किंवा 9890450985 वर मिस्ड कॉल द्या।"
+            else:
+                return "It seems like currently I am not able to answer your query. Please feel free to drop your query to our customer executives expert or give a missed call on 9890450985."
+
         except Exception as e:
-            logger.error(f"Error calling Groq API: {e}")
-            return "Namaste! I am having trouble connecting to my brain right now. How can I help you?"
+            logger.error(f"Error calling or parsing Groq JSON reply: {e}")
+            return "It seems like currently I am not able to answer your query. Please feel free to drop your query to our customer executives expert or give a missed call on 9890450985."
 
 async def send_whatsapp_message(to_phone: str, text_body: str):
     """
