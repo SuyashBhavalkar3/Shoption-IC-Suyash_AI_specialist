@@ -213,6 +213,46 @@ async def send_whatsapp_message(to_phone: str, text_body: str):
             logger.error(f"Unexpected error while calling Meta API: {e}")
             raise
 
+async def send_whatsapp_template(to_phone: str, template_name: str, language_code: str = "en_US", components: list = None):
+    """
+    Sends a WhatsApp message using a pre-approved template.
+    """
+    url = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to_phone,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {
+                "code": language_code
+            }
+        }
+    }
+    if components:
+        payload["template"]["components"] = components
+
+    logger.info(f"Sending template message '{template_name}' to {to_phone}")
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=payload, timeout=10.0)
+            logger.info(f"Meta template response status code: {response.status_code}")
+            logger.info(f"Meta template response body: {response.text}")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error occurred while sending Meta template: {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error while sending Meta template: {e}")
+            raise
+
+
 @app.post("/webhook")
 async def receive_webhook(request: Request):
     """
