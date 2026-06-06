@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Laptop, ArrowRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useApp } from '@/lib/context/app-context';
+import { trackEvent } from '@/lib/analytics';
 
 function LoginFormContent() {
   const supabase = createClient();
@@ -26,7 +27,7 @@ function LoginFormContent() {
     setIsLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -36,6 +37,11 @@ function LoginFormContent() {
         showToast(error.message, 'error');
       } else {
         showToast('Logged in successfully!', 'success');
+        if (data?.user?.id) {
+          trackEvent('login', { user_id: data.user.id });
+        } else {
+          trackEvent('login');
+        }
         router.push(redirectTo);
         router.refresh();
       }

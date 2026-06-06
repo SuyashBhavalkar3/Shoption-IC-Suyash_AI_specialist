@@ -1,9 +1,52 @@
 import { Product, CartItem, Order, OrderItem } from './types';
 
+const API_KEY = process.env.NEXT_PUBLIC_ANALYTICS_API_KEY || "YOUR_API_KEY";
+
 /**
- * Analytics Tracking Interface
- * This is currently a mock placeholder module. Future analytics script tags or SaaS tracking SDKs (e.g. Google Analytics, Mixpanel, custom tracking scripts) can hook into these handlers.
+ * Sends tracking data to the external SaaS analytics service.
  */
+export async function trackEvent(eventName: string, properties: Record<string, any> = {}) {
+  let userId = 'guest_user';
+  try {
+    const { createClient } = require('./supabase/client');
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+      userId = session.user.id;
+    }
+  } catch (e) {
+    // Suppress session check error during static generation or server-side execution
+  }
+
+  // Allow passing custom or overriding user ID
+  if (properties.user_id) {
+    userId = properties.user_id;
+    delete properties.user_id;
+  }
+
+  try {
+    const response = await fetch(
+      "https://customer-funnel-production.up.railway.app/api/events/track",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          api_key: API_KEY,
+          user_id: userId,
+          event_name: eventName,
+          properties
+        })
+      }
+    );
+    if (!response.ok) {
+      console.warn(`SaaS Analytics event tracking failed with status ${response.status}`);
+    }
+  } catch (error) {
+    console.error("Error sending analytics event:", error);
+  }
+}
 
 export function trackProductView(product: Product) {
   console.group('📊 Analytics Event: Product View');
@@ -14,8 +57,12 @@ export function trackProductView(product: Product) {
   console.log('Full Product Object:', product);
   console.groupEnd();
   
-  // Future implementation, e.g.:
-  // window.analytics?.track('Product Viewed', { id: product.id, name: product.name, ... });
+  trackEvent("product_view", {
+    product_id: product.id,
+    category: product.category,
+    product_name: product.name,
+    price: product.price
+  });
 }
 
 export function trackAddToCart(product: Product, quantity: number) {
@@ -27,8 +74,11 @@ export function trackAddToCart(product: Product, quantity: number) {
   console.log('Full Product Object:', product);
   console.groupEnd();
 
-  // Future implementation, e.g.:
-  // window.analytics?.track('Product Added', { id: product.id, name: product.name, quantity, ... });
+  trackEvent("add_to_cart", {
+    product_id: product.id,
+    price: product.price,
+    quantity: quantity
+  });
 }
 
 export function trackCheckoutStarted(cartItems: CartItem[]) {
@@ -38,8 +88,10 @@ export function trackCheckoutStarted(cartItems: CartItem[]) {
   console.log('Cart Details:', cartItems);
   console.groupEnd();
 
-  // Future implementation, e.g.:
-  // window.analytics?.track('Checkout Started', { items: cartItems });
+  trackEvent("checkout_started", {
+    cart_items_count: cartItems.length,
+    total_value: cartItems.reduce((acc, item) => acc + (item.product?.price || 0) * item.quantity, 0)
+  });
 }
 
 export function trackPurchase(order: Order, orderItems: OrderItem[]) {
@@ -55,6 +107,10 @@ export function trackPurchase(order: Order, orderItems: OrderItem[]) {
   console.log('Items purchased:', orderItems);
   console.groupEnd();
 
-  // Future implementation, e.g.:
-  // window.analytics?.track('Order Completed', { orderId: order.id, total: order.total_amount, ... });
+  trackEvent("purchase", {
+    order_id: order.id,
+    revenue: order.total_amount,
+    user_id: order.user_id // Pass explicitly so it updates tracking session correctly
+  });
 }
+
