@@ -270,17 +270,217 @@ async def send_whatsapp_template(to_phone: str, template_name: str, language_cod
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(url, headers=headers, json=payload, timeout=10.0)
-            logger.info(f"Meta template response status code: {response.status_code}")
-            logger.info(f"Meta template response body: {response.text}")
             response.raise_for_status()
             return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error occurred while sending Meta template: {e.response.text}")
-            raise
         except Exception as e:
-            logger.error(f"Unexpected error while sending Meta template: {e}")
+            logger.error(f"Error sending template: {e}")
             raise
 
+async def send_whatsapp_interactive_list(
+    to_phone: str, 
+    body_text: str, 
+    button_label: str, 
+    sections: list, 
+    header_text: str = None, 
+    footer_text: str = None
+):
+    """
+    Sends a WhatsApp Interactive List message.
+    """
+    url = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to_phone,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "body": {
+                "text": body_text
+            },
+            "action": {
+                "button": button_label,
+                "sections": sections
+            }
+        }
+    }
+    if header_text:
+        payload["interactive"]["header"] = {"type": "text", "text": header_text}
+    if footer_text:
+        payload["interactive"]["footer"] = {"text": footer_text}
+
+    logger.info(f"Sending interactive list to {to_phone}")
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=payload, timeout=10.0)
+            logger.info(f"Interactive list response: {response.text}")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error sending interactive list: {e}")
+            raise
+
+async def send_whatsapp_interactive_buttons(
+    to_phone: str, 
+    body_text: str, 
+    buttons: list, 
+    header_text: str = None, 
+    footer_text: str = None
+):
+    """
+    Sends a WhatsApp Interactive Button message (maximum of 3 buttons).
+    """
+    url = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    formatted_buttons = []
+    for btn in buttons:
+        formatted_buttons.append({
+            "type": "reply",
+            "reply": {
+                "id": btn["id"],
+                "title": btn["title"]
+            }
+        })
+        
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to_phone,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {
+                "text": body_text
+            },
+            "action": {
+                "buttons": formatted_buttons
+            }
+        }
+    }
+    if header_text:
+        payload["interactive"]["header"] = {"type": "text", "text": header_text}
+    if footer_text:
+        payload["interactive"]["footer"] = {"text": footer_text}
+
+    logger.info(f"Sending interactive buttons to {to_phone}")
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=payload, timeout=10.0)
+            logger.info(f"Interactive buttons response: {response.text}")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error sending interactive buttons: {e}")
+            raise
+
+# In-memory session store
+user_states = {}
+
+# Categories & Product Options Structure
+CATEGORIES_MAPPING = {
+    "cat_drones": {
+        "title": "Spraying Drones",
+        "description": "Select a drone model:",
+        "items": [
+            {"id": "prod_32164", "title": "AgriVeer Drone", "description": "GBRU Spraying Drone - AgriVeer"}
+        ]
+    },
+    "cat_sprayers": {
+        "title": "Power Sprayers",
+        "description": "Select a sprayer model:",
+        "items": [
+            {"id": "prod_32186", "title": "PowerMax 35 Premium", "description": "GBRU PowerMax 35 Premium, 25L"},
+            {"id": "prod_17427", "title": "Spray Pump 12x8 Single", "description": "Spray Pump 12x8 Single Motor, 16L"},
+            {"id": "prod_17415", "title": "Spray Pump 12x14 Double", "description": "Spray Pump 12x14 Double Motor, 20L"},
+            {"id": "prod_27675", "title": "Tufaan 12x14 Double", "description": "Tufaan 12x14 Spray Pump Double Motor"}
+        ]
+    },
+    "cat_weeders": {
+        "title": "Power Weeders",
+        "description": "Select a weeder model:",
+        "items": [
+            {"id": "prod_32177", "title": "9 HP Diesel Weeder", "description": "GBRU 9 HP Diesel Power Weeder"},
+            {"id": "prod_32166", "title": "EarthMax 63 Super Pro", "description": "GBRU EarthMax 63 Super Pro"}
+        ]
+    },
+    "cat_cameras": {
+        "title": "Security Cameras",
+        "description": "Select a camera model:",
+        "items": [
+            {"id": "prod_12983", "title": "4G Solar Camera", "description": "Smart Guard GBRU 4G Solar Camera"}
+        ]
+    },
+    "cat_tarpaulins": {
+        "title": "Tarpaulins & Rain Pipes",
+        "description": "Select a product:",
+        "items": [
+            {"id": "prod_27545", "title": "30x30 FT Tarpaulin", "description": "GBRU 30x30 FT Tarpaulin - 180 GSM"},
+            {"id": "prod_32081", "title": "50x50 FT Tarpaulin", "description": "GBRU 50x50 FT Tarpaulin - 180 GSM"},
+            {"id": "prod_32082", "title": "24x50 Mtr Tarpaulin", "description": "GBRU 24x50 Meter Tarpaulin - 180 GSM"},
+            {"id": "prod_27319", "title": "Rain Pipe 20 MM - 200M", "description": "GBRU rain pipe 20 MM - 200 MTR"},
+            {"id": "prod_27205", "title": "Rain Pipe 40 MM - 100M", "description": "GBRU rain pipe 40 MM - 100 MTR"},
+            {"id": "prod_27309", "title": "Rain Pipe 32 MM - 100M", "description": "GBRU rain pipe 32 MM - 100 MTR"}
+        ]
+    }
+}
+
+async def send_main_menu(to_phone: str):
+    """
+    Sends the primary menu list to the user.
+    """
+    body_text = (
+        "Hello! I hope you are doing fine.\n\n"
+        "We are GBRU under Shoption, and we are pioneers of the agritech industry.\n"
+        "Please select an option below to proceed:"
+    )
+    sections = [
+        {
+            "title": "Main Options",
+            "rows": [
+                {
+                    "id": "track_order",
+                    "title": "📦 Track Order",
+                    "description": "Check order delivery status"
+                },
+                {
+                    "id": "see_products",
+                    "title": "🚜 See Products & Prices",
+                    "description": "Browse agritech products"
+                },
+                {
+                    "id": "raise_query",
+                    "title": "❓ Raise Query",
+                    "description": "Ask catalog/support queries"
+                },
+                {
+                    "id": "rate_product",
+                    "title": "⭐ Rate Product",
+                    "description": "Rate our product and service"
+                },
+                {
+                    "id": "talk_customer_care",
+                    "title": "📞 Talk to Customer Care",
+                    "description": "Connect with an executive"
+                }
+            ]
+        }
+    ]
+    await send_whatsapp_interactive_list(
+        to_phone=to_phone,
+        body_text=body_text,
+        button_label="Select Option",
+        sections=sections,
+        header_text="GBRU Agritech",
+        footer_text="Powered by Shoption"
+    )
 
 @app.post("/webhook")
 async def receive_webhook(request: Request):
@@ -295,37 +495,254 @@ async def receive_webhook(request: Request):
         
     logger.info(f"Received webhook event payload: {body}")
     
-    # Process the webhook payload
-    # Check if this is a WhatsApp message event
     if "object" in body and body["object"] == "whatsapp_business_account":
         for entry in body.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
                 
-                # Check if it has actual messages (ignoring statuses like sent, delivered, read)
                 if "messages" in value:
                     for message in value["messages"]:
-                        # Extract message info
                         sender_phone = message.get("from")
                         msg_type = message.get("type")
                         
                         logger.info(f"Incoming message from {sender_phone} of type {msg_type}")
                         
+                        # Initialize user state if missing
+                        if sender_phone not in user_states:
+                            user_states[sender_phone] = {"state": "idle"}
+                        
+                        # 1. HANDLE TEXT MESSAGES
                         if msg_type == "text":
                             msg_body = message.get("text", {}).get("body", "").strip()
+                            cleaned_body = msg_body.lower().strip("?!. ")
                             logger.info(f"Received text message: '{msg_body}'")
                             
-                            # Generate dynamic response using Groq LLM
-                            try:
-                                reply_text = await generate_groq_response(msg_body)
-                            except Exception as e:
-                                logger.error(f"Failed to generate Groq reply: {e}")
-                                reply_text = "Namaste! How can I help you today?"
+                            # Check if greeting or menu request -> reset state & send Main Menu
+                            greetings = ["hi", "hello", "hey", "namaste", "pranam", "start", "menu", "नमस्कार", "हॅलो"]
+                            if cleaned_body in greetings:
+                                user_states[sender_phone] = {"state": "idle"}
+                                try:
+                                    await send_main_menu(sender_phone)
+                                except Exception as e:
+                                    logger.error(f"Failed to send main menu: {e}")
+                                continue
+
+                            current_state = user_states[sender_phone].get("state", "idle")
                             
-                            # Send reply asynchronously
-                            try:
-                                await send_whatsapp_message(sender_phone, reply_text)
-                            except Exception as e:
-                                logger.error(f"Failed to send response message: {e}")
+                            if current_state == "awaiting_order_id":
+                                # Process order tracking
+                                user_states[sender_phone]["state"] = "idle"
+                                reply = (
+                                    f"🔍 Checking order status for ID: *{msg_body}*...\n\n"
+                                    "Your order is currently packaging and will be dispatched soon via Shoption Logistics. "
+                                    "We will notify you with the tracking link."
+                                )
+                                try:
+                                    await send_whatsapp_interactive_buttons(
+                                        to_phone=sender_phone,
+                                        body_text=reply,
+                                        buttons=[{"id": "back_to_main", "title": "🔙 Main Menu"}]
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to send order tracking reply: {e}")
+                                    
+                            elif current_state == "awaiting_query":
+                                # Generate response via LLM RAG
+                                try:
+                                    reply_text = await generate_groq_response(msg_body)
+                                    await send_whatsapp_interactive_buttons(
+                                        to_phone=sender_phone,
+                                        body_text=reply_text,
+                                        buttons=[
+                                            {"id": "raise_query", "title": "❓ Ask Another"},
+                                            {"id": "back_to_main", "title": "🔙 Main Menu"}
+                                        ]
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to process custom query: {e}")
+                                    
+                            else:
+                                # Default: Treat as general query
+                                try:
+                                    reply_text = await generate_groq_response(msg_body)
+                                    await send_whatsapp_message(sender_phone, reply_text)
+                                except Exception as e:
+                                    logger.error(f"Failed to process catalog reply: {e}")
+
+                        # 2. HANDLE INTERACTIVE MESSAGES (LIST/BUTTON CLICKS)
+                        elif msg_type == "interactive":
+                            interactive = message.get("interactive", {})
+                            interactive_type = interactive.get("type")
+                            
+                            click_id = ""
+                            if interactive_type == "list_reply":
+                                click_id = interactive.get("list_reply", {}).get("id", "")
+                            elif interactive_type == "button_reply":
+                                click_id = interactive.get("button_reply", {}).get("id", "")
                                 
+                            logger.info(f"User clicked interactive item: '{click_id}'")
+                            
+                            if click_id == "back_to_main":
+                                user_states[sender_phone] = {"state": "idle"}
+                                try:
+                                    await send_main_menu(sender_phone)
+                                except Exception as e:
+                                    logger.error(f"Failed to send main menu: {e}")
+                                    
+                            elif click_id == "track_order":
+                                user_states[sender_phone]["state"] = "awaiting_order_id"
+                                try:
+                                    await send_whatsapp_message(
+                                        sender_phone, 
+                                        "📦 Please type your *Order ID* (for example: GBRU-5492) to track your delivery status."
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to ask for order ID: {e}")
+                                    
+                            elif click_id == "raise_query":
+                                user_states[sender_phone]["state"] = "awaiting_query"
+                                try:
+                                    await send_whatsapp_message(
+                                        sender_phone, 
+                                        "❓ Please type your question (e.g. 'what is the price of GBRU spraying drone?') and I will search our catalog."
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to ask for query: {e}")
+                                    
+                            elif click_id == "see_products":
+                                # Send Category sub-menu list
+                                sections = [
+                                    {
+                                        "title": "Select Category",
+                                        "rows": [
+                                            {"id": "cat_drones", "title": "🛸 Spraying Drones", "description": "Specs & details of agritech drones"},
+                                            {"id": "cat_sprayers", "title": "💧 Power Sprayers", "description": "Double motor spray pumps"},
+                                            {"id": "cat_weeders", "title": "🌾 Power Weeders", "description": "Diesel weeders & earth augers"},
+                                            {"id": "cat_cameras", "title": "📷 Security Cameras", "description": "Solar powered 4G cameras"},
+                                            {"id": "cat_tarpaulins", "title": "⛺ Tarpaulins & Pipes", "description": "Tarpaulins and rain pipes"},
+                                            {"id": "back_to_main", "title": "🔙 Back to Main Menu", "description": "Return to main menu options"}
+                                        ]
+                                    }
+                                ]
+                                try:
+                                    await send_whatsapp_interactive_list(
+                                        to_phone=sender_phone,
+                                        body_text="🚜 Please select a category to view GBRU products:",
+                                        button_label="Categories",
+                                        sections=sections,
+                                        header_text="GBRU Catalog"
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to send categories menu: {e}")
+                                    
+                            elif click_id.startswith("cat_"):
+                                # Send list of products in the selected category
+                                category_data = CATEGORIES_MAPPING.get(click_id)
+                                if category_data:
+                                    rows = []
+                                    for item in category_data["items"]:
+                                        rows.append({
+                                            "id": item["id"],
+                                            "title": item["title"],
+                                            "description": item["description"][:72]
+                                        })
+                                    rows.append({
+                                        "id": "see_products",
+                                        "title": "🔙 Back to Categories",
+                                        "description": "Go back to categories"
+                                    })
+                                    sections = [{"title": category_data["title"], "rows": rows}]
+                                    try:
+                                        await send_whatsapp_interactive_list(
+                                            to_phone=sender_phone,
+                                            body_text=category_data["description"],
+                                            button_label="View Products",
+                                            sections=sections,
+                                            header_text=category_data["title"]
+                                        )
+                                    except Exception as e:
+                                        logger.error(f"Failed to send products list: {e}")
+                                        
+                            elif click_id.startswith("prod_"):
+                                # Extract product ID/code
+                                code = click_id.replace("prod_", "")
+                                # Fetch specifications from RAG context
+                                try:
+                                    # Create query vector for product name/code
+                                    query_vector = await get_openai_embedding(f"item code {code}")
+                                    details_text = await retrieve_context(query_vector, limit=1)
+                                    
+                                    # Use Groq LLM to format it cleanly
+                                    formatted_reply = await generate_groq_response(f"Describe specifications, MRP, and prices of product {code} from this context: {details_text}")
+                                    
+                                    buttons = [
+                                        {"id": f"buy_now_{code}", "title": "🛍️ Buy Now"},
+                                        {"id": "see_products", "title": "🚜 Back to Catalog"},
+                                        {"id": "back_to_main", "title": "🔙 Main Menu"}
+                                    ]
+                                    await send_whatsapp_interactive_buttons(
+                                        to_phone=sender_phone,
+                                        body_text=formatted_reply,
+                                        buttons=buttons
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to format product detail: {e}")
+                                    
+                            elif click_id.startswith("buy_now_"):
+                                reply = (
+                                    "🛒 *How to Buy GBRU Products:*\n\n"
+                                    "1. **Full Pre-payment**: Pay now on Shoption to get free shipping and maximum savings.\n"
+                                    "2. **Cash on Delivery (COD)**: Pay the booking amount now, and the remainder upon delivery.\n\n"
+                                    "📞 To finalize booking, please give a missed call on *9890450985* or type your name here and we will call you back!"
+                                )
+                                try:
+                                    await send_whatsapp_interactive_buttons(
+                                        to_phone=sender_phone,
+                                        body_text=reply,
+                                        buttons=[{"id": "back_to_main", "title": "🔙 Main Menu"}]
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to send buy now reply: {e}")
+                                    
+                            elif click_id == "rate_product":
+                                try:
+                                    await send_whatsapp_interactive_buttons(
+                                        to_phone=sender_phone,
+                                        body_text="⭐ We value your business! Please rate our service and products:",
+                                        buttons=[
+                                            {"id": "rate_5", "title": "⭐⭐⭐⭐⭐ Outstanding"},
+                                            {"id": "rate_3", "title": "⭐⭐⭐ Satisfactory"},
+                                            {"id": "rate_1", "title": "⭐ Needs Improvement"}
+                                        ]
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to send rating buttons: {e}")
+                                    
+                            elif click_id in ["rate_5", "rate_3", "rate_1"]:
+                                text = "🙏 Thank you so much for your feedback! It helps us improve GBRU and Shoption for all farmers."
+                                try:
+                                    await send_whatsapp_interactive_buttons(
+                                        to_phone=sender_phone,
+                                        body_text=text,
+                                        buttons=[{"id": "back_to_main", "title": "🔙 Main Menu"}]
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to send rating thanks: {e}")
+                                    
+                            elif click_id == "talk_customer_care":
+                                text = (
+                                    "📞 *Talk to Customer Care:*\n\n"
+                                    "Our customer care executives are ready to assist you. You can:\n"
+                                    "- Give a missed call on *9890450985* to receive an automated callback.\n"
+                                    "- Drop your query here, and we will get back to you within 24 hours."
+                                )
+                                try:
+                                    await send_whatsapp_interactive_buttons(
+                                        to_phone=sender_phone,
+                                        body_text=text,
+                                        buttons=[{"id": "back_to_main", "title": "🔙 Main Menu"}]
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to send care details: {e}")
+                                    
     return {"status": "ok"}
