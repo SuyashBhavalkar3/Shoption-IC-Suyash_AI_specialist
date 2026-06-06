@@ -120,7 +120,8 @@ import json
 async def generate_groq_response(user_message: str) -> str:
     """
     Calls Groq Chat Completions API with JSON mode.
-    Classifies intent (greeting, goodbye/thank you, catalog inquiry) and returns a clean, dynamic response.
+    Classifies intent (greeting, goodbye, catalog_inquiry, complaint_feedback, out_of_scope)
+    and returns a warm, helpful, conversion-oriented response in the user's language.
     """
     if not GROQ_API_KEY:
         logger.warning("GROQ_API_KEY is not configured in .env. Falling back to default greeting.")
@@ -134,22 +135,24 @@ async def generate_groq_response(user_message: str) -> str:
     except Exception as e:
         logger.error(f"RAG retrieval failed: {e}. Proceeding without context.")
 
-    # System instruction enforces dynamic greetings/goodbyes and strictly constrained catalog retrieval
+    # System instruction enforces natural assistance while maintaining strict facts for catalog inquiries
     system_instruction = (
-        "You are a helpful customer support assistant for Shoption, an e-commerce platform. "
+        "You are a helpful customer support assistant for Shoption, an agricultural e-commerce platform. "
         "You MUST respond ONLY in a valid JSON object matching the following structure:\n"
         "{\n"
-        "  \"intent\": \"greeting\" | \"goodbye\" | \"catalog_inquiry\" | \"out_of_scope\",\n"
-        "  \"found_in_context\": true if the catalog_inquiry was directly answered using ONLY the context, else false,\n"
-        "  \"answer\": \"your generated response (follow the rules below)\",\n"
-        "  \"language\": \"en\" (for English), \"hi\" (for Hindi), or \"mr\" (for Marathi) based on the query language\n"
+        "  \"intent\": \"greeting\" | \"goodbye\" | \"catalog_inquiry\" | \"complaint_feedback\" | \"out_of_scope\",\n"
+        "  \"language\": \"en\" | \"hi\" | \"mr\",\n"
+        "  \"answer\": \"your generated response (follow the rules below)\"\n"
         "}\n\n"
-        "Rules for generating the \"answer\" field:\n"
-        "1. For \"greeting\": Generate a warm, friendly greeting in the query's language, welcoming the customer and asking how you can help them (e.g. asking about product specs or pricing).\n"
-        "2. For \"goodbye\": Generate a polite closing in the query's language (e.g., wishing them a good day, saying 'I hope I was able to solve your issue. If you still have questions or the problem persists, feel free to request a callback service or drop a query here').\n"
-        "3. For \"catalog_inquiry\": Answer the question factually using ONLY the context provided below. Set found_in_context to true. Do NOT assume, hallucinate, or predict any details (such as prices, availability, specs, contact info) that are not explicitly stated in the context.\n"
-        "4. For \"out_of_scope\" (or if catalog_inquiry is NOT found in the context): Set found_in_context to false and leave the answer field empty. The system will automatically send the fallback customer executive message.\n"
-        "5. Always output ONLY the raw JSON object, no explanation or markdown formatting.\n\n"
+        "Rules for generating the \"answer\" field in the detected \"language\":\n"
+        "1. For \"greeting\": Welcome the customer warmly (e.g. 'Hello, welcome to Shoption! How can I help you today? Are you looking for product specs, prices, or booking details?').\n"
+        "2. For \"goodbye\": Say goodbye politely (e.g. 'You're welcome! I hope I was able to help. If you still have questions, feel free to request a callback or give us a missed call on 9890450985. Have a great day!').\n"
+        "3. For \"complaint_feedback\": Apologize sincerely and show empathy (e.g. 'I am really sorry to hear about your bad experience. We apologize for the inconvenience caused. Let me arrange an immediate callback for you, or please give a missed call on 9890450985 to connect with our senior executives directly so we can resolve this right away.').\n"
+        "4. For \"catalog_inquiry\":\n"
+        "   - Check the context first. If the product/spec is explicitly in the context, answer the query factually using ONLY the context. Do NOT assume or make up any prices or features.\n"
+        "   - If the product/details are NOT in the context, do NOT say 'unable to answer'. Instead, say something like: 'I see you are asking about [Product/Topic]. Currently, I don't have the exact details or pricing for it in my active catalog. However, I would love to connect you with our sales expert! Feel free to drop your details here or give a missed call on 9890450985 so we can get back to you with the correct details.'\n"
+        "5. For \"out_of_scope\" (general chit-chat or unrelated topics): Politely guide them back to Shoption (e.g. 'I can help you with Shoption's agricultural equipment, catalog prices, or support. If you need any assistance, feel free to drop a message or give a missed call on 9890450985.').\n"
+        "6. Always output ONLY the raw JSON object, no explanation or markdown formatting.\n\n"
         f"--- CONTEXT ---\n{context}\n--- END CONTEXT ---"
     )
 
@@ -185,20 +188,13 @@ async def generate_groq_response(user_message: str) -> str:
             
             # Parse the JSON response from LLM
             parsed = json.loads(raw_reply)
-            intent = parsed.get("intent", "out_of_scope")
-            found_in_context = parsed.get("found_in_context", False)
             answer = parsed.get("answer", "").strip()
             lang = parsed.get("language", "en")
 
-            # Handle greeting / goodbye directly using LLM's dynamic response
-            if intent in ["greeting", "goodbye"] and answer:
+            if answer:
                 return answer
 
-            # Handle catalog inquiry answered correctly
-            if intent == "catalog_inquiry" and found_in_context and answer:
-                return answer
-
-            # Fallback message configurations based on detected language
+            # Ultimate fallback in case JSON answer is empty
             if lang == "hi":
                 return "ऐसा लगता है कि वर्तमान में मैं आपके प्रश्न का उत्तर देने में असमर्थ हूँ। कृपया हमारे ग्राहक कार्यकारी विशेषज्ञ को अपना प्रश्न भेजने में संकोच न करें या 9890450985 पर मिस्ड कॉल दें।"
             elif lang == "mr":
