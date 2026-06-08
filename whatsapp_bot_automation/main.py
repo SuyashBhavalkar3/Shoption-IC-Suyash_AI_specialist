@@ -117,7 +117,7 @@ async def retrieve_context(query_vector: list, limit: int = 3) -> str:
 
 import json
 
-async def generate_groq_response(user_message: str) -> str:
+async def generate_groq_response(user_message: str, context: str = None) -> str:
     """
     Calls Groq Chat Completions API with JSON mode.
     Classifies intent (greeting, goodbye, catalog_inquiry, complaint_feedback, out_of_scope)
@@ -127,13 +127,14 @@ async def generate_groq_response(user_message: str) -> str:
         logger.warning("GROQ_API_KEY is not configured in .env. Falling back to default greeting.")
         return "Hello! How can I assist you today?"
 
-    # RAG: Retrieve context from Qdrant using OpenAI Embeddings
-    context = ""
-    try:
-        query_vector = await get_openai_embedding(user_message)
-        context = await retrieve_context(query_vector, limit=7)
-    except Exception as e:
-        logger.error(f"RAG retrieval failed: {e}. Proceeding without context.")
+    # RAG: Retrieve context from Qdrant using OpenAI Embeddings only if not already provided
+    if not context:
+        context = ""
+        try:
+            query_vector = await get_openai_embedding(user_message)
+            context = await retrieve_context(query_vector, limit=7)
+        except Exception as e:
+            logger.error(f"RAG retrieval failed: {e}. Proceeding without context.")
 
     # System instruction enforces natural assistance while maintaining strict facts for catalog inquiries
     system_instruction = (
@@ -384,53 +385,205 @@ async def send_whatsapp_interactive_buttons(
 # In-memory session store
 user_states = {}
 
-# Categories & Product Options Structure
+# Categories & Product Options Structure (Grouped to stay within WhatsApp 10-row limit)
 CATEGORIES_MAPPING = {
-    "cat_drones": {
-        "title": "Spraying Drones",
+    "cat_group_cameras": {
+        "title": "📷 Cameras & Solar Traps",
+        "description": "Select a category:",
+        "has_subcategories": True,
+        "subcategories": {
+            "cat_camera": {
+                "title": "Security Cameras",
+                "items": [
+                    {"id": "prod_WH001", "title": "4G Solar Camera", "description": "Smart Guard GBRU 4G Solar Powered Security Camera | 360 degree view"}
+                ]
+            },
+            "cat_insecttrap": {
+                "title": "Solar Insect Traps",
+                "items": [
+                    {"id": "prod_24919", "title": "GBRU Solar Trap", "description": "GBRU Solar Trap for eco-friendly pest control"}
+                ]
+            }
+        }
+    },
+    "cat_drone": {
+        "title": "🛸 Spraying Drones",
         "description": "Select a drone model:",
+        "has_subcategories": False,
         "items": [
-            {"id": "prod_32164", "title": "AgriVeer Drone", "description": "GBRU Spraying Drone - AgriVeer"}
+            {"id": "prod_AgriVeer", "title": "AgriVeer Drone", "description": "GBRU Spraying Drone - AgriVeer"}
         ]
     },
-    "cat_sprayers": {
-        "title": "Power Sprayers",
-        "description": "Select a sprayer model:",
-        "items": [
-            {"id": "prod_32186", "title": "PowerMax 35 Premium", "description": "GBRU PowerMax 35 Premium, 25L"},
-            {"id": "prod_17427", "title": "Spray Pump 12x8 Single", "description": "Spray Pump 12x8 Single Motor, 16L"},
-            {"id": "prod_17415", "title": "Spray Pump 12x14 Double", "description": "Spray Pump 12x14 Double Motor, 20L"},
-            {"id": "prod_27675", "title": "Tufaan 12x14 Double", "description": "Tufaan 12x14 Spray Pump Double Motor"}
-        ]
+    "cat_group_weeders": {
+        "title": "🌾 Weeders & Earth Augers",
+        "description": "Select a subcategory:",
+        "has_subcategories": True,
+        "subcategories": {
+            "sub_weeder_diesel": {
+                "title": "Diesel Power Weeders",
+                "items": [
+                    {"id": "prod_Weeder_9HP", "title": "GBRU 9 HP Diesel Weeder", "description": "GBRU 9 HP Diesel Power Weeder Electric Start"}
+                ]
+            },
+            "sub_weeder_petrol": {
+                "title": "Petrol Weeders & Augers",
+                "items": [
+                    {"id": "prod_EarthMax63", "title": "EarthMax 63 Super Pro", "description": "GBRU EarthMax 63 Super Pro"}
+                ]
+            },
+            "sub_weeder_cutters": {
+                "title": "Brush Cutters & Rotavators",
+                "items": [
+                    {"id": "prod_BrushCutter", "title": "Brush Cutter 4-Stroke", "description": "BRUSH CUTTER 4 STROKE AGT-YT-BC-504 (Agrictools)"},
+                    {"id": "prod_Rotavator", "title": "6 FT Rotavator 42 Blade", "description": "6 FT ROTAVATOR 42 BLADE L TYPE FARM-PRO MAX"}
+                ]
+            }
+        }
     },
-    "cat_weeders": {
-        "title": "Power Weeders",
-        "description": "Select a weeder model:",
-        "items": [
-            {"id": "prod_32177", "title": "9 HP Diesel Weeder", "description": "GBRU 9 HP Diesel Power Weeder"},
-            {"id": "prod_32166", "title": "EarthMax 63 Super Pro", "description": "GBRU EarthMax 63 Super Pro"}
-        ]
+    "cat_group_sprayers": {
+        "title": "💦 Sprayers & Spray Pumps",
+        "description": "Select a subcategory:",
+        "has_subcategories": True,
+        "subcategories": {
+            "sub_spray_single": {
+                "title": "Single Motor Pumps",
+                "items": [
+                    {"id": "prod_17427", "title": "12x8 Single Motor 16L", "description": "Spray Pump 12x8 Single Motor, 16 Liter"}
+                ]
+            },
+            "sub_spray_double": {
+                "title": "Double Motor Pumps",
+                "items": [
+                    {"id": "prod_17415", "title": "12x14 Double Motor 20L", "description": "Spray Pump 12x14 Double Motor, 20 Liter"},
+                    {"id": "prod_Tufaan", "title": "Tufaan 12x14 Double Motor", "description": "Tufaan 12x14 Spray Pump Double Motor | 16 Liter"}
+                ]
+            },
+            "sub_spray_engine": {
+                "title": "Petrol Engine Sprayers",
+                "items": [
+                    {"id": "prod_CM001", "title": "PowerMax 35 Premium 25L", "description": "GBRU PowerMax 35 Premium, 25L"}
+                ]
+            }
+        }
     },
-    "cat_cameras": {
-        "title": "Security Cameras",
-        "description": "Select a camera model:",
-        "items": [
-            {"id": "prod_12983", "title": "4G Solar Camera", "description": "Smart Guard GBRU 4G Solar Camera"}
-        ]
+    "cat_group_water": {
+        "title": "🔌 Pumps & Cables",
+        "description": "Select a category:",
+        "has_subcategories": True,
+        "subcategories": {
+            "cat_waterpump": {
+                "title": "Water Pumps",
+                "items": [
+                    {"id": "prod_AquaForce", "title": "AquaForce 80CC Pro 1.5", "description": "GBRU AquaForce 80CC Pro 1.5 Pump"}
+                ]
+            },
+            "cat_cable": {
+                "title": "Submersible Cables",
+                "items": [
+                    {"id": "prod_Cable_Flat", "title": "Flat Submersible Cable", "description": "GBRU Flat Submersible Cable (Premium Quality)"}
+                ]
+            }
+        }
     },
-    "cat_tarpaulins": {
-        "title": "Tarpaulins & Rain Pipes",
-        "description": "Select a product:",
-        "items": [
-            {"id": "prod_27545", "title": "30x30 FT Tarpaulin", "description": "GBRU 30x30 FT Tarpaulin - 180 GSM"},
-            {"id": "prod_32081", "title": "50x50 FT Tarpaulin", "description": "GBRU 50x50 FT Tarpaulin - 180 GSM"},
-            {"id": "prod_32082", "title": "24x50 Mtr Tarpaulin", "description": "GBRU 24x50 Meter Tarpaulin - 180 GSM"},
-            {"id": "prod_27319", "title": "Rain Pipe 20 MM - 200M", "description": "GBRU rain pipe 20 MM - 200 MTR"},
-            {"id": "prod_27205", "title": "Rain Pipe 40 MM - 100M", "description": "GBRU rain pipe 40 MM - 100 MTR"},
-            {"id": "prod_27309", "title": "Rain Pipe 32 MM - 100M", "description": "GBRU rain pipe 32 MM - 100 MTR"}
-        ]
+    "cat_group_seeder": {
+        "title": "🌱 Seeders & Kolape",
+        "description": "Select a subcategory:",
+        "has_subcategories": True,
+        "subcategories": {
+            "sub_seeder_premium": {
+                "title": "Premium Seeders",
+                "items": [
+                    {"id": "prod_LS001", "title": "16 Teeth Seeder - Premium", "description": "16 Teeth Seeder - Premium"},
+                    {"id": "prod_17374", "title": "12 Teeth Seeder - Premium", "description": "12 Teeth Seeder - Premium"}
+                ]
+            },
+            "sub_seeder_fert": {
+                "title": "Seed & Fertilizer",
+                "items": [
+                    {"id": "prod_17375", "title": "Seed + Fertilizer Seeder", "description": "Seed + Fertilizer Seeder"}
+                ]
+            },
+            "sub_seeder_manual": {
+                "title": "Manual & Cycle Seeders",
+                "items": [
+                    {"id": "prod_27694", "title": "12 Teeth Seeder (No Hdl)", "description": "12 Teeth Seeder - (Without Handle & Roller)"},
+                    {"id": "prod_24529", "title": "Gbru Cycle Kolape", "description": "Gbru Cycle Kolape"}
+                ]
+            }
+        }
+    },
+    "cat_group_utility": {
+        "title": "⛺ Tarpaulins & Pipes",
+        "description": "Select a category:",
+        "has_subcategories": True,
+        "subcategories": {
+            "cat_tarpaulin": {
+                "title": "Tarpaulins",
+                "items": [
+                    {"id": "prod_27545", "title": "30x30 FT Tarpaulin", "description": "GBRU 30x30 FT Tarpaulin - 180 GSM, 15 kg"},
+                    {"id": "prod_32081", "title": "50x50 FT Tarpaulin", "description": "GBRU 50x50 FT Tarpaulin - 180 GSM, 42.5 kg"},
+                    {"id": "prod_32082", "title": "24x50 Mtr Tarpaulin", "description": "GBRU 24x50 Meter Tarpaulin - 180 GSM, 67 kg"},
+                    {"id": "prod_Tarpaulin_120GSM", "title": "12x18 120 GSM Tarpaulin", "description": "Size 12 x 18 120 GSM (FT) Tarpaulin (Weight 2.89 kg)"}
+                ]
+            },
+            "cat_rainpipe": {
+                "title": "Rain Pipes",
+                "items": [
+                    {"id": "prod_27319", "title": "Rain Pipe 20 MM - 200M", "description": "GBRU rain pipe 20 MM - 200 MTR (2.5 Kg) 250 Micron"},
+                    {"id": "prod_27309", "title": "Rain Pipe 32 MM - 100M", "description": "GBRU rain pipe 32 MM - 100 MTR (3.0 Kg)"},
+                    {"id": "prod_27205", "title": "Rain Pipe 40 MM - 100M", "description": "GBRU rain pipe 40 MM - 100 MTR (3.5 Kg)"}
+                ]
+            }
+        }
     }
 }
+
+def get_fallback_product_details(code: str) -> str:
+    """
+    Returns beautifully formatted, static product specifications.
+    """
+    FALLBACK = {
+        "WH001": "📷 *Smart Guard GBRU 4G Solar Powered Security Camera | 360 degree view*\n\n• *Brand*: GBRU\n• *Price*: ₹9,757.19\n• *MRP*: ₹17,999.00\n• *Details*: 360 degree rotation, Solar powered battery, 4G SIM support, Waterproof.",
+        "AgriVeer": "🛸 *GBRU Spraying Drone - AgriVeer*\n\n• *Brand*: GBRU\n• *Price*: ₹6,75,951.00\n• *MRP*: ₹9,01,268.00\n• *Details*: 10L capacity, automated flight routes, collision avoidance radar, high precision nozzles.",
+        "EarthMax63": "⚙️ *GBRU EarthMax 63 Super Pro*\n\n• *Brand*: GBRU\n• *Price*: ₹12,874.00\n• *MRP*: ₹22,000.00\n• *Details*: 63cc engine, heavy-duty gearbox, comfortable dual grips, perfect for plantation/tillage.",
+        "BrushCutter": "⚙️ *BRUSH CUTTER 4 STROKE AGT-YT-BC-504 (Agrictools)*\n\n• *Brand*: Agrictools\n• *Price*: ₹13,998.00\n• *MRP*: ₹24,500.00\n• *Details*: 4-Stroke petrol engine, low noise, high fuel efficiency, multi-blade attachments.",
+        "CM001": "⛽ *GBRU PowerMax 35 Premium, 25L*\n\n• *Brand*: GBRU\n• *Price*: ₹14,225.00\n• *MRP*: ₹26,689.00\n• *Details*: 25L tank capacity, 4-stroke engine, heavy duty brass pump, stainless steel lance.",
+        "Cable_Flat": "🔌 *GBRU Flat Submersible Cable*\n\n• *Brand*: GBRU\n• *Price*: ₹6,500.00\n• *MRP*: ₹12,000.00\n• *Details*: 3-core flat copper cable, double insulated, high water resistance, standard grade.",
+        "24919": "☀️ *GBRU Solar Trap*\n\n• *Brand*: GBRU\n• *Price*: ₹1,245.00\n• *MRP*: ₹2,500.00\n• *Details*: Solar-powered insect trap, automatic night sensor, durable plastic body, environment friendly.",
+        "Weeder_9HP": "🌾 *GBRU 9 HP Diesel Power Weeder 🔥 Electric Start*\n\n• *Brand*: GBRU\n• *Price*: ₹1,53,469.00\n• *MRP*: ₹2,47,212.00\n• *Details*: 9 HP heavy duty diesel engine, electric key start, adjustable rotary tines, multi-gear transmission.",
+        "Rotavator": "🌾 *6 FT ROTAVATOR 42 BLADE L TYPE FARM-PRO MAX*\n\n• *Brand*: GBRU\n• *Price*: ₹1,25,500.00\n• *MRP*: ₹1,80,000.00\n• *Details*: 6 FT width, 42 heavy duty L-type blades, robust gear drive, perfect tillage for medium to large fields.",
+        "27319": "🚿 *GBRU rain pipe 20 MM - 200 MTR*\n\n• *Brand*: GBRU\n• *Price*: ₹1,029.00\n• *MRP*: ₹3,062.00\n• *Details*: 20 MM diameter, 200 MTR length, 2.5 kg weight, 250 micron thickness, laser punched holes.",
+        "27309": "🚿 *GBRU rain pipe 32 MM - 100 MTR*\n\n• *Brand*: GBRU\n• *Price*: ₹960.00\n• *MRP*: ₹3,062.00\n• *Details*: 32 MM diameter, 100 MTR length, 3.0 kg weight, laser punched holes for uniform irrigation.",
+        "27205": "🚿 *GBRU rain pipe 40 MM - 100 MTR*\n\n• *Brand*: GBRU\n• *Price*: ₹1,029.00\n• *MRP*: ₹3,500.00\n• *Details*: 40 MM diameter, 100 MTR length, 3.5 kg weight, high durability, heavy-duty laser punching.",
+        "LS001": "🌱 *16 Teeth Seeder - Premium*\n\n• *Brand*: GBRU\n• *Price*: ₹9,948.00\n• *MRP*: ₹16,000.00\n• *Details*: 16 teeth adjustable spacing, handles seeds & fertilizers, lightweight metal frame with rollers.",
+        "17374": "🌱 *12 Teeth Seeder - Premium*\n\n• *Brand*: GBRU\n• *Price*: ₹8,660.00\n• *MRP*: ₹14,000.00\n• *Details*: 12 teeth spacing, easy manual push layout, transparent drum for seed level monitoring.",
+        "17375": "🌱 *Seed + Fertilizer Seeder*\n\n• *Brand*: GBRU\n• *Price*: ₹9,714.00\n• *MRP*: ₹15,500.00\n• *Details*: Dual box design for simultaneously planting seeds and applying fertilizers, adjustable feed rate.",
+        "27694": "🌱 *12 Teeth Seeder - (Without Handle & Roller)*\n\n• *Brand*: GBRU\n• *Price*: ₹8,192.00\n• *MRP*: ₹13,000.00\n• *Details*: 12 teeth seeder drum block assembly, replacement or custom frame attachment version.",
+        "24529": "🌱 *Gbru Cycle Kolape*\n\n• *Brand*: GBRU\n• *Price*: ₹1,930.00\n• *MRP*: ₹3,500.00\n• *Details*: Single wheel manual weeder/seeder attachment frame, lightweight and easy to push.",
+        "17427": "💦 *Spray Pump 12x8 Single Motor, 16 Liter*\n\n• *Brand*: GBRU\n• *Price*: ₹2,340.00\n• *MRP*: ₹4,101.00\n• *Details*: 12V 8Ah battery, single motor pump, 16L durable plastic tank, multiple spray nozzles.",
+        "17415": "💦 *Spray Pump 12x14 Double Motor, 20 Liter*\n\n• *Brand*: GBRU\n• *Price*: ₹3,569.00\n• *MRP*: ₹6,467.00\n• *Details*: 12V 14Ah heavy duty battery, dual motor system for maximum pressure, 20L tank capacity.",
+        "Tufaan": "💦 *Tufaan 12x14 Spray Pump Double Motor | 16 Liter*\n\n• *Brand*: GBRU\n• *Price*: ₹4,797.00\n• *MRP*: ₹8,708.00\n• *Details*: High pressure dual motor, 12V 14Ah battery, premium nozzles, heavy duty straps, 16L tank.",
+        "27545": "⛺ *GBRU 30x30 FT Tarpaulin - 180 GSM*\n\n• *Brand*: GBRU\n• *Price*: ₹4,435.00\n• *MRP*: ₹8,000.00\n• *Details*: 30x30 feet heavy-duty tarpaulin sheet, 180 GSM, aluminum eyelets, waterproof and UV resistant.",
+        "32081": "⛺ *GBRU 50x50 FT Tarpaulin - 180 GSM*\n\n• *Brand*: GBRU\n• *Price*: ₹12,567.00\n• *MRP*: ₹22,000.00\n• *Details*: Large 50x50 feet sheet, 42.5 kg weight, 180 GSM, maximum durability for harvest storage protection.",
+        "32082": "⛺ *GBRU 24x50 Meter Tarpaulin - 180 GSM*\n\n• *Brand*: GBRU\n• *Price*: ₹19,811.00\n• *MRP*: ₹35,000.00\n• *Details*: Ultra large 24x50 meter agricultural cover, 67 kg weight, 180 GSM, highly durable.",
+        "Tarpaulin_120GSM": "⛺ *Size 12 x 18 120 GSM (FT) Tarpaulin*\n\n• *Brand*: GBRU\n• *Price*: ₹855.00\n• *MRP*: ₹1,500.00\n• *Details*: 12x18 feet utility tarpaulin sheet, 120 GSM, 2.89 kg weight, general purpose farm shield.",
+        "AquaForce": "🔌 *GBRU AquaForce 80CC Pro 1.5 Pump*\n\n• *Brand*: GBRU\n• *Price*: ₹18,115.00\n• *MRP*: ₹28,000.00\n• *Details*: 80cc petrol engine water pump, 1.5 inch inlet/outlet, high discharge volume, easy pull start."
+    }
+    
+    # Try to load from knowledge_base directory first if it exists
+    try:
+        kb_dir = "knowledge_base"
+        if os.path.exists(kb_dir):
+            for filename in os.listdir(kb_dir):
+                if filename.endswith(".txt") and (code.lower() in filename.lower() or filename.lower().startswith(code.lower())):
+                    with open(os.path.join(kb_dir, filename), "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                        cleaned_lines = [l.strip() for l in lines if l.strip()]
+                        return "\n".join(cleaned_lines)
+    except Exception as e:
+        logger.error(f"Error loading from KB: {e}")
+        
+    return FALLBACK.get(code, f"Product {code} Details:\n\nFor specifications and prices, please request a callback.")
 
 async def send_main_menu(to_phone: str):
     """
@@ -547,9 +700,15 @@ async def receive_webhook(request: Request):
                                     logger.error(f"Failed to send order tracking reply: {e}")
                                     
                             elif current_state == "awaiting_query":
-                                # Generate response via LLM RAG
+                                # Fixed decision-tree response for query registration (removed LLM)
+                                user_states[sender_phone]["state"] = "idle"
+                                reply_text = (
+                                    f"❓ *Query Received:*\n\n"
+                                    f"Thank you for reaching out! We have registered your support query regarding: '{msg_body}'.\n\n"
+                                    "Our customer success team will review this and get back to you within 24 hours. "
+                                    "If you need immediate assistance, please give a missed call on *9890450985* to receive an automated callback."
+                                )
                                 try:
-                                    reply_text = await generate_groq_response(msg_body)
                                     await send_whatsapp_interactive_buttons(
                                         to_phone=sender_phone,
                                         body_text=reply_text,
@@ -562,12 +721,16 @@ async def receive_webhook(request: Request):
                                     logger.error(f"Failed to process custom query: {e}")
                                     
                             else:
-                                # Default: Treat as general query
+                                # Default chatbot guide (removed LLM fallback)
+                                reply_text = (
+                                    "Welcome to GBRU (powered by Shoption) 🌱\n\n"
+                                    "Please select an option from our interactive menu to explore products, track orders, or raise queries. "
+                                    "Type *menu* or *hi* at any time to open the main dashboard!"
+                                )
                                 try:
-                                    reply_text = await generate_groq_response(msg_body)
                                     await send_whatsapp_message(sender_phone, reply_text)
                                 except Exception as e:
-                                    logger.error(f"Failed to process catalog reply: {e}")
+                                    logger.error(f"Failed to send default guide message: {e}")
 
                         # 2. HANDLE INTERACTIVE MESSAGES (LIST/BUTTON CLICKS)
                         elif msg_type == "interactive":
@@ -604,23 +767,25 @@ async def receive_webhook(request: Request):
                                 try:
                                     await send_whatsapp_message(
                                         sender_phone, 
-                                        "❓ Please type your question (e.g. 'what is the price of GBRU spraying drone?') and I will search our catalog."
+                                        "❓ Please type your question (e.g. 'what is the delivery charge?') and our support team will address it."
                                     )
                                 except Exception as e:
                                     logger.error(f"Failed to ask for query: {e}")
                                     
                             elif click_id == "see_products":
-                                # Send Category sub-menu list
+                                # Main Category Groups list (fits within 10-row limit)
                                 sections = [
                                     {
                                         "title": "Select Category",
                                         "rows": [
-                                            {"id": "cat_drones", "title": "🛸 Spraying Drones", "description": "Specs & details of agritech drones"},
-                                            {"id": "cat_sprayers", "title": "💧 Power Sprayers", "description": "Double motor spray pumps"},
-                                            {"id": "cat_weeders", "title": "🌾 Power Weeders", "description": "Diesel weeders & earth augers"},
-                                            {"id": "cat_cameras", "title": "📷 Security Cameras", "description": "Solar powered 4G cameras"},
-                                            {"id": "cat_tarpaulins", "title": "⛺ Tarpaulins & Pipes", "description": "Tarpaulins and rain pipes"},
-                                            {"id": "back_to_main", "title": "🔙 Back to Main Menu", "description": "Return to main menu options"}
+                                            {"id": "cat_group_cameras", "title": "📷 Cameras & Solar Traps", "description": "Security cameras & insect traps"},
+                                            {"id": "cat_drone", "title": "🛸 Spraying Drones", "description": "High tech agricultural spraying drones"},
+                                            {"id": "cat_group_weeders", "title": "🌾 Weeders & Earth Augers", "description": "Petrol & diesel weeders, tillers, rotavators"},
+                                            {"id": "cat_group_sprayers", "title": "💦 Sprayers & Spray Pumps", "description": "Single/double motor battery & petrol pumps"},
+                                            {"id": "cat_group_water", "title": "🔌 Pumps & Cables", "description": "Water pumps & submersible cables"},
+                                            {"id": "cat_group_seeder", "title": "🌱 Seeders & Kolape", "description": "Premium manual seeders & cycle kolape"},
+                                            {"id": "cat_group_utility", "title": "⛺ Tarpaulins & Pipes", "description": "Waterproof tarpaulins & rain pipes"},
+                                            {"id": "back_to_main", "title": "🔙 Back to Main Menu", "description": "Return to main options"}
                                         ]
                                     }
                                 ]
@@ -635,58 +800,142 @@ async def receive_webhook(request: Request):
                                 except Exception as e:
                                     logger.error(f"Failed to send categories menu: {e}")
                                     
-                            elif click_id.startswith("cat_"):
-                                # Send list of products in the selected category
-                                category_data = CATEGORIES_MAPPING.get(click_id)
-                                if category_data:
+                            elif click_id.startswith("cat_group_"):
+                                group_data = CATEGORIES_MAPPING.get(click_id)
+                                if group_data:
+                                    # Show subcategories inside group
                                     rows = []
-                                    for item in category_data["items"]:
+                                    for sub_id, sub_info in group_data["subcategories"].items():
+                                        rows.append({
+                                            "id": sub_id,
+                                            "title": sub_info["title"],
+                                            "description": f"Browse {sub_info['title']}"
+                                        })
+                                    rows.append({
+                                        "id": "see_products",
+                                        "title": "🔙 Back to Categories",
+                                        "description": "Go back to category menu"
+                                    })
+                                    sections = [{"title": group_data["title"], "rows": rows}]
+                                    try:
+                                        await send_whatsapp_interactive_list(
+                                            to_phone=sender_phone,
+                                            body_text=group_data["description"],
+                                            button_label="Subcategories",
+                                            sections=sections,
+                                            header_text=group_data["title"]
+                                        )
+                                    except Exception as e:
+                                        logger.error(f"Failed to send subcategory menu: {e}")
+                                        
+                            elif click_id.startswith("cat_"):
+                                category_data = CATEGORIES_MAPPING.get(click_id)
+                                # If it's a standalone category under a group (like cat_camera or cat_tarpaulin, which are nested inside subcategories)
+                                matched_cat_info = None
+                                matched_parent_group = "see_products"
+                                
+                                # Search inside groups
+                                for group_id, group_info in CATEGORIES_MAPPING.items():
+                                    if group_info.get("has_subcategories") and click_id in group_info["subcategories"]:
+                                        matched_cat_info = group_info["subcategories"][click_id]
+                                        matched_parent_group = group_id
+                                        break
+                                
+                                # If not found inside subcategories, check root mapping (like cat_drone)
+                                if not matched_cat_info and click_id in CATEGORIES_MAPPING:
+                                    matched_cat_info = CATEGORIES_MAPPING[click_id]
+                                
+                                if matched_cat_info:
+                                    rows = []
+                                    for item in matched_cat_info["items"]:
                                         rows.append({
                                             "id": item["id"],
                                             "title": item["title"],
                                             "description": item["description"][:72]
                                         })
                                     rows.append({
-                                        "id": "see_products",
-                                        "title": "🔙 Back to Categories",
-                                        "description": "Go back to categories"
+                                        "id": matched_parent_group,
+                                        "title": "🔙 Back",
+                                        "description": "Go back"
                                     })
-                                    sections = [{"title": category_data["title"], "rows": rows}]
+                                    sections = [{"title": matched_cat_info["title"], "rows": rows}]
                                     try:
                                         await send_whatsapp_interactive_list(
                                             to_phone=sender_phone,
-                                            body_text=category_data["description"],
+                                            body_text="🚜 Please select a product:",
                                             button_label="View Products",
                                             sections=sections,
-                                            header_text=category_data["title"]
+                                            header_text=matched_cat_info["title"]
                                         )
                                     except Exception as e:
                                         logger.error(f"Failed to send products list: {e}")
+
+                            elif click_id.startswith("sub_"):
+                                # Look for subcategory inside group mappings
+                                matched_sub = None
+                                matched_parent_group = "see_products"
+                                for group_id, group_info in CATEGORIES_MAPPING.items():
+                                    if group_info.get("has_subcategories") and click_id in group_info["subcategories"]:
+                                        matched_sub = group_info["subcategories"][click_id]
+                                        matched_parent_group = group_id
+                                        break
+                                        
+                                if matched_sub:
+                                    rows = []
+                                    for item in matched_sub["items"]:
+                                        rows.append({
+                                            "id": item["id"],
+                                            "title": item["title"],
+                                            "description": item["description"][:72]
+                                        })
+                                    rows.append({
+                                        "id": matched_parent_group,
+                                        "title": "🔙 Back",
+                                        "description": "Go back"
+                                    })
+                                    sections = [{"title": matched_sub["title"], "rows": rows}]
+                                    try:
+                                        await send_whatsapp_interactive_list(
+                                            to_phone=sender_phone,
+                                            body_text="🚜 Please select a product:",
+                                            button_label="View Products",
+                                            sections=sections,
+                                            header_text=matched_sub["title"]
+                                        )
+                                    except Exception as e:
+                                        logger.error(f"Failed to send subcategory products list: {e}")
                                         
                             elif click_id.startswith("prod_"):
-                                # Extract product ID/code
                                 code = click_id.replace("prod_", "")
-                                # Fetch specifications from RAG context
+                                # Determine the correct back button ID
+                                back_target = "see_products"
+                                for group_id, group_info in CATEGORIES_MAPPING.items():
+                                    if group_info.get("has_subcategories"):
+                                        for sub_id, sub_info in group_info["subcategories"].items():
+                                            if any(item["id"] == click_id for item in sub_info["items"]):
+                                                back_target = sub_id
+                                                break
+                                    else:
+                                        if any(item["id"] == click_id for item in group_info["items"]):
+                                            back_target = group_id
+                                            break
+                                            
+                                # Load details directly from static / local KB loader (removed LLM formatting)
+                                formatted_reply = get_fallback_product_details(code)
+                                
+                                buttons = [
+                                    {"id": f"buy_now_{code}", "title": "🛍️ Buy Now"},
+                                    {"id": back_target, "title": "🚜 Back to List"},
+                                    {"id": "back_to_main", "title": "🔙 Main Menu"}
+                                ]
                                 try:
-                                    # Create query vector for product name/code
-                                    query_vector = await get_openai_embedding(f"item code {code}")
-                                    details_text = await retrieve_context(query_vector, limit=1)
-                                    
-                                    # Use Groq LLM to format it cleanly
-                                    formatted_reply = await generate_groq_response(f"Describe specifications, MRP, and prices of product {code} from this context: {details_text}")
-                                    
-                                    buttons = [
-                                        {"id": f"buy_now_{code}", "title": "🛍️ Buy Now"},
-                                        {"id": "see_products", "title": "🚜 Back to Catalog"},
-                                        {"id": "back_to_main", "title": "🔙 Main Menu"}
-                                    ]
                                     await send_whatsapp_interactive_buttons(
                                         to_phone=sender_phone,
                                         body_text=formatted_reply,
                                         buttons=buttons
                                     )
                                 except Exception as e:
-                                    logger.error(f"Failed to format product detail: {e}")
+                                    logger.error(f"Failed to send product detail: {e}")
                                     
                             elif click_id.startswith("buy_now_"):
                                 reply = (
