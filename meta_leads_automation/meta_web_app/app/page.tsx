@@ -170,11 +170,14 @@ export default function Home() {
       fromVal = "Downloaded all leads from this campaign";
       toVal = "";
     } else {
+      const hasFromTime = !!(dateRange.fromHour && dateRange.fromMin && dateRange.fromPeriod);
       fromVal = hasFrom 
-        ? `${dateRange.fromDate} ${dateRange.fromHour || "12"}:${dateRange.fromMin || "00"} ${dateRange.fromPeriod || "AM"}`
+        ? `${dateRange.fromDate} ${hasFromTime ? `${dateRange.fromHour}:${dateRange.fromMin} ${dateRange.fromPeriod}` : "12:01 AM"}`
         : "Start of time";
+
+      const hasToTime = !!(dateRange.toHour && dateRange.toMin && dateRange.toPeriod);
       toVal = hasTo
-        ? `${dateRange.toDate} ${dateRange.toHour || "12"}:${dateRange.toMin || "00"} ${dateRange.toPeriod || "AM"}`
+        ? `${dateRange.toDate} ${hasToTime ? `${dateRange.toHour}:${dateRange.toMin} ${dateRange.toPeriod}` : "11:59 PM"}`
         : "End of day";
     }
 
@@ -242,7 +245,7 @@ export default function Home() {
         const dateStr = type === "from" ? r.fromDate : r.toDate;
         if (!dateStr) return null;
         
-        const hasTime = r[`${type}Hour`] && r[`${type}Min`] && r[`${type}Period`];
+        const hasTime = !!(r[`${type}Hour`] && r[`${type}Min`] && r[`${type}Period`]);
         
         let hourNum: number;
         let minNum: number;
@@ -263,15 +266,18 @@ export default function Home() {
         } else {
           if (type === "from") {
             hourNum = 0;
-            minNum = 0;
+            minNum = 1; // Default to 12:01 AM
           } else {
             hourNum = 23;
-            minNum = 59;
+            minNum = 59; // Default to 11:59 PM
           }
         }
         
         const [year, month, day] = dateStr.split("-").map(Number);
-        return new Date(year, month - 1, day, hourNum, minNum, type === "from" ? 0 : 59, type === "from" ? 0 : 999);
+        const pad = (num: number) => String(num).padStart(2, "0");
+        // Force evaluation in Indian Standard Time (IST, UTC+05:30)
+        const isoStr = `${year}-${pad(month)}-${pad(day)}T${pad(hourNum)}:${pad(minNum)}:${type === "from" ? "00" : "59"}+05:30`;
+        return new Date(isoStr);
       };
 
       const start = parseCampaignDateTime(range, "from");
