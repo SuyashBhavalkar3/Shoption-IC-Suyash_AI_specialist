@@ -3,7 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import {
     Download, CheckCircle2, AlertCircle, RefreshCcw,
-    FileSpreadsheet, Activity, Loader2, ChevronDown, ChevronUp, FileX2, Files
+    FileSpreadsheet, Activity, Loader2, ChevronDown, ChevronUp, FileX2, Files, Trash2
 } from 'lucide-react';
 import Papa from 'papaparse';
 import CSVUpload, { ParsedFile } from './CSVUpload';
@@ -67,7 +67,7 @@ interface SourceFile {
 
 // ─── FileCard ────────────────────────────────────────────────────────────────
 
-function FileCard({ fr }: { fr: FileResult }) {
+function FileCard({ fr, onRemove }: { fr: FileResult; onRemove?: (id: string) => void }) {
     const [open, setOpen] = useState(false);
 
     const handleDownload = () => {
@@ -134,6 +134,17 @@ function FileCard({ fr }: { fr: FileResult }) {
                         <span className="text-xs text-muted-text font-semibold max-w-[260px] truncate" title={fr.error}>
                             {fr.error}
                         </span>
+                    )}
+
+                    {onRemove && (
+                        <button
+                            onClick={() => onRemove(fr.id)}
+                            disabled={fr.status === 'processing'}
+                            className="p-1.5 text-muted-text hover:text-red-400 hover:border-red-400/30 hover:bg-red-500/10 bg-bg-base border border-card-border rounded-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Remove file"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
                     )}
                 </div>
             </div>
@@ -213,6 +224,14 @@ export default function ProcessingDashboard() {
             return combined;
         });
     }, [reprocessAll, selectedTime]);
+
+    const handleRemoveFile = useCallback((id: string) => {
+        setSourceFiles((prev) => {
+            const updated = prev.filter((sf) => sf.id !== id);
+            setFileResults((prevResults) => prevResults.filter((fr) => fr.id !== id));
+            return updated;
+        });
+    }, []);
 
     const applyClockTime = useCallback(
         (hour: string, minute: string, meridiem: 'AM' | 'PM') => {
@@ -427,7 +446,7 @@ export default function ProcessingDashboard() {
                         </div>
                     )}
                     {fileResults.map((fr) => (
-                        <FileCard key={fr.id} fr={fr} />
+                        <FileCard key={fr.id} fr={fr} onRemove={handleRemoveFile} />
                     ))}
                 </div>
             )}
