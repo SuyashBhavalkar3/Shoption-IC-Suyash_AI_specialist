@@ -274,10 +274,34 @@ export default function Home() {
         }
         
         const [year, month, day] = dateStr.split("-").map(Number);
-        const pad = (num: number) => String(num).padStart(2, "0");
-        // Force evaluation in Indian Standard Time (IST, UTC+05:30)
-        const isoStr = `${year}-${pad(month)}-${pad(day)}T${pad(hourNum)}:${pad(minNum)}:${type === "from" ? "00" : "59"}+05:30`;
-        return new Date(isoStr);
+        
+        // Construct the Date in America/Los_Angeles timezone to sync with Meta Ads Manager's lead filtering timezone
+        const tempDate = new Date(Date.UTC(year, month - 1, day, hourNum, minNum, type === "from" ? 0 : 59));
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: "America/Los_Angeles",
+          year: "numeric",
+          month: "numeric",
+          day: "numeric",
+          hour: "numeric",
+          minute: "numeric",
+          second: "numeric",
+          hour12: false
+        }).formatToParts(tempDate);
+        
+        const partVal = (t: string) => parseInt(parts.find(p => p.type === t)!.value, 10);
+        
+        const laYear = partVal("year");
+        const laMonth = partVal("month");
+        const laDay = partVal("day");
+        let laHour = partVal("hour");
+        if (laHour === 24) laHour = 0;
+        const laMin = partVal("minute");
+        const laSec = partVal("second");
+        
+        const parsedUtc = Date.UTC(laYear, laMonth - 1, laDay, laHour, laMin, laSec);
+        const offset = tempDate.getTime() - parsedUtc;
+        
+        return new Date(tempDate.getTime() + offset);
       };
 
       const start = parseCampaignDateTime(range, "from");
