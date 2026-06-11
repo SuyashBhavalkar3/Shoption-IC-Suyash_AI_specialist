@@ -1,0 +1,42 @@
+# APP NAME
+LeadLens Call Tracker
+
+# SHORT DESCRIPTION
+Sync client call logs, manage warrior hierarchy, and view team performance.
+
+# FULL DESCRIPTION
+Call tracking, automatic sync, group leader dashboards, call reports, Excel exports.
+
+LeadLens is an enterprise Call Tracking and sales reporting platform for field sales teams. Streamline your sales reporting by automating call logs synchronization, assigning team leads, and accessing team performance analytics.
+
+LeadLens allows you to track and optimize:
+- Field Warrior Call Logs
+- Team Reports and Analytics
+- Real-Time Call Data Sync
+- Hierarchy and Team Structure
+- Attended and Missed Call Logs
+- Total Talk Time and Performance Charts
+- Detailed PDF and Excel Exports
+
+Features:
+
+Automated Call Logging and Real-time Sync
+- Configure in seconds and start tracking calls instantly.
+- Automatically captures incoming, outgoing, and missed call logs with client phone numbers.
+- Syncs data to the backend database securely in the background.
+- Check sync status of every call log (synced vs pending) with simple color indicators.
+- Local database prevents offline data loss, syncing automatically when connection is restored.
+
+Advanced Overview Reports and Team Monitoring
+- Access dedicated dashboards to monitor team activity in real-time.
+- Track metrics like Total Calls, Total Duration, and Attended vs Connected logs.
+- View detailed performance summaries for every field agent (warrior).
+- Expand agent logs to inspect exact dial, answer, and talk duration details.
+
+Clean Data Exports
+- Export detailed call logs directly to high-quality PDF files.
+- Download team metrics as formatted Excel files for deeper data analysis.
+- Filter analytics by Group Leader or specific Warriors before exporting.
+
+Security and Privacy:
+LeadLens values user privacy. The application reads call logs strictly for business performance and client sync purposes. No background tracking is initiated without explicit user permission. All data transmission is encrypted.

@@ -1,5 +1,5 @@
-name: mobile_app
-description: "A new Flutter project."
+name: shoption_call_tracker
+description: "Enterprise call tracking and sales performance analytics for Shoption field warriors."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -35,7 +35,6 @@ dependencies:
   sqflite: ^2.3.3
   path: ^1.8.3
   permission_handler: ^11.0.0
-  supabase_flutter: ^2.6.0
   flutter_dotenv: ^5.1.0
   http: ^1.2.0
   shared_preferences: ^2.3.2

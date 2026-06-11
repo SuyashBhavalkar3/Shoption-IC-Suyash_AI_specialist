@@ -52,3 +52,8 @@ db_pass.txt
 db_url.txt
 *env
 *.__init__.py
+*.xlsx
+*.csv
+# product_web_page/
+# product_web_page/node_modules
+# product_web_page/.next

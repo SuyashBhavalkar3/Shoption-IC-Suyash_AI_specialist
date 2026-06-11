@@ -1,8 +1,8 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter/foundation.dart';
 
 class ApiService {
   static String get baseUrl {
@@ -10,8 +10,10 @@ class ApiService {
     if (envUrl != null && envUrl.isNotEmpty) {
       return envUrl;
     }
-    // Fallback default
-    return kIsWeb ? 'http://localhost:8000' : 'http://10.0.2.2:8000';
+    // API_BASE_URL is not set in .env — crash loudly in debug, so it is never
+    // silently misconfigured in a production build.
+    assert(false, 'API_BASE_URL is not set in .env. Add it before building.');
+    throw Exception('API_BASE_URL is not set in .env');
   }
 
   static Future<String?> getToken() async {
@@ -62,6 +64,21 @@ class ApiService {
     return headers;
   }
 
+  static Future<List<Map<String, dynamic>>> getOrganisations() async {
+    final url = Uri.parse('$baseUrl/auth/organisations');
+    final response = await http.get(
+      url,
+      headers: {'Content-Type': 'application/json'},
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } else {
+      final errorDetail = _parseError(response.body);
+      throw Exception(errorDetail);
+    }
+  }
+
   // ── Authentication ──
 
   static Future<Map<String, dynamic>> register({
@@ -69,6 +86,8 @@ class ApiService {
     required String fullName,
     required String password,
     required String role,
+    String? organisationId,
+    String? organisationInviteCode,
   }) async {
     final url = Uri.parse('$baseUrl/auth/register');
     final response = await http.post(
@@ -79,6 +98,8 @@ class ApiService {
         'full_name': fullName,
         'password': password,
         'role': role,
+        'organisation_id': organisationId,
+        'organisation_invite_code': organisationInviteCode,
       }),
     );
     if (response.statusCode == 201) {
@@ -162,15 +183,6 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> updateWarriorTracking(String userId, bool enabled) async {
-    final url = Uri.parse('$baseUrl/users/$userId/tracking?enabled=$enabled');
-    final response = await http.put(url, headers: await _headers());
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception(_parseError(response.body));
-    }
-  }
 
   // ── Sync Calls ──
 

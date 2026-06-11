@@ -18,7 +18,7 @@ class ShoptionAppBar extends StatelessWidget implements PreferredSizeWidget {
       backgroundColor: Colors.white,
       elevation: 0,
       scrolledUnderElevation: 0,
-      iconTheme: const IconThemeData(color: Color(0xFF111111)),
+      iconTheme: const IconThemeData(color: Color(0xFF010B26)),
       title: Row(
         children: [
           Image.asset(
@@ -27,7 +27,7 @@ class ShoptionAppBar extends StatelessWidget implements PreferredSizeWidget {
             fit: BoxFit.contain,
             errorBuilder: (_, __, ___) => const Icon(
               Icons.phone_callback_rounded,
-              color: Color(0xFF2F5C36),
+              color: Color(0xFF04693F),
               size: 28,
             ),
           ),
@@ -45,7 +45,7 @@ class ShoptionAppBar extends StatelessWidget implements PreferredSizeWidget {
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.5,
-                    color: Color(0xFF111111),
+                    color: Color(0xFF010B26),
                   ),
                 ),
                 Text(
@@ -55,7 +55,7 @@ class ShoptionAppBar extends StatelessWidget implements PreferredSizeWidget {
                   style: const TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF2F5C36),
+                    color: Color(0xFF04693F),
                     letterSpacing: 0.5,
                   ),
                 ),

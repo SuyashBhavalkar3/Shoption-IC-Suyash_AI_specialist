@@ -1,14 +1,165 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User
-from app.schemas import UserCreate, UserOut, Token, LoginRequest
+from app.models import User, Organisation, OTP
+from app.schemas import UserCreate, UserOut, Token, LoginRequest, OrganisationOut, ProvisionOrganisationRequest, ProvisionOrganisationResponse, SendOtpRequest, VerifyOtpRequest
 from app.auth import get_password_hash, verify_password, create_access_token, get_current_user
+from app.email_service import send_invite_email, send_otp_email
+from typing import List
+from datetime import datetime, timedelta
+import random
+import string
 
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"]
 )
+
+
+@router.post("/send-otp", status_code=status.HTTP_200_OK)
+def send_otp(payload: SendOtpRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Generates a 6-digit OTP code, saves it to the database,
+    and sends it to suyashbhavalkar82@gmail.com.
+    """
+    if payload.passcode != "LeadLensOwner2026":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Owner passcode"
+        )
+    
+    # Generate 6-digit OTP code
+    otp_code = "".join(random.choices(string.digits, k=6))
+    
+    # Create OTP database record
+    otp_record = OTP(
+        email="suyashbhavalkar82@gmail.com",
+        otp_code=otp_code,
+        is_verified=False
+    )
+    db.add(otp_record)
+    db.commit()
+    
+    # Send email asynchronously in background task
+    background_tasks.add_task(send_otp_email, "suyashbhavalkar82@gmail.com", otp_code)
+    
+    print(f"INFO: Generated 2FA OTP {otp_code} for suyashbhavalkar82@gmail.com")
+    return {"message": "OTP sent successfully"}
+
+
+@router.post("/verify-otp", status_code=status.HTTP_200_OK)
+def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
+    """
+    Verifies the latest OTP code generated for suyashbhavalkar82@gmail.com.
+    """
+    if payload.passcode != "LeadLensOwner2026":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Owner passcode"
+        )
+        
+    # Get the latest OTP record for this email
+    latest_otp = db.query(OTP).filter(OTP.email == "suyashbhavalkar82@gmail.com").order_by(OTP.created_at.desc()).first()
+    
+    if not latest_otp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No OTP request found for this email address"
+        )
+        
+    if latest_otp.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This OTP has already been verified"
+        )
+        
+    # Check if the code matches
+    if latest_otp.otp_code != payload.otp.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect OTP code"
+        )
+        
+    # Optional expiration check: e.g. 5 minutes TTL
+    expiry_time = latest_otp.created_at + timedelta(minutes=5)
+    if datetime.utcnow() > expiry_time:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP code has expired"
+        )
+        
+    # Mark as verified
+    latest_otp.is_verified = True
+    db.commit()
+    
+    print(f"INFO: Successfully verified 2FA OTP for Platform Owner")
+    return {"success": True, "message": "OTP verified successfully"}
+
+
+@router.post("/provision-organisation", response_model=ProvisionOrganisationResponse, status_code=status.HTTP_201_CREATED)
+def provision_organisation(payload: ProvisionOrganisationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Provision a new Organisation and its first Super Admin.
+    - Protected by a simple passcode check (LeadLensOwner2026).
+    """
+    if payload.passcode != "LeadLensOwner2026":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Owner passcode"
+        )
+
+    # Check if organisation name already exists
+    existing_org = db.query(Organisation).filter(Organisation.name == payload.organisation_name).first()
+    if existing_org:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An organisation with this name already exists"
+        )
+
+    # Check if super admin email already exists
+    existing_user = db.query(User).filter(User.email == payload.super_admin_email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with this email already exists"
+        )
+
+    # Create Organisation
+    org = Organisation(name=payload.organisation_name)
+    db.add(org)
+    db.flush()  # Generates org.id and invite_code default
+
+    # Create Super Admin Placeholder User
+    super_admin = User(
+        email=payload.super_admin_email.strip().lower(),
+        password_hash="",  # Placeholder, will be updated during self-registration
+        full_name="",      # Placeholder, will be updated during self-registration
+        role="super_admin",
+        is_approved=True,
+        is_active=True,
+        organisation_id=org.id
+    )
+    db.add(super_admin)
+    db.commit()
+    db.refresh(super_admin)
+    db.refresh(org)
+    
+    # Send invite email containing the invite code to the Super Admin via background task
+    background_tasks.add_task(send_invite_email, payload.super_admin_email, org.name, org.invite_code)
+    
+    print(f"INFO: Successfully provisioned organisation '{org.name}' with invite code '{org.invite_code}' and super admin '{super_admin.email}'")
+    return {
+        "organisation_id": org.id,
+        "organisation_name": org.name,
+        "invite_code": org.invite_code,
+        "super_admin": super_admin
+    }
+
+
+@router.get("/organisations", response_model=List[OrganisationOut])
+def get_organisations(db: Session = Depends(get_db)):
+    """Fetch all registered organisations."""
+    return db.query(Organisation).order_by(Organisation.name).all()
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -20,25 +171,55 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
     - Bootstrap exception: the very first user becomes super_admin and is auto-approved.
     - No manager_id is accepted here — that is assigned later by admin.
     """
-    # Duplicate email check
-    if db.query(User).filter(User.email == user_in.email).first():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An account with this email already exists"
-        )
+    # Duplicate email check & pre-provisioned Super Admin update handler
+    existing_user = db.query(User).filter(User.email == user_in.email).first()
+    if existing_user:
+        if existing_user.role == "super_admin" and existing_user.password_hash == "":
+            # Update the pre-provisioned Super Admin record with the chosen password and name
+            existing_user.password_hash = get_password_hash(user_in.password)
+            existing_user.full_name = user_in.full_name
+            existing_user.is_approved = True
+            existing_user.is_active = True
+            db.commit()
+            db.refresh(existing_user)
+            return existing_user
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An account with this email already exists"
+            )
+
+    target_org_id = None
+    if user_in.organisation_invite_code:
+        # Check by invite code (case-insensitive and trimmed)
+        code_clean = user_in.organisation_invite_code.strip().upper()
+        org = db.query(Organisation).filter(Organisation.invite_code == code_clean).first()
+        if not org:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected organisation invite code is invalid"
+            )
+        target_org_id = org.id
+    elif user_in.organisation_id:
+        # Backwards compatibility: verify by organisation_id if provided
+        org_exists = db.query(Organisation).filter(Organisation.id == user_in.organisation_id).first()
+        if not org_exists:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected organisation does not exist"
+            )
+        target_org_id = user_in.organisation_id
 
     hashed_password = get_password_hash(user_in.password)
 
     # Bootstrap: first user ever → super_admin, auto-approved
     is_first_user = db.query(User).count() == 0
 
-    # Server-side guard: super_admin can NEVER be self-registered
     requested_role = user_in.role.value  # convert enum → string
-    if requested_role == "super_admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="super_admin cannot be self-registered"
-        )
+
+    # Temporarily allow super_admin self-registration for dev/testing
+    # and auto-approve super_admin registrations so they don't get stuck.
+    is_approved_status = True if (is_first_user or requested_role == "super_admin") else False
 
     db_user = User(
         email=user_in.email,
@@ -46,8 +227,9 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
         full_name=user_in.full_name,
         role="super_admin" if is_first_user else requested_role,
         manager_id=None,           # always None at registration
-        is_approved=is_first_user, # first user auto-approved; others wait for admin
+        is_approved=is_approved_status,
         is_active=True,
+        organisation_id=target_org_id
     )
 
     db.add(db_user)
@@ -82,6 +264,7 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
     access_token = create_access_token(
         data={"sub": str(user.id), "role": user.role}
     )
+    print(f"INFO: Login successful for user {user.email} (Role: {user.role}, Name: {user.full_name})")
     return {"access_token": access_token, "token_type": "bearer"}
 
 

@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
-        android:label="Shoption Call Tracker"
+        android:label="LeadLens Call Tracker"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity
@@ -30,10 +30,21 @@
             </intent-filter>
         </activity>
 
+        <!-- Always-on call tracking foreground service -->
         <service
             android:name=".CallTrackingService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+
+        <!-- Auto-starts CallTrackingService on device boot -->
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <meta-data
             android:name="flutterEmbedding"

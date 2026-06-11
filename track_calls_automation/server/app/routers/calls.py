@@ -6,7 +6,7 @@ import csv
 import io
 from datetime import datetime
 from jose import jwt, JWTError
-from app.config import settings
+from app.config import JWT_SECRET_KEY, JWT_ALGORITHM
 from app.database import get_db
 from app.models import User, CallLog
 from app.schemas import CallLogCreate, CallLogOut, LeaderReportResponse, WarriorReport, CallDetail
@@ -19,6 +19,7 @@ router = APIRouter(
 
 @router.post("/", response_model=List[CallLogOut], status_code=status.HTTP_201_CREATED)
 def sync_call_logs(logs_in: List[CallLogCreate], db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    print(f"INFO: Received POST /calls/ request from {current_user.email} with {len(logs_in)} logs.")
     # Only Warriors (or anyone with a valid login) can upload logs
     # We match it to the current logged in user (current_user.id)
     created_logs = []
@@ -50,15 +51,18 @@ def sync_call_logs(logs_in: List[CallLogCreate], db: Session = Depends(get_db), 
         for log in created_logs:
             db.refresh(log)
             
+    print(f"INFO: Post calls successful. {len(created_logs)} calls synced to database for user {current_user.email}.")
     return created_logs
 
 @router.get("/", response_model=List[CallLogOut])
 def get_my_call_logs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Fetch all call logs belonging to the current logged-in user."""
+    print(f"INFO: GET /calls/ requested by user {current_user.email}")
     return db.query(CallLog).filter(CallLog.user_id == current_user.id).order_by(CallLog.id.desc()).all()
 
 @router.get("/reports", response_model=LeaderReportResponse)
 def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    print(f"INFO: GET /calls/reports requested by user {current_user.email} (Role: {current_user.role})")
     # Determine which warriors to include based on user role
     if current_user.role == "warrior":
         raise HTTPException(
@@ -71,8 +75,9 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
         warriors = db.query(User).filter(User.manager_id == current_user.id, User.role == "warrior").all()
         
     elif current_user.role in ["admin", "super_admin"]:
-        # Admins and Super Admins get all warriors in the database
-        warriors = db.query(User).filter(User.role == "warrior").all()
+        # Admins and Super Admins get all warriors in their organisation
+        org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
+        warriors = db.query(User).filter(User.role == "warrior", org_filter).all()
         
     else:
         raise HTTPException(
@@ -144,7 +149,7 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
 
 def get_user_from_query_token(token: str, db: Session):
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
@@ -163,16 +168,28 @@ def export_reports_csv(
     db: Session = Depends(get_db)
 ):
     current_user = get_user_from_query_token(token, db)
+    print(f"INFO: Export reports to CSV requested by {current_user.email} (Leader ID: {leader_id}, Warrior ID: {warrior_id})")
     
-    query = db.query(User).filter(User.role == "warrior")
+    org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
+    query = db.query(User).filter(User.role == "warrior", org_filter)
     if current_user.role == "group_leader":
         query = query.filter(User.manager_id == current_user.id)
     elif current_user.role in ["admin", "super_admin"]:
         if leader_id and leader_id != "all":
-            query = query.filter(User.manager_id == leader_id)
+            leader = db.query(User).filter(User.id == leader_id).first()
+            if leader and leader.organisation_id == current_user.organisation_id:
+                query = query.filter(User.manager_id == leader_id)
+            else:
+                from sqlalchemy import text
+                query = query.filter(text("1=0"))
             
     if warrior_id and warrior_id != "all":
-        query = query.filter(User.id == warrior_id)
+        warrior = db.query(User).filter(User.id == warrior_id).first()
+        if warrior and warrior.organisation_id == current_user.organisation_id:
+            query = query.filter(User.id == warrior_id)
+        else:
+            from sqlalchemy import text
+            query = query.filter(text("1=0"))
         
     warriors = query.all()
     
@@ -223,16 +240,28 @@ def export_reports_pdf(
     db: Session = Depends(get_db)
 ):
     current_user = get_user_from_query_token(token, db)
+    print(f"INFO: Export reports to PDF requested by {current_user.email} (Leader ID: {leader_id}, Warrior ID: {warrior_id})")
     
-    query = db.query(User).filter(User.role == "warrior")
+    org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
+    query = db.query(User).filter(User.role == "warrior", org_filter)
     if current_user.role == "group_leader":
         query = query.filter(User.manager_id == current_user.id)
     elif current_user.role in ["admin", "super_admin"]:
         if leader_id and leader_id != "all":
-            query = query.filter(User.manager_id == leader_id)
+            leader = db.query(User).filter(User.id == leader_id).first()
+            if leader and leader.organisation_id == current_user.organisation_id:
+                query = query.filter(User.manager_id == leader_id)
+            else:
+                from sqlalchemy import text
+                query = query.filter(text("1=0"))
             
     if warrior_id and warrior_id != "all":
-        query = query.filter(User.id == warrior_id)
+        warrior = db.query(User).filter(User.id == warrior_id).first()
+        if warrior and warrior.organisation_id == current_user.organisation_id:
+            query = query.filter(User.id == warrior_id)
+        else:
+            from sqlalchemy import text
+            query = query.filter(text("1=0"))
         
     warriors = query.all()
     

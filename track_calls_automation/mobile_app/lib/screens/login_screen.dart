@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:jwt_decoder/jwt_decoder.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../services/api_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -25,40 +26,37 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final res = await ApiService.login(
+      final data = await ApiService.login(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
-      final token = res['access_token'] as String;
+      final token = data['access_token'] as String;
       
-      // Decode JWT to extract claims
-      Map<String, dynamic> decodedToken = JwtDecoder.decode(token);
-      final userId = decodedToken['sub'] as String;
-      final role = decodedToken['role'] as String;
+      // Save token locally first so ApiService.getMe() can access it
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('access_token', token);
 
-      // Save token temporarily to perform profile check
-      await ApiService.saveSession(token, role, _emailController.text.trim(), '', userId);
+      // Now fetch user details
+      final user = await ApiService.getMe();
+      final role = user['role'] as String;
+      final isApproved = user['is_approved'] as bool;
+      final userName = user['full_name'] as String;
+      final userEmail = user['email'] as String;
+      final userId = user['id'] as String;
 
-      // Verify user state by hitting /users/me
-      final me = await ApiService.getMe();
-      final isApproved = me['is_approved'] as bool;
-      final fullName = me['full_name'] as String;
-
-      await ApiService.saveSession(
-        token,
-        role,
-        _emailController.text.trim(),
-        fullName,
-        userId,
-      );
+      // Save user details locally
+      await prefs.setString('user_role', role);
+      await prefs.setString('user_name', userName);
+      await prefs.setString('user_email', userEmail);
+      await prefs.setString('user_id', userId);
 
       if (!mounted) return;
 
@@ -72,11 +70,9 @@ class _LoginScreenState extends State<LoginScreen> {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -86,13 +82,13 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
+          padding: const EdgeInsets.fromLTRB(24.0, 20.0, 24.0, 40.0),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 40),
+                const SizedBox(height: 16),
                 Center(
                   child: Image.asset(
                     'assets/logo.png',
@@ -100,18 +96,18 @@ class _LoginScreenState extends State<LoginScreen> {
                     errorBuilder: (_, __, ___) => const Icon(
                       Icons.phone_callback_rounded,
                       size: 80,
-                      color: Color(0xFF2F5C36),
+                      color: Color(0xFF04693F),
                     ),
                   ),
                 ),
                 const SizedBox(height: 10),
                 const Center(
                   child: Text(
-                    'SHOPTION',
+                    'LEADLENS',
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.w900,
-                      color: Color(0xFF111111),
+                      color: Color(0xFF010B26),
                       letterSpacing: 1.0,
                     ),
                   ),
@@ -122,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF2F5C36),
+                      color: Color(0xFF04693F),
                       letterSpacing: 0.8,
                     ),
                   ),
@@ -133,7 +129,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF111111),
+                    color: Color(0xFF010B26),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -167,14 +163,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
                 const Text(
                   'Email Address',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF111111)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
+                  style: const TextStyle(color: Color(0xFF010B26)),
                   decoration: InputDecoration(
                     hintText: 'Enter your email',
+                    hintStyle: const TextStyle(color: Colors.grey),
                     filled: true,
                     fillColor: const Color(0xFFF9F9F9),
                     border: OutlineInputBorder(
@@ -187,7 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF2F5C36), width: 1.5),
+                      borderSide: const BorderSide(color: Color(0xFF04693F), width: 1.5),
                     ),
                   ),
                   validator: (val) {
@@ -199,14 +197,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 20),
                 const Text(
                   'Password',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF111111)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
+                  style: const TextStyle(color: Color(0xFF010B26)),
                   decoration: InputDecoration(
                     hintText: 'Enter your password',
+                    hintStyle: const TextStyle(color: Colors.grey),
                     filled: true,
                     fillColor: const Color(0xFFF9F9F9),
                     border: OutlineInputBorder(
@@ -219,7 +219,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF2F5C36), width: 1.5),
+                      borderSide: const BorderSide(color: Color(0xFF04693F), width: 1.5),
                     ),
                   ),
                   validator: (val) {
@@ -234,7 +234,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _handleLogin,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF111111),
+                      backgroundColor: const Color(0xFF010B26),
                       foregroundColor: Colors.white,
                       disabledBackgroundColor: Colors.grey[300],
                       shape: RoundedRectangleBorder(
@@ -269,7 +269,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: const Text(
                         'Register Now',
                         style: TextStyle(
-                          color: Color(0xFF2F5C36),
+                          color: Color(0xFF04693F),
                           fontWeight: FontWeight.bold,
                           decoration: TextDecoration.underline,
                         ),

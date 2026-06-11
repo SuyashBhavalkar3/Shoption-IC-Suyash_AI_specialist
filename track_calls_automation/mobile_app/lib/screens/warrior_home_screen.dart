@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../widgets/shoption_app_bar.dart';
@@ -15,12 +14,11 @@ class WarriorHomeScreen extends StatefulWidget {
 }
 
 class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindingObserver {
-  static const platform = MethodChannel('com.example.calltracker/tracking');
+  static const platform = MethodChannel('com.shoption.calltracker/tracking');
 
-  bool isTracking = false;
   bool isSyncing = false;
   List<Map<String, dynamic>> callLogs = [];
-  Database? database; 
+  Database? database;
   String userName = 'Warrior';
   String userEmail = '';
   String userId = '';
@@ -30,9 +28,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadUserInfo();
     _bootstrap();
-    _checkTrackingStatus();
     _setupMethodChannelListener();
     _requestPermissions();
   }
@@ -47,11 +43,13 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   }
 
   Future<void> _bootstrap() async {
+    await _loadUserInfo();
     await _initializeDatabase();
     await _loadCallLogs();
+    // Always ensure the tracking service is running on startup.
+    await _ensureTracking();
     await _restoreFromBackend();
     await _syncCallLogs();
-    await _syncTrackingStatus();
   }
 
   Future<void> _restoreFromBackend() async {
@@ -75,6 +73,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
               'timestamp': entry['timestamp'] ?? 'Unknown',
               'system_call_id': systemCallId,
               'is_synced': 1, // Already synced
+              'user_id': userId,
             },
             conflictAlgorithm: ConflictAlgorithm.ignore,
           );
@@ -82,336 +81,211 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
       });
       await _loadCallLogs();
     } catch (e) {
-      debugPrint('❌ Error restoring logs from backend: $e');
+      debugPrint('⚠️ Local restore skipped (will sync on next check): $e');
+    }
+  }
+
+  Future<void> _initializeDatabase() async {
+    final databasePath = await getDatabasesPath();
+    final path = '${databasePath}/call_tracker.db';
+
+    database = await openDatabase(
+      path,
+      version: 4,
+      onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE call_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone_number TEXT,
+            call_type TEXT,
+            duration_seconds INTEGER,
+            timestamp TEXT,
+            system_call_id TEXT UNIQUE,
+            is_synced INTEGER DEFAULT 0,
+            user_id TEXT
+          )
+        ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        final List<Map<String, dynamic>> columns = await db.rawQuery('PRAGMA table_info(call_logs)');
+        final columnNames = columns.map((c) => c['name'] as String).toList();
+
+        if (!columnNames.contains('system_call_id')) {
+          await db.execute('ALTER TABLE call_logs ADD COLUMN system_call_id TEXT UNIQUE');
+        }
+        if (!columnNames.contains('is_synced')) {
+          await db.execute('ALTER TABLE call_logs ADD COLUMN is_synced INTEGER DEFAULT 0');
+        }
+        if (!columnNames.contains('user_id')) {
+          await db.execute('ALTER TABLE call_logs ADD COLUMN user_id TEXT');
+        }
+      },
+    );
+  }
+
+  Future<void> _loadCallLogs() async {
+    if (database == null) return;
+    final List<Map<String, dynamic>> maps = await database!.query(
+      'call_logs',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+      orderBy: 'timestamp DESC',
+    );
+    setState(() {
+      callLogs = maps;
+    });
+  }
+
+  Future<void> _ensureTracking() async {
+    try {
+      final bool trackingRunning = await platform.invokeMethod('ensureTracking');
+      debugPrint('Service status ensured: $trackingRunning');
+    } catch (e) {
+      debugPrint('Failed to communicate with service: $e');
+    }
+  }
+
+  void _setupMethodChannelListener() {
+    platform.setMethodCallHandler((call) async {
+      if (call.method == 'onNewCallLogged') {
+        debugPrint('🔔 Native call logged! Reloading local logs...');
+        await _loadCallLogs();
+        await _syncCallLogs();
+      }
+    });
+  }
+
+  Future<void> _requestPermissions() async {
+    // We request permissions via the custom method channel to orchestrate service start properly
+    try {
+      final bool granted = await platform.invokeMethod('requestRequiredPermissions');
+      debugPrint('Required permissions granted status: $granted');
+      if (granted) {
+        await _ensureTracking();
+      }
+    } catch (e) {
+      debugPrint('Permission request error: $e');
+    }
+  }
+
+  Future<void> _syncCallLogs() async {
+    if (database == null || isSyncing) return;
+    setState(() {
+      isSyncing = true;
+    });
+
+    try {
+      // Find all unsynced logs for active user
+      final List<Map<String, dynamic>> unsynced = await database!.query(
+        'call_logs',
+        where: 'is_synced = 0 AND user_id = ?',
+        whereArgs: [userId],
+      );
+
+      if (unsynced.isNotEmpty) {
+        try {
+          // Prepare the payload as a list of log maps for the bulk syncCalls endpoint
+          final payload = unsynced.map((log) => {
+            'phone_number': log['phone_number'] ?? 'Unknown',
+            'call_type': log['call_type'] ?? 'Unknown',
+            'duration_seconds': (log['duration_seconds'] as num? ?? 0).toInt(),
+            'timestamp': log['timestamp'] ?? 'Unknown',
+            'system_call_id': log['system_call_id'] ?? '',
+          }).toList();
+
+          await ApiService.syncCalls(payload);
+
+          // Mark all as synced locally
+          await database!.transaction((txn) async {
+            for (final log in unsynced) {
+              await txn.update(
+                'call_logs',
+                {'is_synced': 1},
+                where: 'id = ?',
+                whereArgs: [log['id']],
+              );
+            }
+          });
+        } catch (e) {
+          debugPrint('Failed to sync batch: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('Sync error: $e');
+    } finally {
+      await _loadCallLogs();
+      setState(() {
+        isSyncing = false;
+      });
+    }
+  }
+
+  Future<void> _handleManualRefresh() async {
+    await _syncCallLogs();
+  }
+
+  Future<void> _handleLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    if (mounted) {
+      Navigator.pushReplacementNamed(context, '/login');
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _loadCallLogs().then((_) => _syncCallLogs());
-      _syncTrackingStatus();
+      _loadCallLogs();
+      _syncCallLogs();
     }
-  }
-
-  void _setupMethodChannelListener() {
-    platform.setMethodCallHandler((call) async {
-      if (call.method == 'callRecorded') {
-        await _loadCallLogs();
-        await _syncCallLogs();
-        setState(() {});
-      }
-      return null;
-    });
-  }
-
-  Future<void> _requestPermissions() async {
-    try {
-      await platform.invokeMethod<bool>('requestRequiredPermissions');
-    } catch (e) {
-      debugPrint('MethodChannel requestRequiredPermissions is not supported on this platform: $e');
-    }
-    try {
-      await Permission.notification.request();
-    } catch (e) {
-      debugPrint('Permission handler is not supported on this platform: $e');
-    }
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  Future<void> _initializeDatabase() async {
-    try {
-      final databasesPath = await getDatabasesPath();
-      final path = '$databasesPath/call_tracker.db';
-      database = await openDatabase(
-        path,
-        version: 3,
-        onCreate: (db, version) async {
-          await db.execute('''
-            CREATE TABLE call_logs (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              phone_number TEXT,
-              call_type TEXT,
-              timestamp TEXT,
-              duration_seconds INTEGER,
-              system_call_id TEXT UNIQUE,
-              is_synced INTEGER DEFAULT 0
-            )
-          ''');
-        },
-        onUpgrade: (db, oldVersion, newVersion) async {
-          if (oldVersion < 2) {
-            await db.execute('ALTER TABLE call_logs ADD COLUMN system_call_id TEXT');
-            await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_system_call_id ON call_logs(system_call_id)');
-          }
-          if (oldVersion < 3) {
-            await db.execute('ALTER TABLE call_logs ADD COLUMN is_synced INTEGER DEFAULT 0');
-          }
-        },
-      );
-    } catch (e) {
-      _showSnack('Error initializing database: $e');
-    }
-  }
-
-  Future<void> _loadCallLogs() async {
-    if (database == null) return;
-    try {
-      final logs = await database!.query(
-        'call_logs',
-        orderBy: 'timestamp DESC',
-      );
-      if (mounted) {
-        setState(() {
-          callLogs = logs;
-        });
-      }
-    } catch (e) {
-      _showSnack('Error loading call logs: $e');
-    }
-  }
-
-  Future<void> _syncCallLogs() async {
-    if (isSyncing || database == null) return;
-
-    setState(() {
-      isSyncing = true;
-    });
-
-    try {
-      final List<Map<String, dynamic>> unsyncedLogs = await database!.query(
-        'call_logs',
-        where: 'is_synced = ?',
-        whereArgs: [0],
-      );
-
-      if (unsyncedLogs.isEmpty) {
-        setState(() {
-          isSyncing = false;
-        });
-        return;
-      }
-
-      final mappedLogs = unsyncedLogs.map((log) {
-        return {
-          'user_id': userId.isNotEmpty ? userId : null,
-          'phone_number': log['phone_number'] ?? 'Unknown',
-          'call_type': log['call_type'] ?? 'Unknown',
-          'duration_seconds': log['duration_seconds'] ?? 0,
-          'timestamp': log['timestamp'] ?? 'Unknown',
-          'system_call_id': log['system_call_id'] ?? log['id'].toString(),
-        };
-      }).toList();
-
-      // 1. Sync to Supabase directly (existing logic)
-      bool supabaseSuccess = false;
-      try {
-        Supabase.instance.client;
-        await Supabase.instance.client
-            .from('call_logs')
-            .upsert(mappedLogs, onConflict: 'system_call_id');
-        supabaseSuccess = true;
-      } catch (e) {
-        debugPrint("Supabase direct sync error: $e");
-      }
-
-      // 2. Sync to FastAPI Server (new logic)
-      bool serverSuccess = false;
-      try {
-        await ApiService.syncCalls(mappedLogs);
-        serverSuccess = true;
-      } catch (e) {
-        debugPrint("FastAPI server sync error: $e");
-      }
-
-      // If either sync succeeded, mark as synced locally
-      if (supabaseSuccess || serverSuccess) {
-        for (final log in unsyncedLogs) {
-          await database!.update(
-            'call_logs',
-            {'is_synced': 1},
-            where: 'id = ?',
-            whereArgs: [log['id']],
-          );
-        }
-        await _loadCallLogs();
-        _showSnack('Synced ${unsyncedLogs.length} logs successfully!');
-      } else {
-        _showSnack('Sync failed: Both destinations unreachable.');
-      }
-    } catch (e) {
-      debugPrint("Error syncing call logs: $e");
-      _showSnack('Sync failed: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          isSyncing = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _checkTrackingStatus() async {
-    try {
-      final result = await platform.invokeMethod<bool>('getTrackingStatus');
-      if (mounted) {
-        setState(() {
-          isTracking = result ?? false;
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _syncTrackingStatus() async {
-    try {
-      final user = await ApiService.getMe();
-      final remoteTrackingEnabled = user['is_tracking_enabled'] as bool? ?? true;
-      final localStatus = await platform.invokeMethod<bool>('getTrackingStatus') ?? false;
-      
-      if (remoteTrackingEnabled && !localStatus) {
-        await _startTracking();
-      } else if (!remoteTrackingEnabled && localStatus) {
-        await _stopTracking();
-      } else {
-        if (mounted) {
-          setState(() {
-            isTracking = localStatus;
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint('Error syncing tracking status with server: $e');
-    }
-  }
-
-  Future<void> _startTracking() async {
-    try {
-      final granted = await platform.invokeMethod<bool>('requestRequiredPermissions') ?? false;
-      await Permission.notification.request();
-
-      if (!granted) {
-        _showSnack('Required permissions not granted');
-        return;
-      }
-
-      await platform.invokeMethod('startTracking');
-      if (mounted) {
-        setState(() {
-          isTracking = true;
-        });
-        _showSnack('Call tracking started');
-      }
-    } catch (e) {
-      _showSnack('Error starting tracking: $e');
-    }
-  }
-
-  Future<void> _stopTracking() async {
-    try {
-      await platform.invokeMethod('stopTracking');
-      if (mounted) {
-        setState(() {
-          isTracking = false;
-        });
-        _showSnack('Call tracking stopped');
-      }
-    } catch (e) {
-      _showSnack('Error stopping tracking: $e');
-    }
-  }
-
-  void _showSnack(String message) {
-    if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    });
-  }
-
-  Future<void> _handleLogout() async {
-    final confirmed = await _confirmLogout();
-    if (!confirmed) return;
-    await ApiService.logout();
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
-    }
-  }
-
-  Future<bool> _confirmLogout() async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            backgroundColor: Colors.white,
-            title: const Text('Logout', style: TextStyle(color: Color(0xFF111111))),
-            content: const Text('Are you sure you want to log out?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel', style: TextStyle(color: Color(0xFF666666))),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F5C36),
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Logout'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    database?.close();
     super.dispose();
   }
 
-  String _formatDuration(num seconds) {
-    final int secs = seconds.toInt();
-    final int h = secs ~/ 3600;
-    final int m = (secs % 3600) ~/ 60;
-    final int s = secs % 60;
-    if (h > 0) {
-      return '${h}h ${m}m ${s}s';
-    } else if (m > 0) {
-      return '${m}m ${s}s';
+  String _formatDuration(int seconds) {
+    final duration = Duration(seconds: seconds);
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final secs = twoDigits(duration.inSeconds.remainder(60));
+    if (duration.inHours > 0) {
+      return '${duration.inHours}h ${minutes}m ${secs}s';
     }
-    return '${s}s';
+    return '${minutes}m ${secs}s';
   }
 
   @override
   Widget build(BuildContext context) {
-    final syncedCalls = callLogs.where((log) => log['is_synced'] == 1).length;
-    final unsyncedCalls = callLogs.where((log) => log['is_synced'] != 1).length;
-
     int totalIncoming = 0;
+    int totalOutgoing = 0;
     int attendedIncoming = 0;
     int missedIncoming = 0;
-    int totalOutgoing = 0;
     int connectedOutgoing = 0;
     int dialedOutgoing = 0;
+
     int totalIncomingSeconds = 0;
     int totalOutgoingSeconds = 0;
+
+    int syncedCalls = 0;
+    int unsyncedCalls = 0;
 
     for (final log in callLogs) {
       final type = (log['call_type'] ?? '').toString().toLowerCase();
       final duration = (log['duration_seconds'] as num? ?? 0).toInt();
+      final isSynced = log['is_synced'] == 1;
+
+      if (isSynced) {
+        syncedCalls++;
+      } else {
+        unsyncedCalls++;
+      }
 
       if (type == 'incoming' || type == 'missed' || type == 'rejected' || type == 'blocked') {
         totalIncoming++;
-        if (type == 'incoming' && duration > 0) {
+        if (duration > 0 && type == 'incoming') {
           attendedIncoming++;
           totalIncomingSeconds += duration;
         } else {
@@ -436,7 +310,17 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
         subtitle: 'Warrior Dashboard',
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout, color: Color(0xFF2F5C36)),
+            icon: isSyncing 
+                ? const SizedBox(
+                    width: 20, 
+                    height: 20, 
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF04693F))
+                  )
+                : const Icon(Icons.refresh, color: Color(0xFF04693F)),
+            onPressed: isSyncing ? null : _handleManualRefresh,
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, color: Color(0xFF04693F)),
             onPressed: _handleLogout,
           ),
         ],
@@ -449,72 +333,40 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
             color: Colors.white,
             child: Column(
               children: [
-                // Call tracking status switch card
+                // Always-on tracking indicator (read-only status badge)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isTracking ? const Color(0xFFEBF2EC) : const Color(0xFFF9F9F9),
+                    color: const Color(0xFFE6F3EC),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isTracking ? const Color(0xFF2F5C36).withOpacity(0.2) : const Color(0xFFEEEEEE),
-                      width: 1.5,
-                    ),
+                    border: Border.all(color: const Color(0xFF04693F).withOpacity(0.2), width: 1.5),
                   ),
-                  child: Row(
+                  child: const Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: isTracking ? const Color(0xFF2F5C36) : const Color(0xFFE5E5E5),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          isTracking ? Icons.spatial_audio_off_rounded : Icons.spatial_audio_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
+                      Icon(Icons.spatial_audio_off_rounded, color: Color(0xFF04693F), size: 20),
+                      SizedBox(width: 12),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              isTracking ? 'Tracking Active' : 'Tracking Inactive',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: isTracking ? const Color(0xFF2F5C36) : const Color(0xFF111111),
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            const Text(
-                              'Managed by Group Leader',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666)),
-                            ),
-                          ],
+                        child: Text(
+                          'Call Tracking Active',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF04693F)),
                         ),
                       ),
-                      Switch.adaptive(
-                        value: isTracking,
-                        activeColor: const Color(0xFF2F5C36),
-                        onChanged: null,
-                      ),
+                      Icon(Icons.check_circle_rounded, color: Color(0xFF04693F), size: 18),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 // Talk Time header card
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2F5C36).withOpacity(0.05),
+                    color: const Color(0xFF04693F).withOpacity(0.05),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF2F5C36).withOpacity(0.15)),
+                    border: Border.all(color: const Color(0xFF04693F).withOpacity(0.15)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.timer_outlined, color: Color(0xFF2F5C36)),
+                      const Icon(Icons.timer_outlined, color: Color(0xFF04693F)),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -527,7 +379,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                             const SizedBox(height: 2),
                             Text(
                               _formatDuration(totalDurationSeconds),
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF111111)),
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF010B26)),
                             ),
                           ],
                         ),
@@ -552,11 +404,11 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                           children: [
                             const Row(
                               children: [
-                                Icon(Icons.call_received_rounded, size: 16, color: Colors.green),
+                                Icon(Icons.call_received_rounded, size: 16, color: Color(0xFF04693F)),
                                 SizedBox(width: 6),
                                 Text(
                                   'Incoming',
-                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF111111)),
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
                                 ),
                               ],
                             ),
@@ -584,11 +436,11 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                           children: [
                             const Row(
                               children: [
-                                Icon(Icons.call_made_rounded, size: 16, color: Colors.blue),
+                                Icon(Icons.call_made_rounded, size: 16, color: Color(0xFF04693F)),
                                 SizedBox(width: 6),
                                 Text(
                                   'Outgoing',
-                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF111111)),
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
                                 ),
                               ],
                             ),
@@ -613,9 +465,9 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF666666)),
                     ),
                     if (unsyncedCalls > 0)
-                      const Icon(Icons.sync_problem_outlined, size: 14, color: Color(0xFF2F5C36))
+                      const Icon(Icons.sync_problem_outlined, size: 14, color: Color(0xFF04693F))
                     else
-                      const Icon(Icons.check_circle_outline, size: 14, color: Colors.green),
+                      const Icon(Icons.check_circle_outline, size: 14, color: Color(0xFF04693F)),
                   ],
                 ),
               ],
@@ -640,7 +492,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                   )
                 : RefreshIndicator(
                     onRefresh: _syncCallLogs,
-                    color: const Color(0xFF2F5C36),
+                    color: const Color(0xFF04693F),
                     child: ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       itemCount: callLogs.length,
@@ -661,21 +513,21 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                         if (isIncoming) {
                           if (isMissed) {
                             categoryLabel = 'Missed Call';
-                            categoryColor = Colors.redAccent;
+                            categoryColor = const Color(0xFFD32F2F); // Red
                             iconData = Icons.call_missed_rounded;
                           } else {
                             categoryLabel = 'Incoming (Attended)';
-                            categoryColor = Colors.green;
+                            categoryColor = const Color(0xFF04693F); // Brand Green
                             iconData = Icons.call_received_rounded;
                           }
                         } else {
                           if (isDialed) {
                             categoryLabel = 'Dialed (Unconnected)';
-                            categoryColor = Colors.orange;
+                            categoryColor = const Color(0xFFE65100); // Amber/Orange
                             iconData = Icons.call_missed_outgoing_rounded;
                           } else {
                             categoryLabel = 'Outgoing (Connected)';
-                            categoryColor = Colors.blue;
+                            categoryColor = const Color(0xFF010B26); // Brand Navy
                             iconData = Icons.call_made_rounded;
                           }
                         }
@@ -703,7 +555,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                             ),
                             title: Text(
                               log['phone_number'] ?? 'Unknown',
-                              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111111)),
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
                             ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -728,7 +580,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                             ),
                             trailing: Icon(
                               isSynced ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
-                              color: isSynced ? Colors.green : const Color(0xFF2F5C36),
+                              color: isSynced ? const Color(0xFF04693F) : const Color(0xFF010B26),
                               size: 20,
                             ),
                           ),

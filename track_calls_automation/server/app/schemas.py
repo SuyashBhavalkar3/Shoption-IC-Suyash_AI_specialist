@@ -15,6 +15,45 @@ class RegistrationRole(str, Enum):
     warrior      = "warrior"
     group_leader = "group_leader"
     admin        = "admin"
+    super_admin  = "super_admin"
+
+# ── Organisation Schemas ──────────────────────────────────────────────────────
+
+class OrganisationBase(BaseModel):
+    name: str
+
+class OrganisationCreate(OrganisationBase):
+    pass
+
+class OrganisationOut(OrganisationBase):
+    id: UUID
+    invite_code: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ProvisionOrganisationRequest(BaseModel):
+    passcode: str
+    organisation_name: str
+    super_admin_email: EmailStr
+
+class ProvisionOrganisationResponse(BaseModel):
+    organisation_id: UUID
+    organisation_name: str
+    invite_code: str
+    super_admin: UserOut
+
+
+class SendOtpRequest(BaseModel):
+    passcode: str
+
+
+class VerifyOtpRequest(BaseModel):
+    passcode: str
+    otp: str
+
+
 
 # ── User Schemas ─────────────────────────────────────────────────────────────
 
@@ -31,11 +70,14 @@ class UserCreate(UserBase):
     """
     password: str
     role: RegistrationRole = RegistrationRole.warrior
+    organisation_id: Optional[UUID] = None
+    organisation_invite_code: Optional[str] = None
 
 class UserOut(UserBase):
     id: UUID
     role: str
     manager_id: Optional[UUID] = None
+    organisation_id: Optional[UUID] = None
     is_approved: bool
     is_active: bool
     is_tracking_enabled: bool
@@ -52,6 +94,7 @@ class UserOutBasic(BaseModel):
     role: str
     is_approved: bool
     is_tracking_enabled: bool
+    organisation_id: Optional[UUID] = None
 
     class Config:
         from_attributes = True

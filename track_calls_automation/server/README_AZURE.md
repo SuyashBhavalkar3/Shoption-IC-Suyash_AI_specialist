@@ -17,9 +17,9 @@ This guide provides step-by-step instructions to deploy the Shoption Call Tracke
 
 Azure App Service injects settings directly as environment variables.
 
-1. In your App Service page, navigate to **Settings** -> **Configuration** in the left menu.
+1. In your App Service page, navigate to  **Settings** -> **Configuration** in the left menu.
 2. Under the **Application settings** tab, click **New application setting** to add the following variables:
-   - `SUPABASE_CONNECTION_STRING`: Your PostgreSQL connection string (e.g., `postgresql://...`).
+   - `DATABASE_URL`: Your Azure PostgreSQL connection string (e.g., `postgresql://user:pass@host:5432/dbname`).
    - `JWT_SECRET_KEY`: A strong random secret key for session JWTs.
    - `JWT_ALGORITHM`: `HS256`
    - `ACCESS_TOKEN_EXPIRE_MINUTES`: `1440` (24 hours, or your preferred duration).

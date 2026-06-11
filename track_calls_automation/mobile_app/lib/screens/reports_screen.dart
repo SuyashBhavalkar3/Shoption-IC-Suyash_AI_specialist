@@ -104,7 +104,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         subtitle: 'Call Performance Reports',
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout, color: Color(0xFF2F5C36)),
+            icon: const Icon(Icons.logout, color: Color(0xFF04693F)),
             tooltip: 'Logout',
             onPressed: _handleLogout,
           ),
@@ -112,9 +112,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _fetchReports,
-        color: const Color(0xFF2F5C36),
+        color: const Color(0xFF04693F),
         child: _isLoading && _reportsData == null
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFF2F5C36)))
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF04693F)))
             : _errorMessage != null
                 ? ListView(
                     padding: const EdgeInsets.all(24),
@@ -130,7 +130,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: _fetchReports,
-                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF111111)),
+                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF010B26)),
                         child: const Text('Retry'),
                       ),
                     ],
@@ -152,7 +152,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
-        title: const Text('Logout', style: TextStyle(color: Color(0xFF111111))),
+        title: const Text('Logout', style: TextStyle(color: Color(0xFF010B26))),
         content: const Text('Are you sure you want to log out?'),
         actions: [
           TextButton(
@@ -162,7 +162,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2F5C36),
+              backgroundColor: const Color(0xFF04693F),
               foregroundColor: Colors.white,
             ),
             child: const Text('Logout'),
@@ -282,7 +282,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.filter_list, size: 16, color: Color(0xFF2F5C36)),
+                  const Icon(Icons.filter_list, size: 16, color: Color(0xFF04693F)),
                   const SizedBox(width: 6),
                   Text(
                     _userRole == 'group_leader' ? 'Filter Team' : 'Filter Leader & Team',
@@ -300,11 +300,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   value: _selectedLeaderId,
                   decoration: const InputDecoration(
                     labelText: 'Group Leader',
-                    labelStyle: TextStyle(color: Color(0xFF2F5C36), fontSize: 13, fontWeight: FontWeight.bold),
+                    labelStyle: TextStyle(color: Color(0xFF04693F), fontSize: 13, fontWeight: FontWeight.bold),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
                   ),
-                  icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF2F5C36)),
+                  icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF04693F)),
                   items: [
                     const DropdownMenuItem(
                       value: 'all',
@@ -328,11 +328,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 value: _selectedWarriorId,
                 decoration: InputDecoration(
                   labelText: _userRole == 'group_leader' ? 'Select Warrior' : 'Warrior',
-                  labelStyle: const TextStyle(color: Color(0xFF2F5C36), fontSize: 13, fontWeight: FontWeight.bold),
+                  labelStyle: const TextStyle(color: Color(0xFF04693F), fontSize: 13, fontWeight: FontWeight.bold),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.zero,
                 ),
-                icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF2F5C36)),
+                icon: const Icon(Icons.arrow_drop_down, color: Color(0xFF04693F)),
                 items: [
                   const DropdownMenuItem(
                     value: 'all',
@@ -364,7 +364,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   icon: const Icon(Icons.download_rounded, size: 18, color: Colors.white),
                   label: const Text('Export Excel', style: TextStyle(fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2F5C36),
+                    backgroundColor: const Color(0xFF04693F),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -378,11 +378,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () => _exportReport('pdf'),
-                  icon: const Icon(Icons.picture_as_pdf_rounded, size: 18, color: Color(0xFF2F5C36)),
+                  icon: const Icon(Icons.picture_as_pdf_rounded, size: 18, color: Color(0xFF04693F)),
                   label: const Text('Export PDF', style: TextStyle(fontWeight: FontWeight.bold)),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF2F5C36),
-                    side: const BorderSide(color: Color(0xFF2F5C36), width: 1.5),
+                    foregroundColor: const Color(0xFF04693F),
+                    side: const BorderSide(color: Color(0xFF04693F), width: 1.5),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -403,7 +403,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 'Total Calls',
                 totalCalls.toString(),
                 Icons.phone_outlined,
-                const Color(0xFF2F5C36),
+                const Color(0xFF04693F),
               ),
             ),
             const SizedBox(width: 12),
@@ -412,7 +412,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 'Total Duration',
                 _formatDuration(totalSeconds),
                 Icons.hourglass_bottom_outlined,
-                const Color(0xFF111111),
+                const Color(0xFF010B26),
               ),
             ),
           ],
@@ -447,7 +447,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF111111),
+            color: Color(0xFF010B26),
           ),
         ),
         const SizedBox(height: 12),
@@ -473,11 +473,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 side: const BorderSide(color: Color(0xFFEEEEEE)),
               ),
               child: ExpansionTile(
-                iconColor: const Color(0xFF2F5C36),
-                collapsedIconColor: const Color(0xFF111111),
+                iconColor: const Color(0xFF04693F),
+                collapsedIconColor: const Color(0xFF010B26),
                 title: Text(
                   warrior['full_name'],
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111111)),
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
                 ),
                 subtitle: Text(
                   '${warrior['total_calls']} calls • ${_formatDuration(warrior['total_calling_seconds'] as num? ?? 0)} attended' +
@@ -493,65 +493,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Row(
-                              children: [
-                                Icon(Icons.spatial_audio_off_rounded, size: 16, color: Color(0xFF2F5C36)),
-                                SizedBox(width: 6),
-                                Text(
-                                  'Warrior Call Tracking Status',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF111111)),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              children: [
-                                Text(
-                                  (warrior['is_tracking_enabled'] as bool? ?? true) ? 'Enabled' : 'Disabled',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: (warrior['is_tracking_enabled'] as bool? ?? true) ? const Color(0xFF2F5C36) : Colors.redAccent,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Switch.adaptive(
-                                  value: warrior['is_tracking_enabled'] as bool? ?? true,
-                                  activeColor: const Color(0xFF2F5C36),
-                                  onChanged: (val) async {
-                                    try {
-                                      await ApiService.updateWarriorTracking(warrior['warrior_id'].toString(), val);
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Updated call tracking for ${warrior['full_name']} to ${val ? "Enabled" : "Disabled"}.'),
-                                            behavior: SnackBarBehavior.floating,
-                                          ),
-                                        );
-                                      }
-                                      _fetchReports(); // Refresh the list
-                                    } catch (e) {
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Failed to update tracking: $e'),
-                                            backgroundColor: Colors.redAccent,
-                                            behavior: SnackBarBehavior.floating,
-                                          ),
-                                        );
-                                      }
-                                    }
-                                  },
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
                         const SizedBox(height: 12),
                         const Divider(height: 1, color: Color(0xFFEEEEEE)),
                         const SizedBox(height: 12),
+
                         (() {
                           final List<dynamic> calls = warrior['calls'] ?? [];
                           int attendedIncoming = 0;
@@ -594,7 +539,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                       children: [
                                         Text(
                                           'Incoming: ${warrior['incoming_calls_count']} calls',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF111111)),
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF010B26)),
                                         ),
                                         const SizedBox(height: 2),
                                         Text('• Attended: $attendedIncoming', style: const TextStyle(fontSize: 11, color: Color(0xFF666666))),
@@ -609,7 +554,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                       children: [
                                         Text(
                                           'Outgoing: ${warrior['outgoing_calls_count']} calls',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF111111)),
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF010B26)),
                                         ),
                                         const SizedBox(height: 2),
                                         Text('• Connected: $connectedOutgoing', style: const TextStyle(fontSize: 11, color: Color(0xFF666666))),
@@ -623,7 +568,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               const SizedBox(height: 6),
                               Text(
                                 'Average Attended Call Duration: ${(warrior['average_call_seconds'] as num? ?? 0).toStringAsFixed(0)}s',
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2F5C36)),
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF04693F)),
                               ),
                             ],
                           );
@@ -631,7 +576,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         const SizedBox(height: 12),
                         const Text(
                           'Recent Calls Log:',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF111111)),
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF010B26)),
                         ),
                         const SizedBox(height: 8),
                         if ((warrior['calls'] as List).isEmpty)
@@ -748,7 +693,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w900,
-              color: Color(0xFF111111),
+              color: Color(0xFF010B26),
             ),
           ),
           if (subtitle != null) ...[

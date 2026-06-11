@@ -1,10 +1,16 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
-from app.config import settings
+import os
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
+
+db_url = os.getenv("DATABASE_URL")
 
 # In production, psycopg2 connection pool will be used
 engine = create_engine(
-    settings.SUPABASE_CONNECTION_STRING or settings.DATABASE_URL,
+    db_url,
     pool_pre_ping=True
 )
 

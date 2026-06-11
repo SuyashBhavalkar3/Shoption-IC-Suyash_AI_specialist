@@ -1,34 +1,49 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
-class PendingApprovalScreen extends StatelessWidget {
+class PendingApprovalScreen extends StatefulWidget {
   const PendingApprovalScreen({super.key});
 
+  @override
+  State<PendingApprovalScreen> createState() => _PendingApprovalScreenState();
+}
+
+class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
+  bool _checking = false;
+
   Future<void> _checkStatus(BuildContext context) async {
+    if (_checking) return;
+    setState(() {
+      _checking = true;
+    });
+
     try {
       final user = await ApiService.getMe();
-      if (user['is_approved'] == true) {
-        // Save the updated info and route
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user_role', user['role']);
-        await prefs.setString('user_name', user['full_name']);
-        
-        if (context.mounted) {
-          Navigator.pushReplacementNamed(context, '/home');
-        }
+      final isApproved = user['is_approved'] as bool;
+      
+      if (!mounted) return;
+      
+      if (isApproved) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account approved! Logging in...')),
+        );
+        Navigator.pushReplacementNamed(context, '/home');
       } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Account still pending approval.')),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Account still pending approval.')),
+        );
       }
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to check status: $e')),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _checking = false;
+        });
       }
     }
   }
@@ -58,7 +73,7 @@ class PendingApprovalScreen extends StatelessWidget {
                 errorBuilder: (_, __, ___) => const Icon(
                   Icons.phone_callback_rounded,
                   size: 80,
-                  color: Color(0xFF2F5C36),
+                  color: Color(0xFF04693F),
                 ),
               ),
               const SizedBox(height: 40),
@@ -74,7 +89,7 @@ class PendingApprovalScreen extends StatelessWidget {
                     Icon(
                       Icons.hourglass_empty_rounded,
                       size: 48,
-                      color: Color(0xFF2F5C36),
+                      color: Color(0xFF04693F),
                     ),
                     SizedBox(height: 16),
                     Text(
@@ -82,7 +97,7 @@ class PendingApprovalScreen extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF111111),
+                        color: Color(0xFF010B26),
                       ),
                     ),
                     SizedBox(height: 10),
@@ -100,9 +115,9 @@ class PendingApprovalScreen extends StatelessWidget {
               ),
               const SizedBox(height: 30),
               ElevatedButton(
-                onPressed: () => _checkStatus(context),
+                onPressed: _checking ? null : () => _checkStatus(context),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF111111),
+                  backgroundColor: const Color(0xFF010B26),
                   foregroundColor: Colors.white,
                   minimumSize: const Size.fromHeight(54),
                   shape: RoundedRectangleBorder(
@@ -110,19 +125,25 @@ class PendingApprovalScreen extends StatelessWidget {
                   ),
                   elevation: 0,
                 ),
-                child: const Text(
-                  'Check Approval Status',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                child: _checking
+                    ? const SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Text(
+                        'Check Approval Status',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
               ),
               const Spacer(),
               TextButton.icon(
                 onPressed: () => _logout(context),
-                icon: const Icon(Icons.logout, color: Color(0xFF2F5C36)),
+                icon: const Icon(Icons.logout, color: Color(0xFF04693F)),
                 label: const Text(
                   'Logout',
                   style: TextStyle(
-                    color: Color(0xFF2F5C36),
+                    color: Color(0xFF04693F),
                     fontWeight: FontWeight.bold,
                   ),
                 ),

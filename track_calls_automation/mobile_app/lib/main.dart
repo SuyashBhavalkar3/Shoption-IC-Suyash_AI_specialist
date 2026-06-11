@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,19 +13,8 @@ import 'screens/pending_users_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await dotenv.load(fileName: ".env");
-    final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
-    final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
-    if (supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty) {
-      await Supabase.initialize(
-        url: supabaseUrl,
-        anonKey: supabaseAnonKey,
-      );
-    }
-  } catch (e) {
-    debugPrint("Failed to initialize Supabase: $e");
-  }
+  // Load .env so ApiService can read API_BASE_URL.
+  await dotenv.load(fileName: ".env");
   runApp(const CallTrackerApp());
 }
 
@@ -68,14 +56,14 @@ class CallTrackerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Shoption Call Tracker',
+      title: 'LeadLens Call Tracker',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.light,
         scaffoldBackgroundColor: Colors.white,
         colorScheme: const ColorScheme.light(
-          primary: Color(0xFF111111),
-          secondary: Color(0xFF2F5C36),
+          primary: Color(0xFF010B26),     // Deep Navy/Black from logo
+          secondary: Color(0xFF04693F),   // Green from logo
           surface: Colors.white,
           background: Colors.white,
         ),
@@ -88,7 +76,7 @@ class CallTrackerApp extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
               body: Center(
-                child: CircularProgressIndicator(color: Color(0xFF2F5C36)),
+                child: CircularProgressIndicator(color: Color(0xFF04693F)),
               ),
             );
           }

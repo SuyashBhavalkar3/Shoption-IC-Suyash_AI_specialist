@@ -1,0 +1,15 @@
+# key.properties — Release signing credentials for Play Store.
+# !! NEVER commit the real file to git !!
+# Fill in these values after running:
+#
+#   keytool -genkey -v \
+#     -keystore shoption-release.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 \
+#     -alias shoption-key
+#
+# Then move shoption-release.jks into the android/ directory.
+
+storeFile=shoption-release.jks
+storePassword=YOUR_KEYSTORE_PASSWORD
+keyAlias=shoption-key
+keyPassword=YOUR_KEY_PASSWORD
