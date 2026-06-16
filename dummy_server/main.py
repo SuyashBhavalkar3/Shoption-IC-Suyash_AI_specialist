@@ -18,7 +18,7 @@ app = FastAPI(
 )
 
 # Retrieve configuration from environment variables or use default fallbacks
-LEADLENS_SECRET_KEY = os.getenv("LEADLENS_SECRET_KEY", "my_dummy_secret")
+LEADLENS_SECRET_KEY = os.getenv("LEADLENS_SECRET_KEY")
 
 @app.get("/webhook")
 async def verify_webhook(
@@ -48,7 +48,7 @@ async def receive_webhook(request: Request):
     """
     try:
         # Retrieve configuration from environment variables dynamically
-        secret_token = os.getenv("LEADLENS_SECRET_TOKEN", "my_dummy_token")
+        secret_token = os.getenv("LEADLENS_SECRET_TOKEN")
 
         # Read the raw body bytes (required for accurate HMAC verification)
         body = await request.body()
