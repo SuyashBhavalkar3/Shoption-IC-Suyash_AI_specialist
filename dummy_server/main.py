@@ -3,7 +3,7 @@ import hmac
 import hashlib
 import logging
 from fastapi import FastAPI, Request, HTTPException, Query, Response
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 
 # Set up logging to output to console
 logging.basicConfig(
@@ -19,7 +19,6 @@ app = FastAPI(
 
 # Retrieve configuration from environment variables or use default fallbacks
 LEADLENS_SECRET_KEY = os.getenv("LEADLENS_SECRET_KEY", "my_dummy_secret")
-LEADLENS_SECRET_TOKEN = os.getenv("LEADLENS_SECRET_TOKEN", "my_dummy_token")
 
 @app.get("/webhook")
 async def verify_webhook(
@@ -47,38 +46,68 @@ async def receive_webhook(request: Request):
     POST endpoint to consume LeadLens webhook events.
     Verifies the request using HMAC-SHA256 signature in the X-LeadLens-Signature header.
     """
-    # Read the raw body bytes (required for accurate HMAC verification)
-    body = await request.body()
-    
-    # Retrieve the signature header
-    signature_header = request.headers.get("X-LeadLens-Signature")
-    if not signature_header:
-        logger.warning("Webhook request missing 'X-LeadLens-Signature' header.")
-        raise HTTPException(status_code=401, detail="Missing signature header")
-    
-    # Strip any prefix like 'sha256=' if present (standard format often includes it)
-    expected_signature = signature_header
-    if signature_header.lower().startswith("sha256="):
-        expected_signature = signature_header[7:]
-        
-    # Compute the HMAC-SHA256 signature using the token
-    computed_signature = hmac.new(
-        LEADLENS_SECRET_TOKEN.encode("utf-8"),
-        body,
-        hashlib.sha256
-    ).hexdigest()
-    
-    # Securely compare signatures to prevent timing attacks
-    if not hmac.compare_digest(computed_signature, expected_signature):
-        logger.warning(f"Signature verification failed. Expected: {expected_signature}, Computed: {computed_signature}")
-        raise HTTPException(status_code=403, detail="Invalid signature")
-        
-    # Attempt to parse body as JSON
     try:
-        payload = await request.json()
-    except Exception as e:
-        logger.error(f"Error parsing JSON payload: {e}")
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+        # Retrieve configuration from environment variables dynamically
+        secret_token = os.getenv("LEADLENS_SECRET_TOKEN", "my_dummy_token")
+
+        # Read the raw body bytes (required for accurate HMAC verification)
+        body = await request.body()
         
-    logger.info(f"Successfully verified and received webhook payload: {payload}")
-    return {"status": "success"}
+        # Retrieve the signature header
+        signature_header = request.headers.get("X-LeadLens-Signature")
+        if not signature_header:
+            logger.warning("Webhook request missing 'X-LeadLens-Signature' header.")
+            return JSONResponse(
+                status_code=401,
+                content={"status": "unauthorized", "message": "Missing signature header"}
+            )
+        
+        # Strip any prefix like 'sha256=' if present (standard format often includes it)
+        expected_signature = signature_header
+        if signature_header.lower().startswith("sha256="):
+            expected_signature = signature_header[7:]
+            
+        # Compute the HMAC-SHA256 signature using the token
+        computed_signature = hmac.new(
+            secret_token.encode("utf-8"),
+            body,
+            hashlib.sha256
+        ).hexdigest()
+        
+        # Securely compare signatures to prevent timing attacks
+        if not hmac.compare_digest(computed_signature, expected_signature):
+            logger.warning(f"Signature verification failed. Expected: {expected_signature}, Computed: {computed_signature}")
+            return JSONResponse(
+                status_code=401,
+                content={"status": "unauthorized", "message": "Invalid signature"}
+            )
+            
+        # Attempt to parse body as JSON
+        try:
+            payload = await request.json()
+        except Exception as e:
+            logger.error(f"Error parsing JSON payload: {e}")
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "Invalid JSON payload"}
+            )
+            
+        logger.info(f"Successfully verified and received webhook payload: {payload}")
+        
+        # Log payload details (phone_number, duration, etc.)
+        phone_number = payload.get("phone_number")
+        duration = payload.get("duration")
+        logger.info(f"Call Details - Phone Number: {phone_number}, Duration: {duration}")
+
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "message": "Signature verified!"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in receive_webhook: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "An unexpected error occurred"}
+        )
+
