@@ -10,6 +10,8 @@ import 'screens/pending_approval_screen.dart';
 import 'screens/warrior_home_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/pending_users_screen.dart';
+import 'screens/org_employees_screen.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -175,10 +177,22 @@ class AdminNavigationShell extends StatefulWidget {
 
 class _AdminNavigationShellState extends State<AdminNavigationShell> {
   int _currentIndex = 0;
-  final List<Widget> _screens = [
-    const ReportsScreen(),
-    const PendingUsersScreen(),
-  ];
+  String? _role;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRole();
+  }
+
+  Future<void> _loadRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _role = prefs.getString('user_role');
+      _isLoading = false;
+    });
+  }
 
   Future<void> _handleLogout() async {
     final confirmed = await showDialog<bool>(
@@ -211,8 +225,23 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF2F5C36)),
+        ),
+      );
+    }
+
+    final isSuperAdmin = _role == 'super_admin';
+    final List<Widget> screens = [
+      const ReportsScreen(),
+      const PendingUsersScreen(),
+      if (isSuperAdmin) const OrgEmployeesScreen(),
+    ];
+
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         selectedItemColor: const Color(0xFF2F5C36),
@@ -220,8 +249,8 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
         backgroundColor: Colors.white,
         elevation: 8,
         onTap: (index) {
-          if (index == 2) {
-            // Logout tab
+          final logoutIndex = isSuperAdmin ? 3 : 2;
+          if (index == logoutIndex) {
             _handleLogout();
           } else {
             setState(() {
@@ -229,18 +258,24 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
             });
           }
         },
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.analytics_outlined),
             activeIcon: Icon(Icons.analytics),
             label: 'Reports',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.people_outline),
             activeIcon: Icon(Icons.people),
             label: 'Approvals',
           ),
-          BottomNavigationBarItem(
+          if (isSuperAdmin)
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.badge_outlined),
+              activeIcon: Icon(Icons.badge),
+              label: 'Registry',
+            ),
+          const BottomNavigationBarItem(
             icon: Icon(Icons.logout, color: Color(0xFF2F5C36)),
             label: 'Logout',
           ),

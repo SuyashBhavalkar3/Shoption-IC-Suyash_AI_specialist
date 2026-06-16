@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.routers import auth, users, calls
+from app.routers import auth, users, calls, org_employees, web_auth, webhooks
 
 # Create database tables automatically if not already present
 # (In production with existing tables, SQLAlchemy skips creating existing tables safely)
@@ -26,6 +26,9 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(calls.router)
+app.include_router(org_employees.router)
+app.include_router(web_auth.router)
+app.include_router(webhooks.router)
 
 @app.get("/")
 def read_root():

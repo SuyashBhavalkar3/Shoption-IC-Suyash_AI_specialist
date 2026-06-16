@@ -59,19 +59,25 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                "stopTracking" -> {
+                    stopService(Intent(this, CallTrackingService::class.java))
+                    result.success(true)
+                }
+
+                "hasCallPermissions" -> {
+                    result.success(hasCallPermissions())
+                }
+
+                "isTrackingActive" -> {
+                    result.success(CallTrackingService.isRunning)
+                }
+
                 else -> result.notImplemented()
             }
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // Auto-start the tracking service every time the app comes to the foreground.
-        // This is a no-op if the service is already running (START_STICKY keeps it alive).
-        if (hasCallPermissions()) {
-            startCallTrackingService()
-        }
-    }
+
 
     private fun startCallTrackingService() {
         val intent = Intent(this, CallTrackingService::class.java)
@@ -100,13 +106,9 @@ class MainActivity : FlutterActivity() {
         if (requestCode != REQUEST_CODE_REQUIRED_PERMISSIONS) return
 
         val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        // If permissions were just granted, we DO NOT auto-start the service to ensure explicit user consent.
         pendingPermissionResult?.success(allGranted)
         pendingPermissionResult = null
-
-        // If permissions were just granted, start the service immediately.
-        if (allGranted) {
-            startCallTrackingService()
-        }
     }
 
     override fun onDestroy() {

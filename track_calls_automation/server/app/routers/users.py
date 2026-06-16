@@ -5,7 +5,7 @@ from uuid import UUID
 from app.database import get_db
 from app.models import User
 from app.schemas import UserOut, ApproveWarrior, RoleUpdate, UserOutBasic
-from app.auth import get_current_user, RoleChecker
+from app.security import get_current_user, RoleChecker
 
 router = APIRouter(
     prefix="/users",
@@ -284,3 +284,19 @@ def update_user_tracking(
     db.commit()
     db.refresh(target)
     return target
+
+
+@router.put("/me/tracking-active", response_model=UserOut)
+def update_my_tracking_active(
+    active: bool,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Allows the logged-in user (e.g. warrior) to toggle their active tracking status on the database.
+    """
+    print(f"INFO: PUT /users/me/tracking-active (active={active}) requested by {current_user.email}")
+    current_user.is_tracking_active = active
+    db.commit()
+    db.refresh(current_user)
+    return current_user

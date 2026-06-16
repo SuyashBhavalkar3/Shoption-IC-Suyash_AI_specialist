@@ -143,6 +143,16 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> updateMyTrackingActive(bool active) async {
+    final url = Uri.parse('$baseUrl/users/me/tracking-active?active=$active');
+    final response = await http.put(url, headers: await _headers());
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
   static Future<List<dynamic>> getPendingUsers() async {
     final url = Uri.parse('$baseUrl/users/pending');
     final response = await http.get(url, headers: await _headers());
@@ -222,6 +232,66 @@ class ApiService {
     }
   }
 
+  // ── Org Employees ──
+
+  static Future<List<dynamic>> getOrgEmployees() async {
+    final url = Uri.parse('$baseUrl/org-employees/');
+    final response = await http.get(url, headers: await _headers());
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
+  static Future<Map<String, dynamic>> addOrgEmployee(String employeeId, String? email) async {
+    final url = Uri.parse('$baseUrl/org-employees/');
+    final response = await http.post(
+      url,
+      headers: await _headers(),
+      body: jsonEncode({
+        'employee_id': employeeId,
+        'email': email,
+      }),
+    );
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
+  static Future<Map<String, dynamic>> bulkUploadOrgEmployees(List<Map<String, String>> employees) async {
+    final url = Uri.parse('$baseUrl/org-employees/bulk-upload');
+    final request = http.MultipartRequest('POST', url);
+    
+    final headers = await _headers();
+    request.headers.addAll(headers);
+    
+    final buffer = StringBuffer();
+    buffer.writeln('employee_id,email');
+    for (final emp in employees) {
+      buffer.writeln('${emp['employee_id']},${emp['email'] ?? ''}');
+    }
+    
+    request.files.add(
+      http.MultipartFile.fromString(
+        'file',
+        buffer.toString(),
+        filename: 'employees.csv',
+      ),
+    );
+    
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
   static String _parseError(String body) {
     try {
       final parsed = jsonDecode(body);
@@ -232,3 +302,4 @@ class ApiService {
     return 'An unexpected error occurred ($body)';
   }
 }
+

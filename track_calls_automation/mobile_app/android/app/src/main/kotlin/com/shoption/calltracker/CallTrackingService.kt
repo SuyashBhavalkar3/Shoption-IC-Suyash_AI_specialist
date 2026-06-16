@@ -55,7 +55,7 @@ class CallTrackingService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun startForegroundTracking() {
@@ -97,8 +97,8 @@ class CallTrackingService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Call Tracking Active")
-            .setContentText("LeadLens Call Tracker is running")
+            .setContentTitle("Call Tracking Enabled")
+            .setContentText("Monitoring business call activity. Tap to manage.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)

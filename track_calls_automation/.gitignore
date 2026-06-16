@@ -43,7 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-*.env
+*.env 
 call_env/
 server/.env
 server/.venv/
@@ -54,6 +54,6 @@ db_url.txt
 *.__init__.py
 *.xlsx
 *.csv
-# product_web_page/
-# product_web_page/node_modules
-# product_web_page/.next
+product_web_page/
+product_web_page/node_modules
+product_web_page/.next

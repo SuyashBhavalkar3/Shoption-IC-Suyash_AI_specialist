@@ -23,6 +23,8 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   String userEmail = '';
   String userId = '';
 
+  bool isTrackingActive = false;
+  bool permissionsGranted = false;
 
   @override
   void initState() {
@@ -30,7 +32,6 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
     WidgetsBinding.instance.addObserver(this);
     _bootstrap();
     _setupMethodChannelListener();
-    _requestPermissions();
   }
 
   Future<void> _loadUserInfo() async {
@@ -46,8 +47,8 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
     await _loadUserInfo();
     await _initializeDatabase();
     await _loadCallLogs();
-    // Always ensure the tracking service is running on startup.
-    await _ensureTracking();
+    // Re-check call tracking service state on boot without forcing it to run
+    await _checkTrackingStatus();
     await _restoreFromBackend();
     await _syncCallLogs();
   }
@@ -136,12 +137,48 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
     });
   }
 
-  Future<void> _ensureTracking() async {
+  Future<void> _checkTrackingStatus() async {
+    try {
+      final bool active = await platform.invokeMethod('isTrackingActive');
+      final bool granted = await platform.invokeMethod('hasCallPermissions');
+      setState(() {
+        isTrackingActive = active;
+        permissionsGranted = granted;
+      });
+    } catch (e) {
+      debugPrint('Failed to check status: $e');
+    }
+  }
+
+  Future<void> _startTracking() async {
     try {
       final bool trackingRunning = await platform.invokeMethod('ensureTracking');
       debugPrint('Service status ensured: $trackingRunning');
+      if (trackingRunning) {
+        try {
+          await ApiService.updateMyTrackingActive(true);
+        } catch (apiError) {
+          debugPrint('Failed to sync active status to server: $apiError');
+        }
+      }
+      await _checkTrackingStatus();
     } catch (e) {
       debugPrint('Failed to communicate with service: $e');
+    }
+  }
+
+  Future<void> _stopTracking() async {
+    try {
+      final bool success = await platform.invokeMethod('stopTracking');
+      debugPrint('Service stop status: $success');
+      try {
+        await ApiService.updateMyTrackingActive(false);
+      } catch (apiError) {
+        debugPrint('Failed to sync active status to server: $apiError');
+      }
+      await _checkTrackingStatus();
+    } catch (e) {
+      debugPrint('Failed to stop service: $e');
     }
   }
 
@@ -156,13 +193,10 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   }
 
   Future<void> _requestPermissions() async {
-    // We request permissions via the custom method channel to orchestrate service start properly
     try {
       final bool granted = await platform.invokeMethod('requestRequiredPermissions');
       debugPrint('Required permissions granted status: $granted');
-      if (granted) {
-        await _ensureTracking();
-      }
+      await _checkTrackingStatus();
     } catch (e) {
       debugPrint('Permission request error: $e');
     }
@@ -333,25 +367,139 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
             color: Colors.white,
             child: Column(
               children: [
-                // Always-on tracking indicator (read-only status badge)
+                // Call Tracking Status Panel
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE6F3EC),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF04693F).withOpacity(0.2), width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                    border: Border.all(color: const Color(0xFFEEEEEE), width: 1.5),
                   ),
-                  child: const Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.spatial_audio_off_rounded, color: Color(0xFF04693F), size: 20),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Call Tracking Active',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF04693F)),
+                      const Text(
+                        'Call Tracking Control Panel',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF010B26),
                         ),
                       ),
-                      Icon(Icons.check_circle_rounded, color: Color(0xFF04693F), size: 18),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Permissions Granted:',
+                            style: TextStyle(fontSize: 13, color: Color(0xFF555555)),
+                          ),
+                          Row(
+                            children: [
+                              Icon(
+                                permissionsGranted ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                                color: permissionsGranted ? const Color(0xFF04693F) : const Color(0xFFD32F2F),
+                                size: 16,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                permissionsGranted ? 'Yes' : 'No',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: permissionsGranted ? const Color(0xFF04693F) : const Color(0xFFD32F2F),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Tracking Service Active:',
+                            style: TextStyle(fontSize: 13, color: Color(0xFF555555)),
+                          ),
+                          Row(
+                            children: [
+                              Icon(
+                                isTrackingActive ? Icons.play_circle_filled_rounded : Icons.stop_circle_rounded,
+                                color: isTrackingActive ? const Color(0xFF04693F) : const Color(0xFF888888),
+                                size: 16,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                isTrackingActive ? 'Yes' : 'No',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: isTrackingActive ? const Color(0xFF04693F) : const Color(0xFF888888),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: isTrackingActive 
+                                  ? null 
+                                  : () async {
+                                      if (!permissionsGranted) {
+                                        await _requestPermissions();
+                                      }
+                                      final bool granted = await platform.invokeMethod('hasCallPermissions');
+                                      if (granted) {
+                                        await _startTracking();
+                                      }
+                                    },
+                              icon: const Icon(Icons.play_arrow, size: 18),
+                              label: const Text('Start Tracking'),
+                              style: ElevatedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                backgroundColor: const Color(0xFF04693F),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                elevation: 0,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: !isTrackingActive 
+                                  ? null 
+                                  : () async {
+                                      await _stopTracking();
+                                    },
+                              icon: const Icon(Icons.stop, size: 18),
+                              label: const Text('Stop Tracking'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFD32F2F),
+                                side: BorderSide(color: isTrackingActive ? const Color(0xFFD32F2F) : const Color(0xFFEEEEEE)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),

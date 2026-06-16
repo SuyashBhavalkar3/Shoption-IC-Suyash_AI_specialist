@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List
@@ -8,9 +8,10 @@ from datetime import datetime
 from jose import jwt, JWTError
 from app.config import JWT_SECRET_KEY, JWT_ALGORITHM
 from app.database import get_db
-from app.models import User, CallLog
+from app.models import User, CallLog, OrgEmployee
 from app.schemas import CallLogCreate, CallLogOut, LeaderReportResponse, WarriorReport, CallDetail
-from app.auth import get_current_user
+from app.security import get_current_user
+from app.webhooks_dispatcher import dispatch_webhook
 
 router = APIRouter(
     prefix="/calls",
@@ -18,10 +19,21 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=List[CallLogOut], status_code=status.HTTP_201_CREATED)
-def sync_call_logs(logs_in: List[CallLogCreate], db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def sync_call_logs(
+    logs_in: List[CallLogCreate], 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
     print(f"INFO: Received POST /calls/ request from {current_user.email} with {len(logs_in)} logs.")
-    # Only Warriors (or anyone with a valid login) can upload logs
-    # We match it to the current logged in user (current_user.id)
+    
+    # Pre-fetch matching employee_id
+    emp_id = None
+    if current_user.system_id:
+        emp_record = db.query(OrgEmployee).filter(OrgEmployee.system_id == current_user.system_id).first()
+        if emp_record:
+            emp_id = emp_record.employee_id
+
     created_logs = []
     for log_data in logs_in:
         # Check if user + system_call_id combination already exists to prevent duplicate syncs
@@ -36,15 +48,58 @@ def sync_call_logs(logs_in: List[CallLogCreate], db: Session = Depends(get_db), 
                 call_type=log_data.call_type,
                 duration_seconds=log_data.duration_seconds,
                 timestamp=log_data.timestamp,
-                system_call_id=log_data.system_call_id
+                system_call_id=log_data.system_call_id,
+                system_id=current_user.system_id,
+                employee_id=emp_id,
+                org_id=current_user.organisation_id
             )
             db.add(db_log)
             created_logs.append(db_log)
+            
+            # Enqueue webhook delivery for this newly created log
+            log_payload = {
+                "phone_number": db_log.phone_number,
+                "call_type": db_log.call_type,
+                "duration_seconds": db_log.duration_seconds,
+                "timestamp": db_log.timestamp,
+                "system_call_id": db_log.system_call_id,
+                "employee_id": db_log.employee_id,
+                "system_id": db_log.system_id
+            }
+            background_tasks.add_task(
+                dispatch_webhook, 
+                db, 
+                current_user.organisation_id, 
+                "call.synced", 
+                log_payload
+            )
+            
         elif exists.user_id is None:
             # If log exists but user_id is None, link it to the syncing user
             exists.user_id = current_user.id
+            exists.system_id = current_user.system_id
+            exists.employee_id = emp_id
+            exists.org_id = current_user.organisation_id
             db.add(exists)
             created_logs.append(exists)
+            
+            # Enqueue webhook delivery for this linked log
+            log_payload = {
+                "phone_number": exists.phone_number,
+                "call_type": exists.call_type,
+                "duration_seconds": exists.duration_seconds,
+                "timestamp": exists.timestamp,
+                "system_call_id": exists.system_call_id,
+                "employee_id": exists.employee_id,
+                "system_id": exists.system_id
+            }
+            background_tasks.add_task(
+                dispatch_webhook, 
+                db, 
+                current_user.organisation_id, 
+                "call.synced", 
+                log_payload
+            )
             
     if created_logs:
         db.commit()

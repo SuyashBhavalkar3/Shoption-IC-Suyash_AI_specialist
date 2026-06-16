@@ -1,7 +1,7 @@
 import uuid
 import secrets
 import string
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Boolean, text
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Boolean, text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -17,7 +17,8 @@ class Organisation(Base):
     invite_code = Column(String, unique=True, index=True, nullable=True, default=generate_invite_code)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
 
-    users      = relationship("User", back_populates="organisation")
+    users         = relationship("User", back_populates="organisation")
+    org_employees = relationship("OrgEmployee", back_populates="organisation", cascade="all, delete-orphan")
 
 
 class User(Base):
@@ -35,8 +36,10 @@ class User(Base):
     is_approved  = Column(Boolean, nullable=False, server_default=text("false"))
     is_active    = Column(Boolean, nullable=False, server_default=text("true"))
     is_tracking_enabled = Column(Boolean, nullable=False, server_default=text("true"), default=True)
+    is_tracking_active  = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     created_at   = Column(DateTime, server_default=text("now()"), nullable=False)
-    
+    # system_id links this user to their org_employees record (set at registration if employee_id is provided)
+    system_id    = Column(String(6), unique=True, nullable=True, index=True)
     organisation_id = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="SET NULL"), nullable=True)
 
     # Self-referencing relationship
@@ -56,6 +59,10 @@ class CallLog(Base):
     timestamp        = Column(String, nullable=False)
     system_call_id   = Column(String, nullable=False)
     created_at       = Column(DateTime, server_default=text("now()"), nullable=False)
+    # system_id is copied from user.system_id at call-log creation time for cross-table access
+    system_id        = Column(String(6), nullable=True, index=True)
+    employee_id      = Column(String, nullable=True)
+    org_id           = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="call_logs")
@@ -69,4 +76,70 @@ class OTP(Base):
     otp_code    = Column(String, nullable=False)
     is_verified = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     created_at  = Column(DateTime, server_default=text("now()"), nullable=False)
+
+
+class OrgEmployee(Base):
+    """
+    Maps a client-provided employee_id to our internally generated 6-digit system_id.
+    Scoped to an organisation — same employee_id can exist in two different orgs.
+    system_id is the primary identifier used in webhook payloads.
+    """
+    __tablename__ = "org_employees"
+
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    system_id   = Column(String(6), unique=True, nullable=False, index=True)
+    employee_id = Column(String, nullable=False)
+    email       = Column(String, nullable=True, index=True)
+    org_id      = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False)
+    created_at  = Column(DateTime, server_default=text("now()"), nullable=False)
+
+    organisation = relationship("Organisation", back_populates="org_employees")
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "employee_id", name="uq_org_employee"),
+    )
+
+
+class WebUser(Base):
+    __tablename__ = "web_users"
+
+    id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    full_name     = Column(String, nullable=False)
+    email         = Column(String, unique=True, index=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    organisation_id = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="SET NULL"), nullable=True)
+    created_at    = Column(DateTime, server_default=text("now()"), nullable=False)
+
+    subscription  = relationship("WebhookSubscription", back_populates="web_user", cascade="all, delete-orphan", uselist=False)
+    organisation  = relationship("Organisation")
+
+
+class WebhookSubscription(Base):
+    __tablename__ = "webhook_subscriptions"
+
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    web_user_id = Column(UUID(as_uuid=True), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    target_url  = Column(String(2048), nullable=False)
+    secret_token = Column(String(255), nullable=False)
+    is_active   = Column(Boolean, nullable=False, default=True)
+    created_at  = Column(DateTime, server_default=text("now()"), nullable=False)
+
+    web_user    = relationship("WebUser", back_populates="subscription")
+    logs        = relationship("WebhookLog", back_populates="subscription", cascade="all, delete-orphan")
+
+
+class WebhookLog(Base):
+    __tablename__ = "webhook_logs"
+
+    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    subscription_id = Column(UUID(as_uuid=True), ForeignKey("webhook_subscriptions.id", ondelete="CASCADE"), nullable=False)
+    event_type      = Column(String(50), nullable=False)
+    payload         = Column(String, nullable=False)  # We will store JSON stringified payloads
+    response_status = Column(Integer, nullable=True)
+    response_body   = Column(String, nullable=True)
+    attempt_number  = Column(Integer, nullable=False, default=1)
+    status          = Column(String(20), nullable=False, default="pending")  # 'success', 'failed', 'retrying'
+    created_at      = Column(DateTime, server_default=text("now()"), nullable=False)
+
+    subscription    = relationship("WebhookSubscription", back_populates="logs")
 

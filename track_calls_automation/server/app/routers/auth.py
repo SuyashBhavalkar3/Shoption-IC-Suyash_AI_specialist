@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import User, Organisation, OTP
+from app.models import User, Organisation, OTP, OrgEmployee
 from app.schemas import UserCreate, UserOut, Token, LoginRequest, OrganisationOut, ProvisionOrganisationRequest, ProvisionOrganisationResponse, SendOtpRequest, VerifyOtpRequest
-from app.auth import get_password_hash, verify_password, create_access_token, get_current_user
+from app.security import get_password_hash, verify_password, create_access_token, get_current_user
 from app.email_service import send_invite_email, send_otp_email
 from typing import List
 from datetime import datetime, timedelta
@@ -222,7 +222,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
     is_approved_status = True if (is_first_user or requested_role == "super_admin") else False
 
     db_user = User(
-        email=user_in.email,
+        email=user_in.email.strip().lower(),
         password_hash=hashed_password,
         full_name=user_in.full_name,
         role="super_admin" if is_first_user else requested_role,
@@ -235,6 +235,23 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+
+    # Auto-link system_id: if user's registered email is found in org_employees for this organisation,
+    # stamp their system_id automatically onto the user profile.
+    if target_org_id:
+        clean_reg_email = db_user.email.strip().lower()
+        emp_record = db.query(OrgEmployee).filter(
+            OrgEmployee.org_id == target_org_id,
+            OrgEmployee.email == clean_reg_email
+        ).first()
+        if emp_record:
+            db_user.system_id = emp_record.system_id
+            db.commit()
+            db.refresh(db_user)
+            print(f"INFO: Auto-linked user '{db_user.email}' to system_id '{db_user.system_id}' using email matching.")
+        else:
+            print(f"INFO: Email '{db_user.email}' not pre-configured in org_employees for org '{target_org_id}'. system_id not auto-linked.")
+
     return db_user
 
 

@@ -56,6 +56,30 @@ async def get_current_user(
         raise credentials_exception
     return user
 
+async def get_current_web_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+):
+    from app.models import WebUser
+    token = credentials.credentials
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+        
+    web_user = db.query(WebUser).filter(WebUser.id == user_id).first()
+    if web_user is None:
+        raise credentials_exception
+    return web_user
+
 # Role enforcement checks
 class RoleChecker:
     def __init__(self, allowed_roles: list[str]):

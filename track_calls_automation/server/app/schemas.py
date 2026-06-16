@@ -42,7 +42,7 @@ class ProvisionOrganisationResponse(BaseModel):
     organisation_id: UUID
     organisation_name: str
     invite_code: str
-    super_admin: UserOut
+    super_admin: "UserOut"
 
 
 class SendOtpRequest(BaseModel):
@@ -72,15 +72,20 @@ class UserCreate(UserBase):
     role: RegistrationRole = RegistrationRole.warrior
     organisation_id: Optional[UUID] = None
     organisation_invite_code: Optional[str] = None
+    # Optional: employee enters their company-issued employee_id at registration.
+    # If provided + org found, system auto-links their system_id from org_employees.
+    employee_id: Optional[str] = None
 
 class UserOut(UserBase):
     id: UUID
     role: str
     manager_id: Optional[UUID] = None
     organisation_id: Optional[UUID] = None
+    system_id: Optional[str] = None
     is_approved: bool
     is_active: bool
     is_tracking_enabled: bool
+    is_tracking_active: bool
     created_at: datetime
 
     class Config:
@@ -94,7 +99,9 @@ class UserOutBasic(BaseModel):
     role: str
     is_approved: bool
     is_tracking_enabled: bool
+    is_tracking_active: bool
     organisation_id: Optional[UUID] = None
+    system_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -144,6 +151,9 @@ class CallLogCreate(CallLogBase):
 class CallLogOut(CallLogBase):
     id: int
     user_id: UUID
+    system_id: Optional[str] = None
+    employee_id: Optional[str] = None
+    org_id: Optional[UUID] = None
     created_at: datetime
 
     class Config:
@@ -180,3 +190,72 @@ class LeaderReportResponse(BaseModel):
     overall_total_calling_hours: float
     overall_average_call_seconds: float
     warriors: List[WarriorReport]
+
+# ── Org Employee Schemas ──────────────────────────────────────────────────────
+
+class OrgEmployeeCreate(BaseModel):
+    """Single manual entry — org_id is taken from the authenticated super_admin's session."""
+    employee_id: str
+    email: Optional[EmailStr] = None
+
+class OrgEmployeeOut(BaseModel):
+    id: UUID
+    system_id: str
+    employee_id: str
+    email: Optional[str] = None
+    org_id: UUID
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class OrgEmployeeSkippedRow(BaseModel):
+    """Details about a row that was skipped during bulk upload."""
+    employee_id: str
+    reason: str
+
+class OrgEmployeeBulkUploadResult(BaseModel):
+    """Response returned after a CSV/bulk upload."""
+    total_rows: int
+    created: int
+    skipped: int
+    skipped_details: List[OrgEmployeeSkippedRow]
+
+
+# ── Web User & Webhook Schemas ─────────────────────────────────────────────
+
+class WebUserCreate(BaseModel):
+    email: EmailStr
+    full_name: str
+    password: str
+
+class WebUserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class WebUserOut(BaseModel):
+    id: UUID
+    full_name: str
+    email: EmailStr
+    organisation_id: Optional[UUID] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class WebhookSubscriptionCreate(BaseModel):
+    target_url: str
+    verification_secret: Optional[str] = None
+    is_active: Optional[bool] = True
+
+class WebhookSubscriptionOut(BaseModel):
+    id: UUID
+    web_user_id: UUID
+    target_url: str
+    secret_token: str
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
