@@ -49,6 +49,12 @@ async def receive_webhook(request: Request):
     try:
         # Retrieve configuration from environment variables dynamically
         secret_token = os.getenv("LEADLENS_SECRET_TOKEN")
+        if not secret_token:
+            logger.error("LEADLENS_SECRET_TOKEN is not set in the environment variables.")
+            return JSONResponse(
+                status_code=401,
+                content={"status": "unauthorized", "message": "Server secret token is not configured"}
+            )
 
         # Read the raw body bytes (required for accurate HMAC verification)
         body = await request.body()
