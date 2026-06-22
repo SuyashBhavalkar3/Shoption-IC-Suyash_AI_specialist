@@ -36,6 +36,8 @@ async def dispatch_webhook(db: Session, org_id, event_type: str, payload: dict):
             "org_id": str(org_id),
             "data": payload
         }
+
+        print(event_payload)
         
         payload_str = json.dumps(event_payload)
         
@@ -45,11 +47,15 @@ async def dispatch_webhook(db: Session, org_id, event_type: str, payload: dict):
             payload_str.encode(),
             hashlib.sha256
         ).hexdigest()
+
         
         headers = {
             "Content-Type": "application/json",
             "X-LeadLens-Signature": signature
         }
+
+        print(signature)
+        print(sub.secret_token)
         
         status_code = None
         response_body = ""

@@ -57,3 +57,4 @@ db_url.txt
 product_web_page/
 product_web_page/node_modules
 product_web_page/.next
+google_service_credentials.json

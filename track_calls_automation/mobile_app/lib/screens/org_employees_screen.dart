@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/api_service.dart';
 import '../widgets/shoption_app_bar.dart';
 
@@ -68,6 +69,44 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
     });
   }
 
+  Future<void> _toggleTrackingNeeded(String employeeId, bool newValue) async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      await ApiService.updateOrgEmployeeTrackingNeeded(employeeId, newValue);
+      // Update local state without fetching all again to prevent layout reset
+      setState(() {
+        final idx = _employees.indexWhere((element) => element['employee_id'] == employeeId);
+        if (idx != -1) {
+          _employees[idx]['is_tracking_needed'] = newValue;
+        }
+        final fIdx = _filteredEmployees.indexWhere((element) => element['employee_id'] == employeeId);
+        if (fIdx != -1) {
+          _filteredEmployees[fIdx]['is_tracking_needed'] = newValue;
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newValue
+                  ? 'Tracking enabled for employee "$employeeId"'
+                  : 'Tracking disabled for employee "$employeeId"',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      _showErrorDialog(e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   Future<void> _handleAddSingle(String employeeId, String? email) async {
     final cleanId = employeeId.trim();
     final cleanEmail = email?.trim();
@@ -110,6 +149,39 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
         _showBulkResultDialog(created, skipped, details);
       }
       _fetchEmployees();
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      _showErrorDialog(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _handleFilePicker() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['csv', 'xlsx', 'xls', 'tsv', 'txt', 'json'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final filePath = result.files.single.path!;
+        final fileName = result.files.single.name;
+
+        setState(() {
+          _isLoading = true;
+        });
+
+        final uploadResult = await ApiService.uploadEmployeesFile(filePath, fileName);
+        final created = uploadResult['created'] ?? 0;
+        final skipped = uploadResult['skipped'] ?? 0;
+        final List<dynamic> details = uploadResult['skipped_details'] ?? [];
+
+        if (mounted) {
+          _showBulkResultDialog(created, skipped, details);
+        }
+        _fetchEmployees();
+      }
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -337,11 +409,20 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.playlist_add, color: Color(0xFF04693F)),
-                title: const Text('Bulk Add Employees'),
+                title: const Text('Bulk Add Employees (Manual)'),
                 subtitle: const Text('Enter multiple IDs and emails (comma separated)'),
                 onTap: () {
                   Navigator.pop(context);
                   _showBulkAddDialog();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.upload_file, color: Color(0xFF04693F)),
+                title: const Text('Upload Employee File'),
+                subtitle: const Text('Select a .csv, .xlsx, .xls, .tsv, .txt, or .json file'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _handleFilePicker();
                 },
               ),
               const SizedBox(height: 10),
@@ -487,6 +568,34 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
                                               ),
                                             ],
                                           ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'Track Calls',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                                color: (emp['is_tracking_needed'] ?? true) ? const Color(0xFF04693F) : const Color(0xFF666666),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            SizedBox(
+                                              height: 36,
+                                              child: Switch(
+                                                value: emp['is_tracking_needed'] ?? true,
+                                                activeColor: const Color(0xFF04693F),
+                                                activeTrackColor: const Color(0xFFE8F5E9),
+                                                inactiveThumbColor: const Color(0xFF888888),
+                                                inactiveTrackColor: const Color(0xFFE0E0E0),
+                                                onChanged: (bool value) {
+                                                  _toggleTrackingNeeded(emp['employee_id'], value);
+                                                },
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),

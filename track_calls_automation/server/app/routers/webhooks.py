@@ -47,6 +47,8 @@ async def upsert_webhook_subscription(
         needs_verification = True
     elif sub.target_url != target_url:
         needs_verification = True
+    elif verification_secret:
+        needs_verification = True
         
     if needs_verification:
         if not verification_secret:
@@ -132,7 +134,8 @@ async def test_webhook_subscription(
             "employee_id": "EMP-TEST",
             "phone_number": "+919999999999",
             "call_type": "outgoing",
-            "duration_seconds": 120,
+            "call_status": "Dropped Call",
+            "duration_seconds": 8,
             "timestamp": str(int(datetime.utcnow().timestamp() * 1000)),
             "system_call_id": "call_mock_test_12345"
         }

@@ -4,8 +4,10 @@ from typing import List
 from uuid import UUID
 from app.database import get_db
 from app.models import User
-from app.schemas import UserOut, ApproveWarrior, RoleUpdate, UserOutBasic
+from app.schemas import UserOut, ApproveWarrior, RoleUpdate, UserOutBasic, UserTrackStatusPayload, UserUpdateAdmin
 from app.security import get_current_user, RoleChecker
+from app.firebase_service import update_tracking_status_in_firestore
+from datetime import datetime
 
 router = APIRouter(
     prefix="/users",
@@ -20,10 +22,23 @@ super_admin_only = RoleChecker(["super_admin"])
 # ── List / Read endpoints ─────────────────────────────────────────────────────
 
 @router.get("/me", response_model=UserOut)
-def get_me(current_user: User = Depends(get_current_user)):
+def get_me(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """Any logged-in user can fetch their own profile."""
     print(f"INFO: GET /users/me requested by user {current_user.email} (Role: {current_user.role}, Tracking Enabled: {current_user.is_tracking_enabled})")
-    return current_user
+    
+    emp_id = None
+    if current_user.system_id:
+        from app.models import OrgEmployee
+        emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == current_user.system_id).first()
+        if emp_rec:
+            emp_id = emp_rec.employee_id
+            
+    out = UserOut.from_orm(current_user)
+    out.employee_id = emp_id
+    return out
 
 
 @router.get("/", response_model=List[UserOut])
@@ -33,9 +48,25 @@ def get_all_users(
 ):
     """Admin / Super-admin: see every user in their organisation."""
     if current_user.organisation_id is not None:
-        return db.query(User).filter(User.organisation_id == current_user.organisation_id).all()
+        users_list = db.query(User).filter(User.organisation_id == current_user.organisation_id).all()
     else:
-        return db.query(User).filter(User.organisation_id.is_(None)).all()
+        users_list = db.query(User).filter(User.organisation_id.is_(None)).all()
+        
+    for u in users_list:
+        if u.is_tracking_enabled:
+            if u.last_activity_timestamp:
+                diff = (datetime.utcnow() - u.last_activity_timestamp).total_seconds()
+                if diff >= 120:
+                    u.is_tracking_enabled = False
+                    u.is_tracking_active = False
+                    db.add(u)
+                    db.commit()
+            else:
+                u.is_tracking_enabled = False
+                u.is_tracking_active = False
+                db.add(u)
+                db.commit()
+    return users_list
 
 
 @router.get("/pending", response_model=List[UserOut])
@@ -76,18 +107,32 @@ def get_my_team(
     - warrior       → only themselves
     """
     if current_user.role == "group_leader":
-        return db.query(User).filter(User.manager_id == current_user.id).all()
+        users_list = db.query(User).filter(User.manager_id == current_user.id).all()
+    elif current_user.role == "admin":
+        org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
+        users_list = db.query(User).filter(User.role.in_(["warrior", "group_leader"]), org_filter).all()
+    elif current_user.role == "super_admin":
+        org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
+        users_list = db.query(User).filter(org_filter).all()
+    else:
+        users_list = [current_user]
 
-    org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
-
-    if current_user.role == "admin":
-        return db.query(User).filter(User.role.in_(["warrior", "group_leader"]), org_filter).all()
-
-    if current_user.role == "super_admin":
-        return db.query(User).filter(org_filter).all()
-
-    # warrior: only self
-    return [current_user]
+    for u in users_list:
+        if u.is_tracking_enabled:
+            if u.last_activity_timestamp:
+                diff = (datetime.utcnow() - u.last_activity_timestamp).total_seconds()
+                if diff >= 120:
+                    u.is_tracking_enabled = False
+                    u.is_tracking_active = False
+                    db.add(u)
+                    db.commit()
+            else:
+                u.is_tracking_enabled = False
+                u.is_tracking_active = False
+                db.add(u)
+                db.commit()
+                
+    return users_list
 
 
 # ── Approval endpoints (hierarchy-aware) ──────────────────────────────────────
@@ -166,6 +211,22 @@ def approve_user(
         target.is_approved = True
         db.commit()
         db.refresh(target)
+        
+        # Sync to Firestore if the approved user is a warrior
+        from app.models import OrgEmployee
+        emp_id = ""
+        if target.system_id:
+            emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == target.system_id).first()
+            if emp_rec:
+                emp_id = emp_rec.employee_id
+        
+        update_tracking_status_in_firestore(
+            emp_id=emp_id,
+            organisation_id=str(target.organisation_id) if target.organisation_id else "",
+            system_id=target.system_id or "",
+            is_tracking_enabled=target.is_tracking_enabled,
+            last_activity_timestamp=target.last_activity_timestamp or datetime.utcnow()
+        )
         return target
 
     # ── Approving a group_leader → just approve, no manager needed ───────────
@@ -297,6 +358,231 @@ def update_my_tracking_active(
     """
     print(f"INFO: PUT /users/me/tracking-active (active={active}) requested by {current_user.email}")
     current_user.is_tracking_active = active
+    current_user.is_tracking_enabled = active
+    current_user.last_activity_timestamp = datetime.utcnow()
     db.commit()
     db.refresh(current_user)
+    
+    # Sync to Firestore
+    from app.models import OrgEmployee
+    emp_id = ""
+    if current_user.system_id:
+        emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == current_user.system_id).first()
+        if emp_rec:
+            emp_id = emp_rec.employee_id
+            
+    update_tracking_status_in_firestore(
+        emp_id=emp_id,
+        organisation_id=str(current_user.organisation_id) if current_user.organisation_id else "",
+        system_id=current_user.system_id or "",
+        is_tracking_enabled=active,
+        last_activity_timestamp=current_user.last_activity_timestamp
+    )
+    
     return current_user
+
+
+@router.post("/track/status")
+def post_track_status(
+    payload: UserTrackStatusPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Receives periodic status pings/heartbeats from the mobile app.
+    Updates PostgreSQL databases and Firestore collection.
+    """
+    # Parse last_activity_timestamp
+    timestamp_val = payload.last_activity_timestamp
+    try:
+        val = float(timestamp_val)
+        if val > 1e11:  # Milliseconds timestamp
+            val = val / 1000.0
+        parsed_dt = datetime.fromtimestamp(val)
+    except ValueError:
+        try:
+            parsed_dt = datetime.fromisoformat(timestamp_val.replace("Z", "+00:00"))
+        except Exception:
+            parsed_dt = datetime.utcnow()
+            
+    # Update local PostgreSQL database
+    current_user.is_tracking_enabled = payload.is_tracking_enabled
+    current_user.is_tracking_active = payload.is_tracking_enabled
+    current_user.last_activity_timestamp = parsed_dt
+    db.commit()
+    db.refresh(current_user)
+    
+    # Update Firestore
+    update_tracking_status_in_firestore(
+        emp_id=payload.emp_id,
+        organisation_id=payload.organisation_id,
+        system_id=payload.system_id,
+        is_tracking_enabled=payload.is_tracking_enabled,
+        last_activity_timestamp=parsed_dt
+    )
+    
+    return {
+        "success": True,
+        "is_tracking_enabled": current_user.is_tracking_enabled,
+        "is_tracking_active": current_user.is_tracking_active
+    }
+
+
+@router.put("/{user_id}", response_model=UserOut)
+def admin_update_user(
+    user_id: UUID,
+    payload: UserUpdateAdmin,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_or_super)
+):
+    """
+    Admin or SuperAdmin can update a user's details.
+    Allows editing full_name, email, role, manager_id (reassigning group leader), is_active, is_approved, and system_id.
+    """
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        
+    if target.organisation_id != current_user.organisation_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot update a user from another organisation"
+        )
+
+    # 1. Update basic details
+    if payload.full_name is not None:
+        target.full_name = payload.full_name
+    if payload.email is not None:
+        email_clean = payload.email.strip().lower()
+        # Check duplicate email
+        dup = db.query(User).filter(User.email == email_clean, User.id != user_id).first()
+        if dup:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is already in use")
+        target.email = email_clean
+
+    # 2. Update role
+    if payload.role is not None:
+        VALID_ROLES = {"super_admin", "admin", "group_leader", "warrior"}
+        if payload.role not in VALID_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid role. Choose from: {', '.join(sorted(VALID_ROLES))}"
+            )
+        if payload.role in ("super_admin", "admin") and current_user.role != "super_admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only a super_admin can assign 'admin' or 'super_admin' roles"
+            )
+        target.role = payload.role
+
+    # 3. Update manager_id (reassign group leader)
+    if payload.manager_id is not None:
+        # Check if the manager_id points to a group_leader in the same org
+        leader = db.query(User).filter(User.id == payload.manager_id).first()
+        if not leader:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group leader not found")
+        if leader.organisation_id != current_user.organisation_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Selected group leader must belong to your organisation"
+            )
+        if leader.role != "group_leader":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Manager must be a group_leader"
+            )
+        target.manager_id = payload.manager_id
+
+    # 4. Update status flags
+    if payload.is_active is not None:
+        target.is_active = payload.is_active
+    if payload.is_approved is not None:
+        target.is_approved = payload.is_approved
+
+    # 5. Update system_id
+    if payload.system_id is not None:
+        system_id_clean = payload.system_id.strip() if payload.system_id else None
+        if system_id_clean:
+            # Check duplicate system_id
+            dup_sys = db.query(User).filter(User.system_id == system_id_clean, User.id != user_id).first()
+            if dup_sys:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="System ID is already in use by another user")
+        target.system_id = system_id_clean
+
+    db.commit()
+    db.refresh(target)
+
+    # 6. Sync to Firestore if target is a warrior
+    if target.role == "warrior":
+        try:
+            from app.models import OrgEmployee
+            emp_id = ""
+            if target.system_id:
+                emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == target.system_id).first()
+                if emp_rec:
+                    emp_id = emp_rec.employee_id
+            
+            update_tracking_status_in_firestore(
+                emp_id=emp_id,
+                organisation_id=str(target.organisation_id) if target.organisation_id else "",
+                system_id=target.system_id or "",
+                is_tracking_enabled=target.is_tracking_enabled,
+                last_activity_timestamp=target.last_activity_timestamp or datetime.utcnow()
+            )
+        except Exception as e:
+            print(f"ERROR: Failed to sync warrior update to Firestore: {e}")
+
+    return target
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_200_OK)
+def admin_delete_user(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(admin_or_super)
+):
+    """
+    Admin or SuperAdmin can permanently remove/delete a user.
+    """
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        
+    if target.organisation_id != current_user.organisation_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete a user from another organisation"
+        )
+
+    # Prevent deleting oneself
+    if target.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account"
+        )
+
+    # If the user is a warrior, disable tracking in Firestore or delete document
+    if target.role == "warrior":
+        try:
+            from app.models import OrgEmployee
+            emp_id = ""
+            if target.system_id:
+                emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == target.system_id).first()
+                if emp_rec:
+                    emp_id = emp_rec.employee_id
+            
+            if emp_id:
+                # Update tracking enabled to False in Firestore to disable it immediately
+                update_tracking_status_in_firestore(
+                    emp_id=emp_id,
+                    organisation_id=str(target.organisation_id) if target.organisation_id else "",
+                    system_id=target.system_id or "",
+                    is_tracking_enabled=False,
+                    last_activity_timestamp=datetime.utcnow()
+                )
+        except Exception as e:
+            print(f"WARNING: Failed to update Firestore on user deletion: {e}")
+
+    db.delete(target)
+    db.commit()
+    return {"detail": "User deleted successfully"}

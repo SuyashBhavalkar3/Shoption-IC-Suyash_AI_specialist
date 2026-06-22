@@ -12,3 +12,6 @@ python-multipart
 pydantic[email]
 gunicorn
 httpx
+firebase-admin
+openpyxl==3.1.5
+xlrd==2.0.2

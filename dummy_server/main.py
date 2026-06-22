@@ -120,14 +120,16 @@ async def receive_webhook(request: Request):
         body = await request.body()
         
         # Retrieve the signature header
+        # Retrieve the signature header
         signature_header = request.headers.get("X-LeadLens-Signature")
         if not signature_header:
             logger.warning("Webhook request missing 'X-LeadLens-Signature' header.")
             # Even if verification fails due to missing header, let's parse and save it as unverified
             try:
                 payload = await request.json()
-                phone_number = payload.get("phone_number")
-                duration = payload.get("duration")
+                data = payload.get("data", {}) if isinstance(payload.get("data"), dict) else {}
+                phone_number = payload.get("phone_number") or data.get("phone_number")
+                duration = payload.get("duration") or data.get("duration_seconds")
                 event_type = payload.get("event") or payload.get("event_type") or "call"
                 save_webhook_event(event_type, phone_number, duration, payload, False)
             except Exception:
@@ -163,8 +165,9 @@ async def receive_webhook(request: Request):
             )
             
         # Log payload details (phone_number, duration, etc.)
-        phone_number = payload.get("phone_number")
-        duration = payload.get("duration")
+        data = payload.get("data", {}) if isinstance(payload.get("data"), dict) else {}
+        phone_number = payload.get("phone_number") or data.get("phone_number")
+        duration = payload.get("duration") or data.get("duration_seconds")
         event_type = payload.get("event") or payload.get("event_type") or "call"
         logger.info(f"Call Details - Phone Number: {phone_number}, Duration: {duration}")
 

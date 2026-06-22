@@ -87,6 +87,7 @@ class UserOut(UserBase):
     is_tracking_enabled: bool
     is_tracking_active: bool
     created_at: datetime
+    employee_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -141,6 +142,7 @@ class TokenData(BaseModel):
 class CallLogBase(BaseModel):
     phone_number: str
     call_type: str
+    call_status: Optional[str] = None
     duration_seconds: int
     timestamp: str
     system_call_id: str
@@ -164,6 +166,7 @@ class CallLogOut(CallLogBase):
 class CallDetail(BaseModel):
     phone_number: str
     call_type: str
+    call_status: Optional[str] = None
     duration_seconds: int
     timestamp: str
 
@@ -203,6 +206,7 @@ class OrgEmployeeOut(BaseModel):
     system_id: str
     employee_id: str
     email: Optional[str] = None
+    is_tracking_needed: bool
     org_id: UUID
     created_at: datetime
 
@@ -259,3 +263,19 @@ class WebhookSubscriptionOut(BaseModel):
     class Config:
         from_attributes = True
 
+
+class UserTrackStatusPayload(BaseModel):
+    emp_id: str
+    organisation_id: str
+    last_activity_timestamp: str
+    is_tracking_enabled: bool
+    system_id: str
+
+class UserUpdateAdmin(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    role: Optional[str] = None
+    manager_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+    is_approved: Optional[bool] = None
+    system_id: Optional[str] = None

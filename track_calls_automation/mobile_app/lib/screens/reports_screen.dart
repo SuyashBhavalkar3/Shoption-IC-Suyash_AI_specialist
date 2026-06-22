@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../widgets/shoption_app_bar.dart';
+import 'warrior_home_screen.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -12,12 +15,18 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen> {
+  static const platform = MethodChannel('com.shoption.calltracker/tracking');
+
   Map<String, dynamic>? _reportsData;
   bool _isLoading = true;
   String? _errorMessage;
   String? _userRole;
   String? _selectedLeaderId;
   String? _selectedWarriorId;
+
+  bool isTrackingActive = false;
+  bool permissionsGranted = false;
+  Timer? _statusPingTimer;
 
   String _formatDuration(num seconds) {
     if (seconds == 0) return '0s';
@@ -66,6 +75,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
   void initState() {
     super.initState();
     _fetchReports();
+    _checkTrackingStatus();
+  }
+
+  @override
+  void dispose() {
+    _statusPingTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _fetchReports() async {
@@ -95,6 +111,126 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  Future<void> _checkTrackingStatus() async {
+    try {
+      final bool active = await platform.invokeMethod('isTrackingActive');
+      final bool granted = await platform.invokeMethod('hasCallPermissions');
+      setState(() {
+        isTrackingActive = active;
+        permissionsGranted = granted;
+      });
+      if (active) {
+        _startStatusPingTimer();
+      } else {
+        _stopStatusPingTimer();
+      }
+    } catch (e) {
+      debugPrint('Failed to check status: $e');
+    }
+  }
+
+  void _startStatusPingTimer() {
+    _statusPingTimer?.cancel();
+    _statusPingTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _sendStatusPing(true);
+    });
+    _sendStatusPing(true);
+  }
+
+  void _stopStatusPingTimer() {
+    _statusPingTimer?.cancel();
+    _statusPingTimer = null;
+    _sendStatusPing(false);
+  }
+
+  Future<void> _sendStatusPing(bool isEnabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    final empId = prefs.getString('user_emp_id') ?? '';
+    final orgId = prefs.getString('user_org_id') ?? '';
+    final systemId = prefs.getString('user_system_id') ?? '';
+
+    if (empId.isEmpty || orgId.isEmpty || systemId.isEmpty) {
+      try {
+        final user = await ApiService.getMe();
+        final updatedEmpId = user['employee_id']?.toString() ?? '';
+        final updatedOrgId = user['organisation_id']?.toString() ?? '';
+        final updatedSystemId = user['system_id']?.toString() ?? '';
+
+        await prefs.setString('user_emp_id', updatedEmpId);
+        await prefs.setString('user_org_id', updatedOrgId);
+        await prefs.setString('user_system_id', updatedSystemId);
+      } catch (e) {
+        debugPrint('Failed to refresh user details for ping: $e');
+        return;
+      }
+    }
+
+    final freshEmpId = prefs.getString('user_emp_id') ?? '';
+    final freshOrgId = prefs.getString('user_org_id') ?? '';
+    final freshSystemId = prefs.getString('user_system_id') ?? '';
+
+    if (freshSystemId.isEmpty) {
+      debugPrint('No system_id found. Skipping ping.');
+      return;
+    }
+
+    try {
+      final now = DateTime.now().toUtc().toIso8601String();
+      await ApiService.updateTrackingStatus(
+        empId: freshEmpId,
+        organisationId: freshOrgId,
+        systemId: freshSystemId,
+        isTrackingEnabled: isEnabled,
+        lastActivityTimestamp: now,
+      );
+      debugPrint('Status ping sent: enabled=$isEnabled, timestamp=$now');
+    } catch (e) {
+      debugPrint('Failed to send status ping: $e');
+    }
+  }
+
+  Future<void> _startTracking() async {
+    try {
+      final bool trackingRunning = await platform.invokeMethod('ensureTracking');
+      debugPrint('Service status ensured: $trackingRunning');
+      if (trackingRunning) {
+        try {
+          await ApiService.updateMyTrackingActive(true);
+        } catch (apiError) {
+          debugPrint('Failed to sync active status to server: $apiError');
+        }
+      }
+      await _checkTrackingStatus();
+    } catch (e) {
+      debugPrint('Failed to communicate with service: $e');
+    }
+  }
+
+  Future<void> _stopTracking() async {
+    try {
+      final bool success = await platform.invokeMethod('stopTracking');
+      debugPrint('Service stop status: $success');
+      try {
+        await ApiService.updateMyTrackingActive(false);
+      } catch (apiError) {
+        debugPrint('Failed to sync active status to server: $apiError');
+      }
+      await _checkTrackingStatus();
+    } catch (e) {
+      debugPrint('Failed to stop service: $e');
+    }
+  }
+
+  Future<void> _requestPermissions() async {
+    try {
+      final bool granted = await platform.invokeMethod('requestRequiredPermissions');
+      debugPrint('Required permissions granted status: $granted');
+      await _checkTrackingStatus();
+    } catch (e) {
+      debugPrint('Permission request error: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -103,6 +239,25 @@ class _ReportsScreenState extends State<ReportsScreen> {
         title: 'Team Analytics',
         subtitle: 'Call Performance Reports',
         actions: [
+          if (_userRole == 'admin' || _userRole == 'super_admin')
+            IconButton(
+              icon: const Icon(Icons.manage_accounts_outlined, color: Color(0xFF04693F)),
+              tooltip: 'Manage Warriors',
+              onPressed: () {
+                Navigator.pushNamed(context, '/warrior-management');
+              },
+            ),
+          if (_userRole == 'group_leader' || _userRole == 'admin' || _userRole == 'super_admin')
+            IconButton(
+              icon: const Icon(Icons.history_rounded, color: Color(0xFF04693F)),
+              tooltip: 'My Call History',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const WarriorHomeScreen()),
+                );
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.logout, color: Color(0xFF04693F)),
             tooltip: 'Logout',
@@ -268,6 +423,152 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return ListView(
       padding: const EdgeInsets.all(16.0),
       children: [
+        // Call Tracking Control Panel
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+            border: Border.all(color: const Color(0xFFEEEEEE), width: 1.5),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Call Tracking Control Panel',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF010B26),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Permissions Granted:',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF555555)),
+                  ),
+                  Row(
+                    children: [
+                      Icon(
+                        permissionsGranted ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                        color: permissionsGranted ? const Color(0xFF04693F) : const Color(0xFFD32F2F),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        permissionsGranted ? 'Yes' : 'No',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: permissionsGranted ? const Color(0xFF04693F) : const Color(0xFFD32F2F),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Tracking Service Active:',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF555555)),
+                  ),
+                  Row(
+                    children: [
+                      Icon(
+                        isTrackingActive ? Icons.play_circle_filled_rounded : Icons.stop_circle_rounded,
+                        color: isTrackingActive ? const Color(0xFF04693F) : const Color(0xFF888888),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isTrackingActive ? 'Yes' : 'No',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: isTrackingActive ? const Color(0xFF04693F) : const Color(0xFF888888),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (!permissionsGranted)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _requestPermissions,
+                    icon: const Icon(Icons.security_rounded, size: 16),
+                    label: const Text('Grant Required Permissions'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF010B26),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: isTrackingActive ? null : _startTracking,
+                        icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                        label: const Text('Start Tracking'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF04693F),
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: const Color(0xFFEEEEEE),
+                          disabledForegroundColor: const Color(0xFF888888),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: !isTrackingActive ? null : _stopTracking,
+                        icon: const Icon(Icons.stop_rounded, size: 18),
+                        label: const Text('Stop Tracking'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFD32F2F),
+                          side: BorderSide(color: isTrackingActive ? const Color(0xFFD32F2F) : const Color(0xFFEEEEEE)),
+                          disabledForegroundColor: const Color(0xFF888888),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
         // Dropdown Filters Card
         Container(
           margin: const EdgeInsets.only(bottom: 20),

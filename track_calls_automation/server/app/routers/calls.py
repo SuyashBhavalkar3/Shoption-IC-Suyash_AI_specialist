@@ -18,6 +18,20 @@ router = APIRouter(
     tags=["Call Logs"]
 )
 
+
+def _normalize_call_type(raw_call_type: str, duration_seconds: int) -> tuple[str, str]:
+    raw = (raw_call_type or "").strip().lower()
+    is_incoming = raw in ["incoming", "missed", "rejected", "blocked"]
+    direction = "Incoming" if is_incoming else "Outgoing"
+
+    if 1 <= duration_seconds <= 10:
+        return direction, "Dropped Call"
+
+    if is_incoming:
+        return direction, "Answered" if duration_seconds > 0 else "Missed Call"
+
+    return direction, "Answered" if duration_seconds > 0 else "Dialed"
+
 @router.post("/", response_model=List[CallLogOut], status_code=status.HTTP_201_CREATED)
 def sync_call_logs(
     logs_in: List[CallLogCreate], 
@@ -40,12 +54,14 @@ def sync_call_logs(
         exists = db.query(CallLog).filter(
             CallLog.system_call_id == log_data.system_call_id
         ).first()
+        call_type, call_status = _normalize_call_type(log_data.call_type, log_data.duration_seconds)
         
         if not exists:
             db_log = CallLog(
                 user_id=current_user.id,
                 phone_number=log_data.phone_number,
-                call_type=log_data.call_type,
+                call_type=call_type,
+                call_status=call_status,
                 duration_seconds=log_data.duration_seconds,
                 timestamp=log_data.timestamp,
                 system_call_id=log_data.system_call_id,
@@ -60,6 +76,7 @@ def sync_call_logs(
             log_payload = {
                 "phone_number": db_log.phone_number,
                 "call_type": db_log.call_type,
+                "call_status": db_log.call_status,
                 "duration_seconds": db_log.duration_seconds,
                 "timestamp": db_log.timestamp,
                 "system_call_id": db_log.system_call_id,
@@ -80,6 +97,8 @@ def sync_call_logs(
             exists.system_id = current_user.system_id
             exists.employee_id = emp_id
             exists.org_id = current_user.organisation_id
+            exists.call_type = call_type
+            exists.call_status = call_status
             db.add(exists)
             created_logs.append(exists)
             
@@ -87,6 +106,7 @@ def sync_call_logs(
             log_payload = {
                 "phone_number": exists.phone_number,
                 "call_type": exists.call_type,
+                "call_status": exists.call_status,
                 "duration_seconds": exists.duration_seconds,
                 "timestamp": exists.timestamp,
                 "system_call_id": exists.system_call_id,
@@ -126,13 +146,15 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
         )
         
     elif current_user.role == "group_leader":
-        # Get all warriors reporting to this leader
+        # Get all warriors reporting to this leader, plus the leader themselves
         warriors = db.query(User).filter(User.manager_id == current_user.id, User.role == "warrior").all()
+        warriors = list(warriors) + [current_user]
         
     elif current_user.role in ["admin", "super_admin"]:
-        # Admins and Super Admins get all warriors in their organisation
+        # Admins and Super Admins get all warriors and group leaders in their organisation, plus themselves
         org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
-        warriors = db.query(User).filter(User.role == "warrior", org_filter).all()
+        warriors = db.query(User).filter(User.role.in_(["warrior", "group_leader"]), org_filter).all()
+        warriors = list(warriors) + [current_user]
         
     else:
         raise HTTPException(
@@ -150,8 +172,8 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
         logs = db.query(CallLog).filter(CallLog.user_id == warrior.id).all()
         
         total_calls = len(logs)
-        incoming_count = sum(1 for l in logs if l.call_type.lower() in ["incoming", "missed", "rejected", "blocked"])
-        outgoing_count = sum(1 for l in logs if l.call_type.lower() == "outgoing")
+        incoming_count = sum(1 for l in logs if (l.call_type or "").lower() in ["incoming", "missed", "rejected", "blocked"])
+        outgoing_count = sum(1 for l in logs if (l.call_type or "").lower() == "outgoing")
         total_seconds = sum(l.duration_seconds for l in logs)
         
         avg_seconds = total_seconds / total_calls if total_calls > 0 else 0.0
@@ -166,16 +188,35 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
             CallDetail(
                 phone_number=l.phone_number,
                 call_type=l.call_type,
+                call_status=l.call_status,
                 duration_seconds=l.duration_seconds,
                 timestamp=l.timestamp
             ) for l in logs
         ]
 
+        # Resolve dynamic tracking status
+        is_tracking_enabled_dynamic = False
+        if warrior.is_tracking_enabled:
+            if warrior.last_activity_timestamp:
+                diff = (datetime.utcnow() - warrior.last_activity_timestamp).total_seconds()
+                if diff < 120:
+                    is_tracking_enabled_dynamic = True
+                else:
+                    warrior.is_tracking_enabled = False
+                    warrior.is_tracking_active = False
+                    db.add(warrior)
+                    db.commit()
+            else:
+                warrior.is_tracking_enabled = False
+                warrior.is_tracking_active = False
+                db.add(warrior)
+                db.commit()
+
         warrior_reports.append(
             WarriorReport(
                 warrior_id=warrior.id,
                 full_name=warrior.full_name,
-                is_tracking_enabled=warrior.is_tracking_enabled,
+                is_tracking_enabled=is_tracking_enabled_dynamic,
                 total_calls=total_calls,
                 incoming_calls_count=incoming_count,
                 outgoing_calls_count=outgoing_count,
@@ -226,10 +267,24 @@ def export_reports_csv(
     print(f"INFO: Export reports to CSV requested by {current_user.email} (Leader ID: {leader_id}, Warrior ID: {warrior_id})")
     
     org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
-    query = db.query(User).filter(User.role == "warrior", org_filter)
     if current_user.role == "group_leader":
-        query = query.filter(User.manager_id == current_user.id)
+        from sqlalchemy import or_
+        query = db.query(User).filter(
+            org_filter,
+            or_(
+                (User.manager_id == current_user.id) & (User.role == "warrior"),
+                User.id == current_user.id
+            )
+        )
     elif current_user.role in ["admin", "super_admin"]:
+        from sqlalchemy import or_
+        query = db.query(User).filter(
+            org_filter,
+            or_(
+                User.role.in_(["warrior", "group_leader"]),
+                User.id == current_user.id
+            )
+        )
         if leader_id and leader_id != "all":
             leader = db.query(User).filter(User.id == leader_id).first()
             if leader and leader.organisation_id == current_user.organisation_id:
@@ -267,12 +322,7 @@ def export_reports_csv(
             ])
         else:
             for log in logs:
-                raw_type = log.call_type.lower()
-                is_incoming = raw_type in ["incoming", "missed", "rejected", "blocked"]
-                if is_incoming:
-                    sub_cat = "Attended" if (raw_type == "incoming" and log.duration_seconds > 0) else "Missed"
-                else:
-                    sub_cat = "Connected" if (raw_type == "outgoing" and log.duration_seconds > 0) else "Dialed"
+                sub_cat = log.call_status or "Answered"
                 
                 writer.writerow([
                     warrior.full_name, warrior.email, manager_name,
@@ -298,10 +348,24 @@ def export_reports_pdf(
     print(f"INFO: Export reports to PDF requested by {current_user.email} (Leader ID: {leader_id}, Warrior ID: {warrior_id})")
     
     org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
-    query = db.query(User).filter(User.role == "warrior", org_filter)
     if current_user.role == "group_leader":
-        query = query.filter(User.manager_id == current_user.id)
+        from sqlalchemy import or_
+        query = db.query(User).filter(
+            org_filter,
+            or_(
+                (User.manager_id == current_user.id) & (User.role == "warrior"),
+                User.id == current_user.id
+            )
+        )
     elif current_user.role in ["admin", "super_admin"]:
+        from sqlalchemy import or_
+        query = db.query(User).filter(
+            org_filter,
+            or_(
+                User.role.in_(["warrior", "group_leader"]),
+                User.id == current_user.id
+            )
+        )
         if leader_id and leader_id != "all":
             leader = db.query(User).filter(User.id == leader_id).first()
             if leader and leader.organisation_id == current_user.organisation_id:
@@ -335,12 +399,12 @@ def export_reports_pdf(
     for warrior in warriors:
         logs = db.query(CallLog).filter(CallLog.user_id == warrior.id).order_by(CallLog.timestamp.desc()).all()
         w_calls = len(logs)
-        w_incoming = sum(1 for l in logs if l.call_type.lower() in ["incoming", "missed", "rejected", "blocked"])
-        w_incoming_attended = sum(1 for l in logs if l.call_type.lower() == "incoming" and l.duration_seconds > 0)
+        w_incoming = sum(1 for l in logs if (l.call_type or "").lower() in ["incoming", "missed", "rejected", "blocked"])
+        w_incoming_attended = sum(1 for l in logs if (l.call_type or "").lower() == "incoming" and (l.call_status or "").lower() == "answered")
         w_incoming_missed = w_incoming - w_incoming_attended
         
-        w_outgoing = sum(1 for l in logs if l.call_type.lower() == "outgoing")
-        w_outgoing_connected = sum(1 for l in logs if l.call_type.lower() == "outgoing" and l.duration_seconds > 0)
+        w_outgoing = sum(1 for l in logs if (l.call_type or "").lower() == "outgoing")
+        w_outgoing_connected = sum(1 for l in logs if (l.call_type or "").lower() == "outgoing" and (l.call_status or "").lower() == "answered")
         w_outgoing_dialed = w_outgoing - w_outgoing_connected
         
         w_seconds = sum(l.duration_seconds for l in logs)
@@ -376,6 +440,7 @@ def export_reports_pdf(
                 "leader": manager_name,
                 "phone": l.phone_number,
                 "type": l.call_type,
+                "status": l.call_status,
                 "duration": l.duration_seconds,
                 "timestamp": l.timestamp
             })

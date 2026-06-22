@@ -52,11 +52,18 @@ class _LoginScreenState extends State<LoginScreen> {
       final userEmail = user['email'] as String;
       final userId = user['id'] as String;
 
+      final userSystemId = user['system_id']?.toString() ?? '';
+      final userOrgId = user['organisation_id']?.toString() ?? '';
+      final userEmpId = user['employee_id']?.toString() ?? '';
+
       // Save user details locally
       await prefs.setString('user_role', role);
       await prefs.setString('user_name', userName);
       await prefs.setString('user_email', userEmail);
       await prefs.setString('user_id', userId);
+      await prefs.setString('user_system_id', userSystemId);
+      await prefs.setString('user_org_id', userOrgId);
+      await prefs.setString('user_emp_id', userEmpId);
 
       if (!mounted) return;
 

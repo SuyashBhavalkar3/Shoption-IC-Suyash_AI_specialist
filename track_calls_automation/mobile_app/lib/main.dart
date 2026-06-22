@@ -11,6 +11,7 @@ import 'screens/warrior_home_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/pending_users_screen.dart';
 import 'screens/org_employees_screen.dart';
+import 'screens/warrior_management_screen.dart';
 
 
 void main() async {
@@ -43,12 +44,7 @@ class CallTrackerApp extends StatelessWidget {
         return const PendingApprovalScreen();
       }
 
-      if (role == 'warrior') {
-        return const WarriorHomeScreen();
-      } else {
-        // Leaders and admins default directly to Reports/Analytics page
-        return const ReportsScreen();
-      }
+      return const RoleRouterWidget();
     } catch (_) {
       // If token expired or API failed, fallback to login screen
       return const LoginScreen();
@@ -92,6 +88,7 @@ class CallTrackerApp extends StatelessWidget {
         '/home': (context) => const RoleRouterWidget(),
         '/approvals': (context) => const PendingUsersScreen(),
         '/reports': (context) => const ReportsScreen(),
+        '/warrior-management': (context) => const WarriorManagementScreen(),
       },
     );
   }
@@ -177,22 +174,7 @@ class AdminNavigationShell extends StatefulWidget {
 
 class _AdminNavigationShellState extends State<AdminNavigationShell> {
   int _currentIndex = 0;
-  String? _role;
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRole();
-  }
-
-  Future<void> _loadRole() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _role = prefs.getString('user_role');
-      _isLoading = false;
-    });
-  }
+  bool _isLoading = false;
 
   Future<void> _handleLogout() async {
     final confirmed = await showDialog<bool>(
@@ -233,11 +215,10 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
       );
     }
 
-    final isSuperAdmin = _role == 'super_admin';
     final List<Widget> screens = [
       const ReportsScreen(),
       const PendingUsersScreen(),
-      if (isSuperAdmin) const OrgEmployeesScreen(),
+      const OrgEmployeesScreen(),
     ];
 
     return Scaffold(
@@ -249,7 +230,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
         backgroundColor: Colors.white,
         elevation: 8,
         onTap: (index) {
-          final logoutIndex = isSuperAdmin ? 3 : 2;
+          final logoutIndex = 3;
           if (index == logoutIndex) {
             _handleLogout();
           } else {
@@ -269,12 +250,11 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
             activeIcon: Icon(Icons.people),
             label: 'Approvals',
           ),
-          if (isSuperAdmin)
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.badge_outlined),
-              activeIcon: Icon(Icons.badge),
-              label: 'Registry',
-            ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.badge_outlined),
+            activeIcon: Icon(Icons.badge),
+            label: 'Registry',
+          ),
           const BottomNavigationBarItem(
             icon: Icon(Icons.logout, color: Color(0xFF2F5C36)),
             label: 'Logout',

@@ -102,14 +102,14 @@ export default function Home() {
     callsWithDuration.length > 0 ? Math.round(totalDuration / callsWithDuration.length) : 0;
 
   return (
-    <div className="min-h-screen p-4 sm:p-8 flex flex-col max-w-7xl mx-auto">
+    <div className="min-h-screen p-4 sm:p-8 flex flex-col max-w-7xl mx-auto text-slate-800">
       {/* Header */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 border-b border-white/10 pb-6">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 border-b border-slate-200 pb-6">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
             LeadLens Analytics Hub
           </h1>
-          <p className="text-zinc-400 mt-1 text-sm">
+          <p className="text-slate-500 mt-1 text-sm">
             Real-time Webhook Receiver & Client Signature Verification Dashboard
           </p>
         </div>
@@ -119,26 +119,26 @@ export default function Home() {
           <button
             onClick={() => setPolling(!polling)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-300 ${polling
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
-                : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700"
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
               }`}
           >
             <span
-              className={`w-2 h-2 rounded-full ${polling ? "bg-emerald-400 animate-pulse" : "bg-zinc-500"}`}
+              className={`w-2 h-2 rounded-full ${polling ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`}
             />
             {polling ? "Live Polling Active" : "Polling Paused"}
           </button>
 
           <button
             onClick={() => fetchEvents(true)}
-            className="px-4 py-1.5 rounded-lg text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 font-medium transition-all"
+            className="px-4 py-1.5 rounded-lg text-sm bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 font-medium transition-all"
           >
             Refresh
           </button>
 
           <button
             onClick={clearDatabase}
-            className="px-4 py-1.5 rounded-lg text-sm bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-medium transition-all"
+            className="px-4 py-1.5 rounded-lg text-sm bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 font-medium transition-all"
           >
             Clear Logs
           </button>
@@ -147,13 +147,13 @@ export default function Home() {
 
       {/* Error alert */}
       {error && (
-        <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+        <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
           <div>
             <span className="font-semibold">Connection Issue:</span> {error}
           </div>
           <button
             onClick={() => fetchEvents(true)}
-            className="px-3 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 transition-all font-medium text-xs whitespace-nowrap self-start sm:self-auto"
+            className="px-3 py-1 rounded bg-amber-100 hover:bg-amber-200 transition-all font-medium text-xs whitespace-nowrap self-start sm:self-auto text-amber-900"
           >
             Retry Connection
           </button>
@@ -162,40 +162,40 @@ export default function Home() {
 
       {/* Metrics Grid */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="rounded-2xl border border-white/5 bg-zinc-900/40 p-5 backdrop-blur-xl hover:border-indigo-500/30 transition-all duration-300 group">
-          <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider group-hover:text-indigo-400 transition-colors">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-indigo-500 transition-all duration-300 group">
+          <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider group-hover:text-indigo-600 transition-colors">
             Total Webhooks
           </p>
-          <p className="text-3xl font-bold mt-2 text-white">{total}</p>
-          <p className="text-xs text-zinc-400 mt-1">Logged in local sqlite</p>
+          <p className="text-3xl font-bold mt-2 text-slate-900">{total}</p>
+          <p className="text-xs text-slate-400 mt-1">Logged in local sqlite</p>
         </div>
 
-        <div className="rounded-2xl border border-white/5 bg-zinc-900/40 p-5 backdrop-blur-xl hover:border-purple-500/30 transition-all duration-300 group">
-          <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider group-hover:text-purple-400 transition-colors">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-purple-500 transition-all duration-300 group">
+          <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider group-hover:text-purple-600 transition-colors">
             Avg Call Duration
           </p>
-          <p className="text-3xl font-bold mt-2 text-white">{avgDuration}s</p>
-          <p className="text-xs text-zinc-400 mt-1">From call event payloads</p>
+          <p className="text-3xl font-bold mt-2 text-slate-900">{avgDuration}s</p>
+          <p className="text-xs text-slate-400 mt-1">From call event payloads</p>
         </div>
 
-        <div className="rounded-2xl border border-white/5 bg-zinc-900/40 p-5 backdrop-blur-xl hover:border-emerald-500/30 transition-all duration-300 group">
-          <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider group-hover:text-emerald-400 transition-colors">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-emerald-500 transition-all duration-300 group">
+          <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider group-hover:text-emerald-600 transition-colors">
             Security Verified
           </p>
-          <p className="text-3xl font-bold mt-2 text-emerald-400">
-            {verifiedCount} <span className="text-zinc-500 text-sm font-medium">/ {totalCalls}</span>
+          <p className="text-3xl font-bold mt-2 text-emerald-600">
+            {verifiedCount} <span className="text-slate-400 text-sm font-medium">/ {totalCalls}</span>
           </p>
-          <p className="text-xs text-zinc-400 mt-1">Valid SHA256 Signatures</p>
+          <p className="text-xs text-slate-400 mt-1">Valid SHA256 Signatures</p>
         </div>
 
-        <div className="rounded-2xl border border-white/5 bg-zinc-900/40 p-5 backdrop-blur-xl hover:border-pink-500/30 transition-all duration-300 group">
-          <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider group-hover:text-pink-400 transition-colors">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-pink-500 transition-all duration-300 group">
+          <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider group-hover:text-pink-600 transition-colors">
             Verification Rate
           </p>
-          <p className="text-3xl font-bold mt-2 text-white">{verificationRate}%</p>
-          <div className="w-full bg-zinc-800 rounded-full h-1.5 mt-2 overflow-hidden">
+          <p className="text-3xl font-bold mt-2 text-slate-900">{verificationRate}%</p>
+          <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2 overflow-hidden">
             <div
-              className="bg-gradient-to-r from-emerald-400 to-indigo-500 h-1.5 rounded-full transition-all duration-500"
+              className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500"
               style={{ width: `${verificationRate}%` }}
             />
           </div>
@@ -205,16 +205,16 @@ export default function Home() {
       {/* Main Workspace split */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1 items-start">
         {/* Webhook Logs List */}
-        <section className={`lg:col-span-7 rounded-2xl border border-white/5 bg-zinc-900/20 backdrop-blur-md overflow-hidden ${selectedEvent ? "lg:col-span-7" : "lg:col-span-12"}`}>
-          <div className="p-5 border-b border-white/5 flex justify-between items-center bg-zinc-950/20">
-            <h2 className="font-semibold text-lg text-white">Incoming Event Stream</h2>
-            <span className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full font-medium">
+        <section className={`lg:col-span-7 rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden ${selectedEvent ? "lg:col-span-7" : "lg:col-span-12"}`}>
+          <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
+            <h2 className="font-semibold text-lg text-slate-900">Incoming Event Stream</h2>
+            <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
               Auto-updating
             </span>
           </div>
 
           {events.length === 0 ? (
-            <div className="p-12 text-center text-zinc-500">
+            <div className="p-12 text-center text-slate-400">
               {loading ? (
                 <div className="flex justify-center items-center gap-2">
                   <span className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" />
@@ -224,57 +224,98 @@ export default function Home() {
                 </div>
               ) : (
                 <div>
-                  <p className="font-semibold text-zinc-400 text-base mb-1">No webhooks received yet</p>
+                  <p className="font-semibold text-slate-500 text-base mb-1">No webhooks received yet</p>
                   <p className="text-sm">Send a POST webhook request to https://dummy-server-opa2.onrender.com/webhook</p>
                 </div>
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto scrollbar-thin">
               <table className="w-full text-left text-sm border-collapse">
                 <thead>
-                  <tr className="border-b border-white/5 bg-zinc-950/45 text-zinc-400 text-xs font-semibold uppercase tracking-wider">
-                    <th className="py-3.5 px-5">ID / Time</th>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">
+                    <th className="py-3.5 px-5">ID</th>
                     <th className="py-3.5 px-5">Event</th>
+                    <th className="py-3.5 px-5">Org ID</th>
+                    <th className="py-3.5 px-5">Dispatch Time</th>
+                    <th className="py-3.5 px-5">System ID</th>
+                    <th className="py-3.5 px-5">Employee ID</th>
                     <th className="py-3.5 px-5">Phone Number</th>
-                    <th className="py-3.5 px-5">Duration</th>
+                    <th className="py-3.5 px-5">Call Type</th>
+                    <th className="py-3.5 px-5">Duration (sec)</th>
+                    <th className="py-3.5 px-5">Call Timestamp</th>
+                    <th className="py-3.5 px-5">System Call ID</th>
                     <th className="py-3.5 px-5">Signature</th>
                     <th className="py-3.5 px-5 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className="divide-y divide-slate-100 whitespace-nowrap">
                   {events.map((event) => {
-                    const eventTime = new Date(event.timestamp).toLocaleTimeString();
+                    const payload = typeof event.payload === "object" && event.payload !== null ? event.payload : {};
+                    const data = payload.data || {};
+                    
+                    const eventId = event.id;
+                    const eventType = payload.event || event.event_type || "—";
+                    const orgId = payload.org_id || "—";
+                    const dispatchTime = payload.timestamp ? new Date(payload.timestamp).toLocaleString() : new Date(event.timestamp).toLocaleString();
+                    const systemId = data.system_id || "—";
+                    const employeeId = data.employee_id || "—";
+                    const phoneNumber = data.phone_number || event.phone_number || "—";
+                    const callType = data.call_type || "—";
+                    const durationSec = data.duration_seconds !== undefined ? data.duration_seconds : (event.duration !== null ? event.duration : "—");
+                    const callTime = data.timestamp || "—";
+                    const systemCallId = data.system_call_id || "—";
+                    
                     const isSelected = selectedEvent?.id === event.id;
                     return (
                       <tr
                         key={event.id}
                         onClick={() => setSelectedEvent(event)}
-                        className={`hover:bg-zinc-800/20 cursor-pointer transition-colors duration-250 ${isSelected ? "bg-indigo-500/10 hover:bg-indigo-500/15" : ""
+                        className={`hover:bg-slate-50 cursor-pointer transition-colors duration-250 ${isSelected ? "bg-indigo-50/70 hover:bg-indigo-100/50" : ""
                           }`}
                       >
-                        <td className="py-4 px-5">
-                          <span className="text-zinc-500 block text-xs font-mono">#{event.id}</span>
-                          <span className="text-white text-xs">{eventTime}</span>
+                        <td className="py-4 px-5 font-mono text-xs text-slate-400">
+                          #{eventId}
                         </td>
                         <td className="py-4 px-5">
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-zinc-800 text-indigo-300 border border-zinc-700 capitalize">
-                            {event.event_type || "call"}
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 capitalize">
+                            {eventType}
                           </span>
                         </td>
-                        <td className="py-4 px-5 font-mono text-zinc-300">
-                          {event.phone_number || "—"}
+                        <td className="py-4 px-5 text-slate-600 font-mono text-xs max-w-[120px] overflow-hidden text-ellipsis" title={String(orgId)}>
+                          {orgId}
                         </td>
-                        <td className="py-4 px-5 text-zinc-300">
-                          {event.duration !== null ? `${event.duration}s` : "—"}
+                        <td className="py-4 px-5 text-slate-600 text-xs">
+                          {dispatchTime}
+                        </td>
+                        <td className="py-4 px-5 text-slate-600 font-mono text-xs">
+                          {systemId}
+                        </td>
+                        <td className="py-4 px-5 text-slate-600 font-mono text-xs">
+                          {employeeId}
+                        </td>
+                        <td className="py-4 px-5 font-mono text-slate-600 text-xs">
+                          {phoneNumber}
+                        </td>
+                        <td className="py-4 px-5 text-slate-600 text-xs capitalize">
+                          {callType}
+                        </td>
+                        <td className="py-4 px-5 text-slate-600 text-xs">
+                          {durationSec}
+                        </td>
+                        <td className="py-4 px-5 text-slate-600 text-xs">
+                          {callTime}
+                        </td>
+                        <td className="py-4 px-5 text-slate-600 font-mono text-xs">
+                          {systemCallId}
                         </td>
                         <td className="py-4 px-5">
                           {event.signature_verified ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
                               Verified
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-0.5 rounded-full">
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full">
                               Unverified
                             </span>
                           )}
@@ -282,8 +323,8 @@ export default function Home() {
                         <td className="py-4 px-5 text-right">
                           <button
                             className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-all ${isSelected
-                                ? "bg-indigo-500 text-white border-indigo-400"
-                                : "bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700"
+                                ? "bg-indigo-600 text-white border-indigo-700"
+                                : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                               }`}
                           >
                             Inspect
@@ -300,15 +341,15 @@ export default function Home() {
 
         {/* Selected Webhook Inspector Sidebar */}
         {selectedEvent && (
-          <section className="lg:col-span-5 rounded-2xl border border-white/5 bg-zinc-900/30 backdrop-blur-xl overflow-hidden shadow-2xl animate-fade-in flex flex-col">
-            <div className="p-5 border-b border-white/5 bg-zinc-950/40 flex justify-between items-center">
+          <section className="lg:col-span-5 rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden animate-fade-in flex flex-col">
+            <div className="p-5 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
               <div>
-                <h3 className="font-semibold text-white">Event Detail Inspector</h3>
-                <span className="text-xs text-zinc-400 font-mono">ID: #{selectedEvent.id}</span>
+                <h3 className="font-semibold text-slate-900">Event Detail Inspector</h3>
+                <span className="text-xs text-slate-400 font-mono">ID: #{selectedEvent.id}</span>
               </div>
               <button
                 onClick={() => setSelectedEvent(null)}
-                className="text-zinc-400 hover:text-white p-1 rounded hover:bg-zinc-800 transition-colors"
+                className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition-colors"
               >
                 ✕
               </button>
@@ -316,17 +357,17 @@ export default function Home() {
 
             <div className="p-5 space-y-4">
               {/* Event Properties Grid */}
-              <div className="grid grid-cols-2 gap-4 text-sm border-b border-white/5 pb-4">
+              <div className="grid grid-cols-2 gap-4 text-sm border-b border-slate-200 pb-4">
                 <div>
-                  <span className="text-zinc-500 block text-xs uppercase font-semibold">Event Timestamp</span>
-                  <span className="text-white mt-1 block">
+                  <span className="text-slate-400 block text-xs uppercase font-semibold">Event Timestamp</span>
+                  <span className="text-slate-800 mt-1 block">
                     {new Date(selectedEvent.timestamp).toLocaleString()}
                   </span>
                 </div>
                 <div>
-                  <span className="text-zinc-500 block text-xs uppercase font-semibold">Security Signature</span>
+                  <span className="text-slate-400 block text-xs uppercase font-semibold">Security Signature</span>
                   <span
-                    className={`mt-1 font-semibold inline-block ${selectedEvent.signature_verified ? "text-emerald-400" : "text-rose-400"
+                    className={`mt-1 font-semibold inline-block ${selectedEvent.signature_verified ? "text-emerald-600" : "text-rose-600"
                       }`}
                   >
                     {selectedEvent.signature_verified
@@ -339,18 +380,18 @@ export default function Home() {
               {/* Raw JSON Code block */}
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-zinc-500 text-xs uppercase font-semibold">Raw JSON Payload</span>
+                  <span className="text-slate-400 text-xs uppercase font-semibold">Raw JSON Payload</span>
                   <button
                     onClick={() =>
                       copyToClipboard(JSON.stringify(selectedEvent.payload, null, 2), selectedEvent.id)
                     }
-                    className="text-xs text-indigo-400 hover:text-indigo-300 font-medium px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-md transition-all"
+                    className="text-xs text-indigo-600 hover:text-indigo-700 font-medium px-2 py-1 bg-indigo-50 border border-indigo-200 rounded-md transition-all"
                   >
                     {copiedId === selectedEvent.id ? "Copied!" : "Copy Payload"}
                   </button>
                 </div>
-                <div className="rounded-xl border border-white/5 bg-zinc-950 p-4 overflow-x-auto max-h-96">
-                  <pre className="text-xs font-mono text-zinc-300 leading-relaxed whitespace-pre-wrap break-all">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 overflow-x-auto max-h-96">
+                  <pre className="text-xs font-mono text-slate-800 leading-relaxed whitespace-pre-wrap break-all">
                     {JSON.stringify(selectedEvent.payload, null, 2)}
                   </pre>
                 </div>

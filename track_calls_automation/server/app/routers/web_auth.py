@@ -21,9 +21,12 @@ def register_web_user(user_in: WebUserCreate, db: Session = Depends(get_db)):
             detail="An account with this email already exists"
         )
     
-    # Auto-link organisation: check if an app user already exists with this email
+    # Auto-link organisation: check if an app user already exists with this email and has super_admin role
     from app.models import User
-    app_user = db.query(User).filter(User.email == user_in.email.strip().lower()).first()
+    app_user = db.query(User).filter(
+        User.email == user_in.email.strip().lower(),
+        User.role == "super_admin"
+    ).first()
     org_id = app_user.organisation_id if app_user else None
 
     hashed_password = get_password_hash(user_in.password)

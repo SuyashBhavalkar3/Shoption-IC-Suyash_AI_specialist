@@ -64,8 +64,12 @@ def send_invite_email(to_email: str, org_name: str, invite_code: str):
 
         # Connect and send
         print(f"INFO: Connecting to SMTP server {config.SMTP_HOST}:{config.SMTP_PORT}...")
-        server = smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10)
-        server.starttls()
+        if config.SMTP_PORT == 465:
+            server = smtplib.SMTP_SSL(config.SMTP_HOST, config.SMTP_PORT, timeout=10)
+        else:
+            server = smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10)
+            server.starttls()
+            
         server.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
         server.sendmail(config.SMTP_FROM_EMAIL, to_email, msg.as_string())
         server.quit()
@@ -131,8 +135,12 @@ def send_otp_email(to_email: str, otp: str):
 
         # Connect and send
         print(f"INFO: Connecting to SMTP server {config.SMTP_HOST}:{config.SMTP_PORT} to send OTP...")
-        server = smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10)
-        server.starttls()
+        if config.SMTP_PORT == 465:
+            server = smtplib.SMTP_SSL(config.SMTP_HOST, config.SMTP_PORT, timeout=10)
+        else:
+            server = smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=10)
+            server.starttls()
+            
         server.login(config.SMTP_USERNAME, config.SMTP_PASSWORD)
         server.sendmail(config.SMTP_FROM_EMAIL, to_email, msg.as_string())
         server.quit()

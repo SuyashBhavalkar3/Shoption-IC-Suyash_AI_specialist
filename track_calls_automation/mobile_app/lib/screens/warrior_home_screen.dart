@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +26,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
 
   bool isTrackingActive = false;
   bool permissionsGranted = false;
+  Timer? _statusPingTimer;
 
   @override
   void initState() {
@@ -145,8 +147,73 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
         isTrackingActive = active;
         permissionsGranted = granted;
       });
+      if (active) {
+        _startStatusPingTimer();
+      } else {
+        _stopStatusPingTimer();
+      }
     } catch (e) {
       debugPrint('Failed to check status: $e');
+    }
+  }
+
+  void _startStatusPingTimer() {
+    _statusPingTimer?.cancel();
+    _statusPingTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _sendStatusPing(true);
+    });
+    _sendStatusPing(true);
+  }
+
+  void _stopStatusPingTimer() {
+    _statusPingTimer?.cancel();
+    _statusPingTimer = null;
+    _sendStatusPing(false);
+  }
+
+  Future<void> _sendStatusPing(bool isEnabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    final empId = prefs.getString('user_emp_id') ?? '';
+    final orgId = prefs.getString('user_org_id') ?? '';
+    final systemId = prefs.getString('user_system_id') ?? '';
+
+    if (empId.isEmpty || orgId.isEmpty || systemId.isEmpty) {
+      try {
+        final user = await ApiService.getMe();
+        final updatedEmpId = user['employee_id']?.toString() ?? '';
+        final updatedOrgId = user['organisation_id']?.toString() ?? '';
+        final updatedSystemId = user['system_id']?.toString() ?? '';
+
+        await prefs.setString('user_emp_id', updatedEmpId);
+        await prefs.setString('user_org_id', updatedOrgId);
+        await prefs.setString('user_system_id', updatedSystemId);
+      } catch (e) {
+        debugPrint('Failed to refresh user details for ping: $e');
+        return;
+      }
+    }
+
+    final freshEmpId = prefs.getString('user_emp_id') ?? '';
+    final freshOrgId = prefs.getString('user_org_id') ?? '';
+    final freshSystemId = prefs.getString('user_system_id') ?? '';
+
+    if (freshSystemId.isEmpty) {
+      debugPrint('No system_id found. Skipping ping.');
+      return;
+    }
+
+    try {
+      final now = DateTime.now().toUtc().toIso8601String();
+      await ApiService.updateTrackingStatus(
+        empId: freshEmpId,
+        organisationId: freshOrgId,
+        systemId: freshSystemId,
+        isTrackingEnabled: isEnabled,
+        lastActivityTimestamp: now,
+      );
+      debugPrint('Status ping sent: enabled=$isEnabled, timestamp=$now');
+    } catch (e) {
+      debugPrint('Failed to send status ping: $e');
     }
   }
 
@@ -276,6 +343,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
 
   @override
   void dispose() {
+    _statusPingTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

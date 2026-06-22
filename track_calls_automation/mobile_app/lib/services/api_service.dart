@@ -153,6 +153,33 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> updateTrackingStatus({
+    required String empId,
+    required String organisationId,
+    required String systemId,
+    required bool isTrackingEnabled,
+    required String lastActivityTimestamp,
+  }) async {
+    final url = Uri.parse('$baseUrl/users/track/status');
+    final response = await http.post(
+      url,
+      headers: await _headers(),
+      body: jsonEncode({
+        'emp_id': empId,
+        'organisation_id': organisationId,
+        'system_id': systemId,
+        'is_tracking_enabled': isTrackingEnabled,
+        'last_activity_timestamp': lastActivityTimestamp,
+      }),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
+
   static Future<List<dynamic>> getPendingUsers() async {
     final url = Uri.parse('$baseUrl/users/pending');
     final response = await http.get(url, headers: await _headers());
@@ -292,6 +319,41 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> uploadEmployeesFile(String filePath, String fileName) async {
+    final url = Uri.parse('$baseUrl/org-employees/bulk-upload');
+    final request = http.MultipartRequest('POST', url);
+    
+    final headers = await _headers();
+    request.headers.addAll(headers);
+    
+    request.files.add(
+      await http.MultipartFile.fromPath(
+        'file',
+        filePath,
+        filename: fileName,
+      ),
+    );
+    
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateOrgEmployeeTrackingNeeded(String employeeId, bool needed) async {
+    final url = Uri.parse('$baseUrl/org-employees/$employeeId/tracking-needed?needed=$needed');
+    final response = await http.put(url, headers: await _headers());
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
   static String _parseError(String body) {
     try {
       final parsed = jsonDecode(body);
@@ -300,6 +362,60 @@ class ApiService {
       }
     } catch (_) {}
     return 'An unexpected error occurred ($body)';
+  }
+
+  // ── Admin management endpoints ──
+
+  static Future<List<dynamic>> getAllUsers() async {
+    final url = Uri.parse('$baseUrl/users/');
+    final response = await http.get(url, headers: await _headers());
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateAdminUser(
+    String userId, {
+    String? fullName,
+    String? email,
+    String? role,
+    String? managerId,
+    bool? isActive,
+    bool? isApproved,
+    String? systemId,
+  }) async {
+    final url = Uri.parse('$baseUrl/users/$userId');
+    final Map<String, dynamic> payload = {};
+    if (fullName != null) payload['full_name'] = fullName;
+    if (email != null) payload['email'] = email;
+    if (role != null) payload['role'] = role;
+    if (managerId != null) payload['manager_id'] = managerId == 'none' ? null : managerId;
+    if (isActive != null) payload['is_active'] = isActive;
+    if (isApproved != null) payload['is_approved'] = isApproved;
+    if (systemId != null) payload['system_id'] = systemId.isEmpty ? null : systemId;
+
+    final response = await http.put(
+      url,
+      headers: await _headers(),
+      body: jsonEncode(payload),
+    );
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
+  static Future<Map<String, dynamic>> deleteUser(String userId) async {
+    final url = Uri.parse('$baseUrl/users/$userId');
+    final response = await http.delete(url, headers: await _headers());
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
   }
 }
 

@@ -41,6 +41,7 @@ class User(Base):
     # system_id links this user to their org_employees record (set at registration if employee_id is provided)
     system_id    = Column(String(6), unique=True, nullable=True, index=True)
     organisation_id = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="SET NULL"), nullable=True)
+    last_activity_timestamp = Column(DateTime, nullable=True)
 
     # Self-referencing relationship
     manager      = relationship("User", remote_side=[id], backref="subordinates")
@@ -55,6 +56,7 @@ class CallLog(Base):
     user_id          = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     phone_number     = Column(String, nullable=False)
     call_type        = Column(String, nullable=False)
+    call_status      = Column(String, nullable=False, server_default="Answered")
     duration_seconds = Column(Integer, nullable=False)
     timestamp        = Column(String, nullable=False)
     system_call_id   = Column(String, nullable=False)
@@ -90,6 +92,7 @@ class OrgEmployee(Base):
     system_id   = Column(String(6), unique=True, nullable=False, index=True)
     employee_id = Column(String, nullable=False)
     email       = Column(String, nullable=True, index=True)
+    is_tracking_needed = Column(Boolean, nullable=False, server_default=text("true"), default=True)
     org_id      = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False)
     created_at  = Column(DateTime, server_default=text("now()"), nullable=False)
 
@@ -142,4 +145,3 @@ class WebhookLog(Base):
     created_at      = Column(DateTime, server_default=text("now()"), nullable=False)
 
     subscription    = relationship("WebhookSubscription", back_populates="logs")
-

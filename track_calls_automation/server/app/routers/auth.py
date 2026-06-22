@@ -20,7 +20,7 @@ router = APIRouter(
 def send_otp(payload: SendOtpRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Generates a 6-digit OTP code, saves it to the database,
-    and sends it to suyashbhavalkar82@gmail.com.
+    and sends it to leadlens_newcustomer@shoption.in.
     """
     if payload.passcode != "LeadLensOwner2026":
         raise HTTPException(
@@ -33,7 +33,7 @@ def send_otp(payload: SendOtpRequest, background_tasks: BackgroundTasks, db: Ses
     
     # Create OTP database record
     otp_record = OTP(
-        email="suyashbhavalkar82@gmail.com",
+        email="leadlens_newcustomer@shoption.in",
         otp_code=otp_code,
         is_verified=False
     )
@@ -41,16 +41,16 @@ def send_otp(payload: SendOtpRequest, background_tasks: BackgroundTasks, db: Ses
     db.commit()
     
     # Send email asynchronously in background task
-    background_tasks.add_task(send_otp_email, "suyashbhavalkar82@gmail.com", otp_code)
+    background_tasks.add_task(send_otp_email, "leadlens_newcustomer@shoption.in", otp_code)
     
-    print(f"INFO: Generated 2FA OTP {otp_code} for suyashbhavalkar82@gmail.com")
+    print(f"INFO: Generated 2FA OTP {otp_code} for leadlens_newcustomer@shoption.in")
     return {"message": "OTP sent successfully"}
 
 
 @router.post("/verify-otp", status_code=status.HTTP_200_OK)
 def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
     """
-    Verifies the latest OTP code generated for suyashbhavalkar82@gmail.com.
+    Verifies the latest OTP code generated for leadlens_newcustomer@shoption.in.
     """
     if payload.passcode != "LeadLensOwner2026":
         raise HTTPException(
@@ -59,7 +59,7 @@ def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
         )
         
     # Get the latest OTP record for this email
-    latest_otp = db.query(OTP).filter(OTP.email == "suyashbhavalkar82@gmail.com").order_by(OTP.created_at.desc()).first()
+    latest_otp = db.query(OTP).filter(OTP.email == "leadlens_newcustomer@shoption.in").order_by(OTP.created_at.desc()).first()
     
     if not latest_otp:
         raise HTTPException(
@@ -282,6 +282,29 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
         data={"sub": str(user.id), "role": user.role}
     )
     print(f"INFO: Login successful for user {user.email} (Role: {user.role}, Name: {user.full_name})")
+
+    # Sync to Firestore if the logged-in user is a warrior (to handle db resets or missing docs)
+    if user.role == "warrior":
+        try:
+            from app.models import OrgEmployee
+            from app.firebase_service import update_tracking_status_in_firestore
+            from datetime import datetime
+            emp_id = ""
+            if user.system_id:
+                emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == user.system_id).first()
+                if emp_rec:
+                    emp_id = emp_rec.employee_id
+            
+            update_tracking_status_in_firestore(
+                emp_id=emp_id,
+                organisation_id=str(user.organisation_id) if user.organisation_id else "",
+                system_id=user.system_id or "",
+                is_tracking_enabled=user.is_tracking_enabled,
+                last_activity_timestamp=user.last_activity_timestamp or datetime.utcnow()
+            )
+        except Exception as e:
+            print(f"ERROR: Failed to sync warrior to Firestore on login: {e}")
+
     return {"access_token": access_token, "token_type": "bearer"}
 
 
