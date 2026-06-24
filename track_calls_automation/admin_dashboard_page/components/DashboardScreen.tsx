@@ -4,6 +4,116 @@ import Sidebar from "./Sidebar";
 import MetricCard from "./MetricCard";
 import RoleTable from "./RoleTable";
 
+interface SearchableSelectProps {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (val: string) => void;
+  options: { id: string; name: string }[];
+  allLabel: string;
+}
+
+function SearchableSelect({ label, placeholder, value, onChange, options, allLabel }: SearchableSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const selectedName = options.find((o) => o.id === value)?.name || allLabel;
+
+  const filtered = options.filter((o) =>
+    (o.name || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="flex flex-col text-left relative w-[160px]">
+      <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">{label}</label>
+      
+      {/* Trigger Button */}
+      <button
+        type="button"
+        onClick={() => {
+          setIsOpen(!isOpen);
+          setSearch("");
+        }}
+        className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none hover:border-slate-300 font-semibold text-slate-600 w-full text-left"
+      >
+        <span className="truncate">{selectedName}</span>
+        <svg
+          className={`h-3 w-3 text-slate-400 transition-transform flex-shrink-0 ml-1.5 ${isOpen ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* Popover Menu */}
+      {isOpen && (
+        <>
+          {/* Overlay to click close */}
+          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+          
+          <div className="absolute top-[100%] left-0 right-0 mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg p-1.5 flex flex-col max-h-[220px]">
+            {/* Search Box */}
+            <input
+              type="text"
+              placeholder={placeholder}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-md border border-slate-200 px-2 py-1 text-[11px] outline-none focus:border-[#04693F] font-semibold text-slate-700 mb-1"
+              autoFocus
+            />
+            
+            {/* List */}
+            <div className="overflow-y-auto flex-grow space-y-0.5 pr-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onChange("");
+                  setIsOpen(false);
+                }}
+                className={`w-full text-left px-2 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                  value === ""
+                    ? "bg-[#04693F]/5 text-[#04693F]"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {allLabel}
+              </button>
+              
+              {filtered.length === 0 ? (
+                <div className="text-[10px] text-slate-400 px-2 py-1.5 font-medium">
+                  No options found
+                </div>
+              ) : (
+                filtered.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(opt.id);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full text-left px-2 py-1 rounded-md text-[11px] font-semibold transition-all truncate ${
+                      value === opt.id
+                        ? "bg-[#04693F]/5 text-[#04693F]"
+                        : "text-slate-600 hover:bg-slate-50"
+                    }`}
+                    title={opt.name}
+                  >
+                    {opt.name}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 type DashboardScreenProps = {
   dashboard: DashboardState;
   onLogout: () => void;
@@ -204,7 +314,11 @@ export default function DashboardScreen({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setSelectedView("dashboard")}
+              className="flex items-center gap-2.5 hover:opacity-85 transition-opacity cursor-pointer text-left border-0 bg-transparent p-0"
+              title="Go to Home Dashboard"
+            >
               <img
                 src="/logo_product_page.png"
                 alt="LeadLens Logo"
@@ -215,7 +329,7 @@ export default function DashboardScreen({
               <span className="text-[8px] uppercase font-black tracking-widest text-[#04693F] border-l border-slate-200 pl-2.5">
                 ERP
               </span>
-            </div>
+            </button>
             <span className="text-xs font-bold text-slate-400 border-l border-slate-200 pl-3 capitalize">
               {selectedView} Console
             </span>
@@ -242,51 +356,37 @@ export default function DashboardScreen({
                   <span className="text-[10px] uppercase tracking-widest text-[#04693F] font-bold">Interactive Hierarchy Filter</span>
                   <span className="text-xs text-slate-400 font-semibold">Filter metrics and log sheets dynamically</span>
                 </div>
-                <div className="flex flex-wrap gap-3 items-center w-full md:w-auto justify-end">
-                  <div className="flex flex-col text-left">
-                    <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Group Leader</label>
-                    <select
-                      value={selectedLeaderId}
-                      onChange={(e) => handleLeaderChange(e.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none transition focus:border-[#04693F] focus:ring-2 focus:ring-[#04693F]/5 font-semibold text-slate-600"
-                    >
-                      <option value="">All Leaders</option>
-                      {leadersList.map((leader) => (
-                        <option key={leader.id} value={leader.id}>
-                          {leader.full_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div className="flex flex-col text-left">
-                    <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Warrior</label>
-                    <select
-                      value={selectedWarriorId}
-                      onChange={(e) => setSelectedWarriorId(e.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none transition focus:border-[#04693F] focus:ring-2 focus:ring-[#04693F]/5 font-semibold text-slate-600"
-                    >
-                      <option value="">All Warriors</option>
-                      {warriorsList.map((warrior) => (
-                        <option key={warrior.id} value={warrior.id}>
-                          {warrior.full_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                 <div className="flex flex-wrap gap-3 items-center w-full md:w-auto justify-end">
+                   <SearchableSelect
+                     label="Group Leader"
+                     placeholder="Search leader..."
+                     value={selectedLeaderId}
+                     onChange={handleLeaderChange}
+                     options={leadersList.map(l => ({ id: l.id, name: l.full_name }))}
+                     allLabel="All Leaders"
+                   />
+                   
+                   <SearchableSelect
+                     label="Warrior"
+                     placeholder="Search warrior..."
+                     value={selectedWarriorId}
+                     onChange={setSelectedWarriorId}
+                     options={warriorsList.map(w => ({ id: w.id, name: w.full_name }))}
+                     allLabel="All Warriors"
+                   />
 
-                  {(selectedLeaderId || selectedWarriorId) && (
-                    <button
-                      onClick={() => {
-                        setSelectedLeaderId("");
-                        setSelectedWarriorId("");
-                      }}
-                      className="px-3.5 py-1.5 rounded-lg border border-rose-100 text-rose-600 hover:bg-rose-50/50 text-[10px] font-bold transition-all self-end"
-                    >
-                      Reset Filters
-                    </button>
-                  )}
-                </div>
+                   {(selectedLeaderId || selectedWarriorId) && (
+                     <button
+                       onClick={() => {
+                         setSelectedLeaderId("");
+                         setSelectedWarriorId("");
+                       }}
+                       className="px-3.5 py-1.5 rounded-lg border border-rose-100 text-rose-600 hover:bg-rose-50/50 text-[10px] font-bold transition-all self-end"
+                     >
+                       Reset Filters
+                     </button>
+                   )}
+                 </div>
               </div>
 
               {/* Metrics Grid */}
