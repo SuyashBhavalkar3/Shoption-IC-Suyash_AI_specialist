@@ -14,6 +14,7 @@ export type UserRecord = {
   is_tracking_active: boolean;
   created_at: string;
   employee_id?: string | null;
+  department?: string | null;
 };
 
 export type ReportResponse = {
@@ -51,6 +52,7 @@ export type EmployeeRecord = {
   system_id: string;
   employee_id: string;
   email?: string | null;
+  department?: string | null;
   is_tracking_needed: boolean;
   org_id: string;
   created_at: string;

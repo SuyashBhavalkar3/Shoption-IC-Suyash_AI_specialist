@@ -163,17 +163,19 @@ export default function DashboardScreen({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row">
-      {/* Sidebar Panel */}
-      <Sidebar
-        meName={meName}
-        onLogout={onLogout}
-        selectedView={selectedView}
-        setSelectedView={setSelectedView}
-      />
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col md:flex-row overflow-x-hidden">
+      {/* Sidebar Panel - Sticky to viewport height */}
+      <div className="md:h-screen md:sticky md:top-0 flex-shrink-0 z-30">
+        <Sidebar
+          meName={meName}
+          onLogout={onLogout}
+          selectedView={selectedView}
+          setSelectedView={setSelectedView}
+        />
+      </div>
 
       {/* Main Workspace */}
-      <main className="flex-1 flex flex-col min-h-screen">
+      <main className="flex-1 flex flex-col min-h-screen min-w-0 overflow-x-hidden">
         {/* Top Status Header Bar */}
         <header className="h-24 bg-white border-b border-slate-100 px-8 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-3">
@@ -354,6 +356,7 @@ export default function DashboardScreen({
                 users={filteredUsersTable}
                 employees={dashboard.employees}
                 onToggleTrackingNeeded={onToggleTrackingNeeded}
+                report={dashboard.report}
               />
             </div>
           )}

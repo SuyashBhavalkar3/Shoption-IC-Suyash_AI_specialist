@@ -159,6 +159,8 @@ export default function Home() {
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dashboard data");
+      // Enforce strict login: if data load fails (e.g. invalid/expired token), logout immediately
+      handleLogout();
     } finally {
       setLoadingData(false);
       setLoading(false);

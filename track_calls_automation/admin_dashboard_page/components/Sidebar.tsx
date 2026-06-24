@@ -14,7 +14,7 @@ export default function Sidebar({ meName, onLogout, selectedView, setSelectedVie
   ];
 
   return (
-    <aside className="w-80 bg-white border-r border-slate-100 flex flex-col min-h-screen relative z-10">
+    <aside className="w-80 bg-white border-r border-slate-100 flex flex-col h-full relative z-10">
       {/* Sidebar Top / Brand Logo */}
       <div className="h-24 px-8 border-b border-slate-50 flex items-center justify-between">
         <img

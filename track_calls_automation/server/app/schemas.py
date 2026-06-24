@@ -88,6 +88,7 @@ class UserOut(UserBase):
     is_tracking_active: bool
     created_at: datetime
     employee_id: Optional[str] = None
+    department: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -206,6 +207,7 @@ class OrgEmployeeOut(BaseModel):
     system_id: str
     employee_id: str
     email: Optional[str] = None
+    department: Optional[str] = None
     is_tracking_needed: bool
     org_id: UUID
     created_at: datetime
