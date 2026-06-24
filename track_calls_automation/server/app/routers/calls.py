@@ -200,17 +200,17 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
             if warrior.last_activity_timestamp:
                 diff = (datetime.utcnow() - warrior.last_activity_timestamp).total_seconds()
                 if diff < 120:
-                    is_tracking_enabled_dynamic = True
+                    is_tracking_enabled_dynamic = warrior.is_tracking_active
                 else:
-                    warrior.is_tracking_enabled = False
+                    if warrior.is_tracking_active:
+                        warrior.is_tracking_active = False
+                        db.add(warrior)
+                        db.commit()
+            else:
+                if warrior.is_tracking_active:
                     warrior.is_tracking_active = False
                     db.add(warrior)
                     db.commit()
-            else:
-                warrior.is_tracking_enabled = False
-                warrior.is_tracking_active = False
-                db.add(warrior)
-                db.commit()
 
         warrior_reports.append(
             WarriorReport(

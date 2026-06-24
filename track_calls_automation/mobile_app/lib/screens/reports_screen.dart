@@ -7,6 +7,8 @@ import '../services/api_service.dart';
 import '../widgets/shoption_app_bar.dart';
 import 'warrior_home_screen.dart';
 
+import 'permission_disclosure_screen.dart';
+
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
 
@@ -222,13 +224,32 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Future<void> _requestPermissions() async {
-    try {
-      final bool granted = await platform.invokeMethod('requestRequiredPermissions');
-      debugPrint('Required permissions granted status: $granted');
-      await _checkTrackingStatus();
-    } catch (e) {
-      debugPrint('Permission request error: $e');
-    }
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => PermissionDisclosureScreen(
+          onAccept: () async {
+            Navigator.of(context).pop(); // Dismiss disclosure screen
+            try {
+              final bool granted = await platform.invokeMethod('requestRequiredPermissions');
+              debugPrint('Required permissions granted status: $granted');
+              await _checkTrackingStatus();
+            } catch (e) {
+              debugPrint('Permission request error: $e');
+            }
+          },
+          onDeny: () {
+            Navigator.of(context).pop(); // Dismiss disclosure screen
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Tracking cannot be enabled without required permissions.'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   @override

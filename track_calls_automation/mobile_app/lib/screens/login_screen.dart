@@ -107,29 +107,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
-                const Center(
-                  child: Text(
-                    'LEADLENS',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF010B26),
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ),
-                const Center(
-                  child: Text(
-                    'CALL LOGS & HIERARCHY SYNC',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF04693F),
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                ),
                 const SizedBox(height: 50),
                 const Text(
                   'Welcome Back',

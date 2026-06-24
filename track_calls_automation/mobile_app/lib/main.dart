@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
@@ -12,17 +14,25 @@ import 'screens/reports_screen.dart';
 import 'screens/pending_users_screen.dart';
 import 'screens/org_employees_screen.dart';
 import 'screens/warrior_management_screen.dart';
+import 'app_wrapper.dart';
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('⚠️ Firebase initialization failed: $e');
+  }
   // Load .env so ApiService can read API_BASE_URL.
   await dotenv.load(fileName: ".env");
-  runApp(const CallTrackerApp());
+  runApp(const ProviderScope(child: CallTrackerApp()));
 }
+
 
 class CallTrackerApp extends StatelessWidget {
   const CallTrackerApp({super.key});
+
 
   Future<Widget> _getInitialScreen() async {
     final token = await ApiService.getToken();
@@ -68,6 +78,10 @@ class CallTrackerApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Inter',
       ),
+      navigatorObservers: [AppRouteObserver()],
+      builder: (context, child) {
+        return AppWrapper(child: child!);
+      },
       home: FutureBuilder<Widget>(
         future: _getInitialScreen(),
         builder: (context, snapshot) {

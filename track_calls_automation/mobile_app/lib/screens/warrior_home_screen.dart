@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../widgets/shoption_app_bar.dart';
 
+import 'permission_disclosure_screen.dart';
+
 class WarriorHomeScreen extends StatefulWidget {
   const WarriorHomeScreen({super.key});
 
@@ -49,10 +51,49 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
     await _loadUserInfo();
     await _initializeDatabase();
     await _loadCallLogs();
+
+    final prefs = await SharedPreferences.getInstance();
+    final consentAccepted = prefs.getBool('consent_accepted') ?? false;
+    if (!consentAccepted) {
+      _showConsentDisclosureOnStartup();
+      return;
+    }
+
     // Re-check call tracking service state on boot without forcing it to run
     await _checkTrackingStatus();
     await _restoreFromBackend();
     await _syncCallLogs();
+  }
+
+  void _showConsentDisclosureOnStartup() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => PermissionDisclosureScreen(
+            onAccept: () async {
+              Navigator.of(context).pop(); // Dismiss disclosure screen
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('consent_accepted', true);
+              try {
+                final bool granted = await platform.invokeMethod('requestRequiredPermissions');
+                debugPrint('Required permissions granted status: $granted');
+              } catch (e) {
+                debugPrint('Permission request error: $e');
+              }
+              // Bootstrap normally now
+              await _checkTrackingStatus();
+              await _restoreFromBackend();
+              await _syncCallLogs();
+            },
+            onDeny: () async {
+              Navigator.of(context).pop(); // Dismiss disclosure screen
+              await _handleLogout();
+            },
+          ),
+        ),
+      );
+    });
   }
 
   Future<void> _restoreFromBackend() async {
@@ -260,13 +301,32 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   }
 
   Future<void> _requestPermissions() async {
-    try {
-      final bool granted = await platform.invokeMethod('requestRequiredPermissions');
-      debugPrint('Required permissions granted status: $granted');
-      await _checkTrackingStatus();
-    } catch (e) {
-      debugPrint('Permission request error: $e');
-    }
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => PermissionDisclosureScreen(
+          onAccept: () async {
+            Navigator.of(context).pop(); // Dismiss disclosure screen
+            try {
+              final bool granted = await platform.invokeMethod('requestRequiredPermissions');
+              debugPrint('Required permissions granted status: $granted');
+              await _checkTrackingStatus();
+            } catch (e) {
+              debugPrint('Permission request error: $e');
+            }
+          },
+          onDeny: () {
+            Navigator.of(context).pop(); // Dismiss disclosure screen
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Tracking cannot be enabled without required permissions.'),
+                backgroundColor: Colors.redAccent,
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _syncCallLogs() async {

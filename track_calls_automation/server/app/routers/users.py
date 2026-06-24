@@ -53,16 +53,14 @@ def get_all_users(
         users_list = db.query(User).filter(User.organisation_id.is_(None)).all()
         
     for u in users_list:
-        if u.is_tracking_enabled:
+        if u.is_tracking_active:
             if u.last_activity_timestamp:
                 diff = (datetime.utcnow() - u.last_activity_timestamp).total_seconds()
                 if diff >= 120:
-                    u.is_tracking_enabled = False
                     u.is_tracking_active = False
                     db.add(u)
                     db.commit()
             else:
-                u.is_tracking_enabled = False
                 u.is_tracking_active = False
                 db.add(u)
                 db.commit()
@@ -118,16 +116,14 @@ def get_my_team(
         users_list = [current_user]
 
     for u in users_list:
-        if u.is_tracking_enabled:
+        if u.is_tracking_active:
             if u.last_activity_timestamp:
                 diff = (datetime.utcnow() - u.last_activity_timestamp).total_seconds()
                 if diff >= 120:
-                    u.is_tracking_enabled = False
                     u.is_tracking_active = False
                     db.add(u)
                     db.commit()
             else:
-                u.is_tracking_enabled = False
                 u.is_tracking_active = False
                 db.add(u)
                 db.commit()
