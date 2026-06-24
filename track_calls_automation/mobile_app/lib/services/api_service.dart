@@ -1,17 +1,17 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiService {
+  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
   static String get baseUrl {
     final envUrl = dotenv.env['API_BASE_URL'];
     if (envUrl != null && envUrl.isNotEmpty) {
       return envUrl;
     }
-    // API_BASE_URL is not set in .env — crash loudly in debug, so it is never
-    // silently misconfigured in a production build.
     assert(false, 'API_BASE_URL is not set in .env. Add it before building.');
     throw Exception('API_BASE_URL is not set in .env');
   }
@@ -37,10 +37,13 @@ class ApiService {
     await prefs.remove('user_email');
     await prefs.remove('user_name');
     await prefs.remove('user_id');
+    await prefs.remove('user_emp_id');
+    await prefs.remove('user_org_id');
+    await prefs.remove('user_system_id');
+    await prefs.remove('user_is_approved');
   }
 
   /// Calls POST /auth/logout then clears local session.
-  /// Safe to call even if server is unreachable — local session is always cleared.
   static Future<void> logout() async {
     try {
       final url = Uri.parse('$baseUrl/auth/logout');
@@ -62,6 +65,48 @@ class ApiService {
       headers['Authorization'] = 'Bearer $token';
     }
     return headers;
+  }
+
+  static Future<void> _handleUnauthorized(int statusCode) async {
+    if (statusCode == 401) {
+      await clearSession();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
+      });
+    }
+  }
+
+  // Helper HTTP methods that handle 401 Unauthorized globally
+  static Future<http.Response> _get(Uri url) async {
+    final response = await http.get(url, headers: await _headers());
+    await _handleUnauthorized(response.statusCode);
+    return response;
+  }
+
+  static Future<http.Response> _post(Uri url, {Object? body}) async {
+    final response = await http.post(
+      url, 
+      headers: await _headers(), 
+      body: body != null ? jsonEncode(body) : null,
+    );
+    await _handleUnauthorized(response.statusCode);
+    return response;
+  }
+
+  static Future<http.Response> _put(Uri url, {Object? body}) async {
+    final response = await http.put(
+      url, 
+      headers: await _headers(), 
+      body: body != null ? jsonEncode(body) : null,
+    );
+    await _handleUnauthorized(response.statusCode);
+    return response;
+  }
+
+  static Future<http.Response> _delete(Uri url) async {
+    final response = await http.delete(url, headers: await _headers());
+    await _handleUnauthorized(response.statusCode);
+    return response;
   }
 
   static Future<List<Map<String, dynamic>>> getOrganisations() async {
@@ -135,7 +180,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getMe() async {
     final url = Uri.parse('$baseUrl/users/me');
-    final response = await http.get(url, headers: await _headers());
+    final response = await _get(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -145,7 +190,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> updateMyTrackingActive(bool active) async {
     final url = Uri.parse('$baseUrl/users/me/tracking-active?active=$active');
-    final response = await http.put(url, headers: await _headers());
+    final response = await _put(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -161,16 +206,15 @@ class ApiService {
     required String lastActivityTimestamp,
   }) async {
     final url = Uri.parse('$baseUrl/users/track/status');
-    final response = await http.post(
+    final response = await _post(
       url,
-      headers: await _headers(),
-      body: jsonEncode({
+      body: {
         'emp_id': empId,
         'organisation_id': organisationId,
         'system_id': systemId,
         'is_tracking_enabled': isTrackingEnabled,
         'last_activity_timestamp': lastActivityTimestamp,
-      }),
+      },
     );
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -179,10 +223,9 @@ class ApiService {
     }
   }
 
-
   static Future<List<dynamic>> getPendingUsers() async {
     final url = Uri.parse('$baseUrl/users/pending');
-    final response = await http.get(url, headers: await _headers());
+    final response = await _get(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -192,7 +235,7 @@ class ApiService {
 
   static Future<List<dynamic>> getMyTeam() async {
     final url = Uri.parse('$baseUrl/users/my-team');
-    final response = await http.get(url, headers: await _headers());
+    final response = await _get(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -205,13 +248,12 @@ class ApiService {
     String? leaderId,
   }) async {
     final url = Uri.parse('$baseUrl/users/approve');
-    final response = await http.post(
+    final response = await _post(
       url,
-      headers: await _headers(),
-      body: jsonEncode({
+      body: {
         'user_id': userId,
         'leader_id': leaderId,
-      }),
+      },
     );
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -220,16 +262,11 @@ class ApiService {
     }
   }
 
-
   // ── Sync Calls ──
 
   static Future<List<dynamic>> syncCalls(List<Map<String, dynamic>> logs) async {
     final url = Uri.parse('$baseUrl/calls/');
-    final response = await http.post(
-      url,
-      headers: await _headers(),
-      body: jsonEncode(logs),
-    );
+    final response = await _post(url, body: logs);
     if (response.statusCode == 201) {
       return jsonDecode(response.body);
     } else {
@@ -239,7 +276,7 @@ class ApiService {
 
   static Future<List<dynamic>> getMyCallLogs() async {
     final url = Uri.parse('$baseUrl/calls/');
-    final response = await http.get(url, headers: await _headers());
+    final response = await _get(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -251,7 +288,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getReports() async {
     final url = Uri.parse('$baseUrl/calls/reports');
-    final response = await http.get(url, headers: await _headers());
+    final response = await _get(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -263,7 +300,7 @@ class ApiService {
 
   static Future<List<dynamic>> getOrgEmployees() async {
     final url = Uri.parse('$baseUrl/org-employees/');
-    final response = await http.get(url, headers: await _headers());
+    final response = await _get(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -273,13 +310,12 @@ class ApiService {
 
   static Future<Map<String, dynamic>> addOrgEmployee(String employeeId, String? email) async {
     final url = Uri.parse('$baseUrl/org-employees/');
-    final response = await http.post(
+    final response = await _post(
       url,
-      headers: await _headers(),
-      body: jsonEncode({
+      body: {
         'employee_id': employeeId,
         'email': email,
-      }),
+      },
     );
     if (response.statusCode == 201) {
       return jsonDecode(response.body);
@@ -311,6 +347,7 @@ class ApiService {
     
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
+    await _handleUnauthorized(response.statusCode);
     
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -336,6 +373,7 @@ class ApiService {
     
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
+    await _handleUnauthorized(response.statusCode);
     
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -346,7 +384,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> updateOrgEmployeeTrackingNeeded(String employeeId, bool needed) async {
     final url = Uri.parse('$baseUrl/org-employees/$employeeId/tracking-needed?needed=$needed');
-    final response = await http.put(url, headers: await _headers());
+    final response = await _put(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -368,7 +406,7 @@ class ApiService {
 
   static Future<List<dynamic>> getAllUsers() async {
     final url = Uri.parse('$baseUrl/users/');
-    final response = await http.get(url, headers: await _headers());
+    final response = await _get(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -396,11 +434,7 @@ class ApiService {
     if (isApproved != null) payload['is_approved'] = isApproved;
     if (systemId != null) payload['system_id'] = systemId.isEmpty ? null : systemId;
 
-    final response = await http.put(
-      url,
-      headers: await _headers(),
-      body: jsonEncode(payload),
-    );
+    final response = await _put(url, body: payload);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -410,7 +444,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> deleteUser(String userId) async {
     final url = Uri.parse('$baseUrl/users/$userId');
-    final response = await http.delete(url, headers: await _headers());
+    final response = await _delete(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
@@ -418,4 +452,3 @@ class ApiService {
     }
   }
 }
-

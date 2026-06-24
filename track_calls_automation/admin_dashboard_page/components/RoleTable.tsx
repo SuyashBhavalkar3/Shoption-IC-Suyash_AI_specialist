@@ -47,6 +47,18 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
   const [toTime, setToTime] = useState("");
 
   // Helper to get call metrics for a user
+  const formatToHHMM = (totalSeconds: number) => {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  };
+
+  const formatToMMSS = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
   const getUserCallMetrics = (userId: string) => {
     const warriorData = report?.warriors?.find((w) => w.warrior_id === userId);
 
@@ -54,20 +66,17 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       return {
         totalCalls: 0,
         totalSuccessCalls: 0,
-        totalDurationHours: "0.00",
-        totalAvgMinutes: "0.0",
-        incomingCalls: 0,
-        incomingSuccessAnswered: 0,
-        incomingDurationHours: "0.00",
-        incomingAvgMinutes: "0.0",
         missed: 0,
-        incomingDropped: 0,
-        totalOutgoingCalls: 0,
-        outgoingSuccessReceived: 0,
+        missedNotResponded: 0,
+        totalTalktime: "00:00",
+        avgCalltime: "00:00",
+        incomingCalls: 0,
+        incomingTalktime: "00:00",
+        incomingAvgTT: "00:00",
         dialed: 0,
-        outgoingDropped: 0,
-        outgoingDurationHours: "0.00",
-        outgoingAvgMinutes: "0.0",
+        outgoingSuccessReceived: 0,
+        outgoingTalktime: "00:00",
+        outgoingAvgTT: "00:00",
       };
     }
 
@@ -108,12 +117,10 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
     let incomingSuccessAnswered = 0;
     let incomingTotalSeconds = 0;
     let missed = 0;
-    let incomingDropped = 0;
 
     let totalOutgoingCalls = 0;
     let outgoingSuccessReceived = 0;
     let dialed = 0;
-    let outgoingDropped = 0;
     let outgoingTotalSeconds = 0;
 
     calls.forEach((c) => {
@@ -147,10 +154,6 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         } else if (isMissed) {
           missed++;
         }
-
-        if (isDropped) {
-          incomingDropped++;
-        }
       } else if (isOutgoing) {
         totalOutgoingCalls++;
         if (isSuccess) {
@@ -159,45 +162,51 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         } else {
           dialed++;
         }
-
-        if (isDropped) {
-          outgoingDropped++;
-        }
       }
     });
 
-    const incomingDurationHours = (incomingTotalSeconds / 3600).toFixed(2);
-    const incomingAvgMinutes = incomingSuccessAnswered > 0
-      ? (incomingTotalSeconds / incomingSuccessAnswered / 60).toFixed(1)
-      : "0.0";
+    // Calculate missed not responded
+    let missedNotResponded = 0;
+    const missedCalls = calls.filter(c => (c.call_type || "").toLowerCase() === "incoming" && (c.call_status || "").toLowerCase() === "missed");
+    
+    missedCalls.forEach(mc => {
+      const mcTime = parseDbTimestamp(mc.timestamp);
+      if (!mcTime) return;
+      const hasOutgoingAfter = calls.some(c => {
+        if ((c.call_type || "").toLowerCase() !== "outgoing") return false;
+        if (c.phone_number !== mc.phone_number) return false;
+        const cTime = parseDbTimestamp(c.timestamp);
+        return cTime && cTime > mcTime;
+      });
+      if (!hasOutgoingAfter) {
+        missedNotResponded++;
+      }
+    });
 
-    const outgoingDurationHours = (outgoingTotalSeconds / 3600).toFixed(2);
-    const outgoingAvgMinutes = outgoingSuccessReceived > 0
-      ? (outgoingTotalSeconds / outgoingSuccessReceived / 60).toFixed(1)
-      : "0.0";
+    const totalDurationSeconds = incomingTotalSeconds + outgoingTotalSeconds;
+    const totalTalktime = formatToHHMM(totalDurationSeconds);
+    const avgCalltime = formatToMMSS(totalSuccessCalls > 0 ? totalDurationSeconds / totalSuccessCalls : 0);
 
-    const totalDurationHours = ((incomingTotalSeconds + outgoingTotalSeconds) / 3600).toFixed(2);
-    const totalAvgMinutes = (incomingSuccessAnswered + outgoingSuccessReceived) > 0
-      ? ((incomingTotalSeconds + outgoingTotalSeconds) / (incomingSuccessAnswered + outgoingSuccessReceived) / 60).toFixed(1)
-      : "0.0";
+    const incomingTalktime = formatToHHMM(incomingTotalSeconds);
+    const incomingAvgTT = formatToMMSS(incomingSuccessAnswered > 0 ? incomingTotalSeconds / incomingSuccessAnswered : 0);
+
+    const outgoingTalktime = formatToHHMM(outgoingTotalSeconds);
+    const outgoingAvgTT = formatToMMSS(outgoingSuccessReceived > 0 ? outgoingTotalSeconds / outgoingSuccessReceived : 0);
 
     return {
       totalCalls: calls.length,
       totalSuccessCalls,
-      totalDurationHours,
-      totalAvgMinutes,
-      incomingCalls,
-      incomingSuccessAnswered,
-      incomingDurationHours,
-      incomingAvgMinutes,
       missed,
-      incomingDropped,
-      totalOutgoingCalls,
-      outgoingSuccessReceived,
-      outgoingDurationHours,
-      outgoingAvgMinutes,
+      missedNotResponded,
+      totalTalktime,
+      avgCalltime,
+      incomingCalls,
+      incomingTalktime,
+      incomingAvgTT,
       dialed,
-      outgoingDropped,
+      outgoingSuccessReceived,
+      outgoingTalktime,
+      outgoingAvgTT,
     };
   };
 
@@ -228,10 +237,11 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
 
   const handleExportCSV = () => {
     const headers = [
-      "Name", "Role", "Email", "Department", "Total Calls", "Total Success Calls",
-      "Total Incoming Calls", "Total Talk Duration (hrs)", "Total Avg Call Duration (min)", "Success Incoming Answered", "Incoming Duration (hrs)", "Incoming Avg Talk (mins)",
-      "Missed Call", "Dropped Incoming Call", "Total Outgoing Calls", "Success Outgoing Received",
-      "Outgoing Duration (hrs)", "Outgoing Avg Talk (mins)", "Dialed", "Dropped Outgoing Call"
+      "NAME", "ROLE / DEPT",
+      "TOTAL CALLS", "TOTAL SUCCESS CALLS", "TOTAL MISSED CALLS", "TOTAL MISSED NOT RESPONDED",
+      "TOTAL TALKTIME (HH:MM)", "AVERAGE CALL TIME (MM:SS)",
+      "TOTAL INCOMING CALLS", "INCOMING TALKTIME", "INCOMING AVR. CALL TT",
+      "TOTAL DIALED", "TOTAL SUCCESS DIALED", "OUTGOING TALKTIME", "OUTCOMING AVR. CALL TT"
     ];
     
     const rows = filteredUsers
@@ -242,25 +252,20 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       .sort((a, b) => b.metrics.totalCalls - a.metrics.totalCalls)
       .map(({ user, metrics }) => [
         user.full_name,
-        user.role.replace("_", " "),
-        user.email,
-        user.department || "Unassigned",
+        `${user.role.replace("_", " ").toUpperCase()} / ${user.department || "Unassigned"}`,
         metrics.totalCalls,
         metrics.totalSuccessCalls,
-        metrics.incomingCalls,
-        metrics.totalDurationHours,
-        metrics.totalAvgMinutes,
-        metrics.incomingSuccessAnswered,
-        metrics.incomingDurationHours,
-        metrics.incomingAvgMinutes,
         metrics.missed,
-        metrics.incomingDropped,
-        metrics.totalOutgoingCalls,
-        metrics.outgoingSuccessReceived,
-        metrics.outgoingDurationHours,
-        metrics.outgoingAvgMinutes,
+        metrics.missedNotResponded,
+        metrics.totalTalktime,
+        metrics.avgCalltime,
+        metrics.incomingCalls,
+        metrics.incomingTalktime,
+        metrics.incomingAvgTT,
         metrics.dialed,
-        metrics.outgoingDropped
+        metrics.outgoingSuccessReceived,
+        metrics.outgoingTalktime,
+        metrics.outgoingAvgTT
       ]);
 
     const csvContent = [headers, ...rows].map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -286,24 +291,24 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       .sort((a, b) => b.metrics.totalCalls - a.metrics.totalCalls)
       .map(({ user, metrics }) => `
         <tr>
-          <td><b>${user.full_name}</b><br/><small>${user.email}</small></td>
-          <td>${user.department || "Unassigned"}</td>
+          <td>
+            <b>${user.full_name}</b><br/>
+            <small>${user.email}</small><br/>
+            <small style="color: #04693F; font-weight: bold;">${user.role.replace("_", " ").toUpperCase()} / ${user.department || "Unassigned"}</small>
+          </td>
           <td>${metrics.totalCalls}</td>
           <td>${metrics.totalSuccessCalls}</td>
-          <td>${metrics.incomingCalls}</td>
-          <td>${metrics.totalDurationHours}</td>
-          <td>${metrics.totalAvgMinutes}</td>
-          <td>${metrics.incomingSuccessAnswered}</td>
-          <td>${metrics.incomingDurationHours}</td>
-          <td>${metrics.incomingAvgMinutes}</td>
           <td>${metrics.missed}</td>
-          <td>${metrics.incomingDropped}</td>
-          <td>${metrics.totalOutgoingCalls}</td>
-          <td>${metrics.outgoingSuccessReceived}</td>
-          <td>${metrics.outgoingDurationHours}</td>
-          <td>${metrics.outgoingAvgMinutes}</td>
+          <td>${metrics.missedNotResponded}</td>
+          <td>${metrics.totalTalktime}</td>
+          <td>${metrics.avgCalltime}</td>
+          <td>${metrics.incomingCalls}</td>
+          <td>${metrics.incomingTalktime}</td>
+          <td>${metrics.incomingAvgTT}</td>
           <td>${metrics.dialed}</td>
-          <td>${metrics.outgoingDropped}</td>
+          <td>${metrics.outgoingSuccessReceived}</td>
+          <td>${metrics.outgoingTalktime}</td>
+          <td>${metrics.outgoingAvgTT}</td>
         </tr>
       `).join("");
 
@@ -315,8 +320,8 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
             body { font-family: system-ui, sans-serif; margin: 40px; color: #1e293b; }
             h1 { font-size: 20px; font-weight: 800; color: #04693F; margin-bottom: 5px; }
             p { font-size: 12px; color: #64748b; margin-top: 0; margin-bottom: 25px; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; }
-            th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: center; }
+            table { width: 100%; border-collapse: collapse; font-size: 10px; }
+            th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: center; }
             th { background-color: #f8fafc; font-weight: 700; color: #04693F; }
             td:first-child, th:first-child { text-align: left; }
           </style>
@@ -327,22 +332,20 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
           <table>
             <thead>
               <tr>
-                <th>Name / Email</th>
-                <th>Department</th>
-                <th>Total</th>
-                <th>Success</th>
-                <th>Inc</th>
-                <th>Inc Success</th>
-                <th>Inc Dur (h)</th>
-                <th>Inc Avg (m)</th>
-                <th>Missed</th>
-                <th>Inc Drop</th>
-                <th>Total Out</th>
-                <th>Out Success</th>
-                <th>Out Dur (h)</th>
-                <th>Out Avg (m)</th>
-                <th>Dialed</th>
-                <th>Out Drop</th>
+                <th>NAME<br/><small style="font-weight: normal; opacity: 0.85;">ROLE / DEPT</small></th>
+                <th>TOTAL CALLS</th>
+                <th>TOTAL SUCCESS CALLS</th>
+                <th>TOTAL MISSED CALLS</th>
+                <th>TOTAL MISSED NOT RESPONDED</th>
+                <th>TOTAL TALKTIME (HH:MM)</th>
+                <th>AVERAGE CALL TIME (MM:SS)</th>
+                <th>TOTAL INCOMING CALLS</th>
+                <th>INCOMING TALKTIME</th>
+                <th>INCOMING AVR. CALL TT</th>
+                <th>TOTAL DIALED</th>
+                <th>TOTAL SUCCESS DIALED</th>
+                <th>OUTGOING TALKTIME</th>
+                <th>OUTCOMING AVR. CALL TT</th>
               </tr>
             </thead>
             <tbody>
@@ -362,12 +365,12 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
   };
 
   return (
-    <div className="bg-white border border-slate-100 rounded-3xl shadow-sm overflow-hidden mt-6">
+    <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden mt-3 flex-1 flex flex-col min-h-0">
       {/* Tabs */}
-      <div className="flex border-b border-slate-100 bg-slate-50/50 p-2 gap-2">
+      <div className="flex border-b border-slate-100 bg-slate-50/50 p-1.5 gap-1.5">
         <button
           onClick={() => setActiveTab("users")}
-          className={`flex-1 py-3 px-6 rounded-2xl text-sm font-semibold transition-all ${activeTab === "users"
+          className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${activeTab === "users"
               ? "bg-white text-[#04693F] shadow-sm"
               : "text-slate-500 hover:text-slate-800 hover:bg-white/50"
             }`}
@@ -376,7 +379,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         </button>
         <button
           onClick={() => setActiveTab("registry")}
-          className={`flex-1 py-3 px-6 rounded-2xl text-sm font-semibold transition-all ${activeTab === "registry"
+          className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${activeTab === "registry"
               ? "bg-white text-[#04693F] shadow-sm"
               : "text-slate-500 hover:text-slate-800 hover:bg-white/50"
             }`}
@@ -386,138 +389,167 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       </div>
 
       {/* ERP Control Panel */}
-      <div className="p-6 bg-slate-50/30 border-b border-slate-100/80 flex flex-col gap-4">
-        {/* Row 1: Search & Export Buttons */}
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-          <div className="relative w-full md:max-w-md">
-            <input
-              type="text"
-              placeholder={activeTab === "users" ? "Search active users by name, email, role, or dept..." : "Search registered employees..."}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-full border border-slate-200 bg-white px-5 py-2.5 pl-11 text-sm outline-none transition focus:border-[#04693F] focus:ring-4 focus:ring-[#04693F]/5 font-semibold text-slate-700"
-            />
-            {/* Search Icon */}
-            <svg
-              className="absolute left-4 top-3 h-4 w-4 text-slate-400"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </div>
-          
-          {activeTab === "users" && (
-            <div className="flex gap-3 w-full md:w-auto justify-end">
-              <button
-                onClick={handleExportCSV}
-                className="flex-1 md:flex-none px-5 py-2.5 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center justify-center gap-2"
-              >
-                Export Excel
-              </button>
-              <button
-                onClick={handleExportPDF}
-                className="flex-1 md:flex-none px-5 py-2.5 rounded-full bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] border border-[#04693F]/15 hover:opacity-95 text-[#04693F] text-xs font-bold transition-all flex items-center justify-center gap-2"
-              >
-                Export PDF
-              </button>
-            </div>
-          )}
+      <div className="p-2 bg-slate-50/10 border-b border-slate-100/60 flex items-center justify-between gap-3 flex-wrap">
+        {/* Search Input */}
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <input
+            type="text"
+            placeholder={activeTab === "users" ? "Search active users by name, email, role, or dept..." : "Search registered..."}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 pl-8 text-xs outline-none transition focus:border-[#04693F] focus:ring-1 focus:ring-[#04693F]/5 font-semibold text-slate-700"
+          />
+          {/* Search Icon */}
+          <svg
+            className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
         </div>
 
-        {/* Row 2: Date & Time Range Filters (Only for call log telemetry users) */}
+        {/* Date & Time Range Filters (Aligned next to search) */}
         {activeTab === "users" && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
-            <div className="flex flex-col gap-1 text-left">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">From Date</label>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 bg-slate-50/50 px-2 py-0.5 rounded-lg border border-slate-100/50">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider whitespace-nowrap">From:</span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-[#04693F]"
+                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-600 outline-none transition focus:border-[#04693F]"
               />
-            </div>
-            <div className="flex flex-col gap-1 text-left">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">From Time</label>
               <input
                 type="time"
                 value={fromTime}
                 onChange={(e) => setFromTime(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-[#04693F]"
+                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-600 outline-none transition focus:border-[#04693F]"
               />
             </div>
-            <div className="flex flex-col gap-1 text-left">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">To Date</label>
+            <div className="flex items-center gap-1.5 bg-slate-50/50 px-2 py-0.5 rounded-lg border border-slate-100/50">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider whitespace-nowrap">To:</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-[#04693F]"
+                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-600 outline-none transition focus:border-[#04693F]"
               />
-            </div>
-            <div className="flex flex-col gap-1 text-left">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">To Time</label>
               <input
                 type="time"
                 value={toTime}
                 onChange={(e) => setToTime(e.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-[#04693F]"
+                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-600 outline-none transition focus:border-[#04693F]"
               />
             </div>
           </div>
         )}
 
-        {/* Clear Filters Button */}
+        {/* Clear Filters Button (Shows next to inputs when active) */}
         {(searchQuery || fromDate || fromTime || toDate || toTime) && (
-          <div className="flex justify-start">
+          <button
+            onClick={() => {
+              setSearchQuery("");
+              setFromDate("");
+              setFromTime("");
+              setToDate("");
+              setToTime("");
+            }}
+            className="text-rose-500 hover:text-rose-700 text-[10px] font-bold transition-all whitespace-nowrap"
+          >
+            Clear Filters
+          </button>
+        )}
+
+        {/* Export Buttons (Aligned to the right end) */}
+        {activeTab === "users" && (
+          <div className="flex gap-1.5">
             <button
-              onClick={() => {
-                setSearchQuery("");
-                setFromDate("");
-                setFromTime("");
-                setToDate("");
-                setToTime("");
-              }}
-              className="text-rose-500 hover:text-rose-700 text-xs font-bold transition-all"
+              onClick={handleExportCSV}
+              className="px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap"
             >
-              Clear ERP Filters
+              Export Excel
+            </button>
+            <button
+              onClick={handleExportPDF}
+              className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] border border-[#04693F]/15 hover:opacity-95 text-[#04693F] text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap"
+            >
+              Export PDF
             </button>
           </div>
         )}
       </div>
 
       {/* Table Content */}
-      <div className="overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
+      <div className="overflow-x-auto overflow-y-auto flex-1">
         {activeTab === "users" ? (
           <table className="min-w-full divide-y divide-slate-100 text-left text-xs font-semibold border-collapse">
             <thead className="text-slate-500 uppercase tracking-wider font-bold">
               <tr>
-                <th className="px-6 py-4 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Name / Role</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Department</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Total Calls</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Total Success Calls</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Total Incoming Calls</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Total Talk Duration (hrs)</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Total Avg Call Duration (min)</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Success Incoming Answered</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Incoming Duration (hrs)</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Incoming Avg Talk (mins)</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Missed Call</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Dropped Incoming Call</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Total Outgoing Calls</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Success Outgoing Received</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Outgoing Duration (hrs)</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Outgoing Avg Talk (mins)</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Dialed</th>
-                <th className="px-4 py-4 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Dropped Outgoing Call</th>
+                <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-left">
+                  <div className="leading-tight text-[10px] font-bold text-slate-700">NAME</div>
+                  <div className="text-[9px] text-slate-400 font-bold mt-0.5 leading-none">ROLE / DEPT</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>TOTAL</div>
+                  <div>CALLS</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>TOTAL SUCCESS</div>
+                  <div>CALLS</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>TOTAL MISSED</div>
+                  <div>CALLS</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>TOTAL MISSED</div>
+                  <div>NOT RESPONDED</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>TOTAL TALKTIME</div>
+                  <div>(HH:MM)</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>AVERAGE CALL</div>
+                  <div>TIME (MM:SS)</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>TOTAL INCOMING</div>
+                  <div>CALLS</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>INCOMING</div>
+                  <div>TALKTIME</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>INCOMING</div>
+                  <div>AVR. CALL TT</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>TOTAL</div>
+                  <div>DIALED</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>TOTAL SUCCESS</div>
+                  <div>DIALED</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>OUTGOING</div>
+                  <div>TALKTIME</div>
+                </th>
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight">
+                  <div>OUTCOMING</div>
+                  <div>AVR. CALL TT</div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="px-6 py-10 text-center text-slate-400 font-medium">
+                  <td colSpan={14} className="px-6 py-10 text-center text-slate-400 font-medium">
                     No active users match the current hierarchy or search filters.
                   </td>
                 </tr>
@@ -534,27 +566,23 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                         <td className="px-6 py-4">
                           <div className="font-bold text-slate-800 text-sm">{user.full_name}</div>
                           <div className="text-[10px] text-slate-400 font-medium">{user.email}</div>
-                          <div className="text-[9px] text-[#04693F] uppercase tracking-wider mt-1">{user.role.replace("_", " ")}</div>
-                        </td>
-                        <td className="px-4 py-4 text-center text-xs font-semibold text-slate-700">
-                          {user.department || "Unassigned"}
+                          <div className="text-[10px] text-[#04693F] font-bold mt-1">
+                            {user.role.replace("_", " ").toUpperCase()} / {user.department || "Unassigned"}
+                          </div>
                         </td>
                         <td className="px-4 py-4 text-center text-sm font-bold text-slate-800">{metrics.totalCalls}</td>
                         <td className="px-4 py-4 text-center text-sm font-bold text-[#04693F]">{metrics.totalSuccessCalls}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.incomingCalls}</td>
-                        <td className="px-4 py-4 text-center text-slate-600 font-medium">{metrics.totalDurationHours}</td>
-                        <td className="px-4 py-4 text-center text-slate-600 font-medium">{metrics.totalAvgMinutes}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.incomingSuccessAnswered}</td>
-                        <td className="px-4 py-4 text-center text-slate-600 font-medium">{metrics.incomingDurationHours}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.incomingAvgMinutes}</td>
                         <td className="px-4 py-4 text-center text-slate-600">{metrics.missed}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.incomingDropped}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.totalOutgoingCalls}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.outgoingSuccessReceived}</td>
-                        <td className="px-4 py-4 text-center text-slate-600 font-medium">{metrics.outgoingDurationHours}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.outgoingAvgMinutes}</td>
+                        <td className="px-4 py-4 text-center text-slate-600">{metrics.missedNotResponded}</td>
+                        <td className="px-4 py-4 text-center text-slate-600 font-medium">{metrics.totalTalktime}</td>
+                        <td className="px-4 py-4 text-center text-slate-600 font-medium">{metrics.avgCalltime}</td>
+                        <td className="px-4 py-4 text-center text-slate-600">{metrics.incomingCalls}</td>
+                        <td className="px-4 py-4 text-center text-slate-600">{metrics.incomingTalktime}</td>
+                        <td className="px-4 py-4 text-center text-slate-600">{metrics.incomingAvgTT}</td>
                         <td className="px-4 py-4 text-center text-slate-600">{metrics.dialed}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.outgoingDropped}</td>
+                        <td className="px-4 py-4 text-center text-slate-600">{metrics.outgoingSuccessReceived}</td>
+                        <td className="px-4 py-4 text-center text-slate-600 font-medium">{metrics.outgoingTalktime}</td>
+                        <td className="px-4 py-4 text-center text-slate-600">{metrics.outgoingAvgTT}</td>
                       </tr>
                     );
                   })

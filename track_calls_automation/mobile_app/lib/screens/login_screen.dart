@@ -64,6 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await prefs.setString('user_system_id', userSystemId);
       await prefs.setString('user_org_id', userOrgId);
       await prefs.setString('user_emp_id', userEmpId);
+      await prefs.setBool('user_is_approved', isApproved);
 
       if (!mounted) return;
 

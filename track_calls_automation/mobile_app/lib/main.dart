@@ -34,29 +34,59 @@ class CallTrackerApp extends StatelessWidget {
   const CallTrackerApp({super.key});
 
 
+  Future<void> _checkFreshStatusInBackground() async {
+    try {
+      final user = await ApiService.getMe();
+      final isApproved = user['is_approved'] as bool;
+      final role = user['role'] as String;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_role', role);
+      await prefs.setString('user_name', user['full_name']);
+      await prefs.setBool('user_is_approved', isApproved);
+    } catch (_) {
+      // Background checks shouldn't disrupt UI on failure.
+      // If it's a 401, the global navigator key handler inside ApiService
+      // will handle routing to login automatically.
+    }
+  }
+
   Future<Widget> _getInitialScreen() async {
     final token = await ApiService.getToken();
     if (token == null) {
       return const LoginScreen();
     }
 
+    final prefs = await SharedPreferences.getInstance();
+    final cachedRole = prefs.getString('user_role');
+    final cachedIsApproved = prefs.getBool('user_is_approved') ?? false;
+
+    // Run the API check in the background to update cache without blocking startup.
+    // If it fails with a 401, the ApiService global handler redirects to /login.
+    _checkFreshStatusInBackground();
+
+    if (cachedRole != null) {
+      if (!cachedIsApproved) {
+        return const PendingApprovalScreen();
+      }
+      return const RoleRouterWidget();
+    }
+
+    // Fallback if no cached role is found (should be rare if token is present)
     try {
       final user = await ApiService.getMe();
       final isApproved = user['is_approved'] as bool;
       final role = user['role'] as String;
 
-      // Update cached values in SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
       await prefs.setString('user_role', role);
       await prefs.setString('user_name', user['full_name']);
+      await prefs.setBool('user_is_approved', isApproved);
 
       if (!isApproved) {
         return const PendingApprovalScreen();
       }
-
       return const RoleRouterWidget();
     } catch (_) {
-      // If token expired or API failed, fallback to login screen
       return const LoginScreen();
     }
   }
@@ -64,6 +94,7 @@ class CallTrackerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: ApiService.navigatorKey,
       title: 'LeadLens Call Tracker',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
