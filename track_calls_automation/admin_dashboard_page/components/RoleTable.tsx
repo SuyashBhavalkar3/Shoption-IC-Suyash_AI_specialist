@@ -837,7 +837,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                     </td>
                     <td className="px-6 py-4">
                       <button
-                        onClick={() => onToggleTrackingNeeded?.(emp.id, emp.is_tracking_needed)}
+                        onClick={() => onToggleTrackingNeeded?.(emp.employee_id, emp.is_tracking_needed)}
                         className={`px-4 py-2 rounded-full text-xs font-bold border transition-all ${emp.is_tracking_needed
                             ? "bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] text-[#04693F] border-[#04693F]/15 hover:opacity-90"
                             : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"

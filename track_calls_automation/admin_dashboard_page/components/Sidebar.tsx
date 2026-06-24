@@ -2,17 +2,22 @@ import type { ReactNode } from "react";
 
 type SidebarProps = {
   meName: string;
+  meRole?: string;
   onLogout: () => void;
   selectedView: string;
   setSelectedView: (view: string) => void;
   onClose?: () => void;
 };
 
-export default function Sidebar({ meName, onLogout, selectedView, setSelectedView, onClose }: SidebarProps) {
+export default function Sidebar({ meName, meRole, onLogout, selectedView, setSelectedView, onClose }: SidebarProps) {
   const menuItems = [
     { id: "dashboard", label: "Analytics Dashboard", icon: "" },
     { id: "users", label: "Users & Registry", icon: "" },
   ];
+
+  if (meRole === "super_admin" || meRole === "admin") {
+    menuItems.push({ id: "user-management", label: "User Management", icon: "" });
+  }
 
   return (
     <aside className="w-80 bg-white border-r border-slate-100 flex flex-col h-full relative z-10 shadow-xl">

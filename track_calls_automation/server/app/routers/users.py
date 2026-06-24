@@ -472,22 +472,25 @@ def admin_update_user(
         target.role = payload.role
 
     # 3. Update manager_id (reassign group leader)
-    if payload.manager_id is not None:
-        # Check if the manager_id points to a group_leader in the same org
-        leader = db.query(User).filter(User.id == payload.manager_id).first()
-        if not leader:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group leader not found")
-        if leader.organisation_id != current_user.organisation_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Selected group leader must belong to your organisation"
-            )
-        if leader.role != "group_leader":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Manager must be a group_leader"
-            )
-        target.manager_id = payload.manager_id
+    if "manager_id" in payload.__fields_set__:
+        if payload.manager_id is None:
+            target.manager_id = None
+        else:
+            # Check if the manager_id points to a group_leader in the same org
+            leader = db.query(User).filter(User.id == payload.manager_id).first()
+            if not leader:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group leader not found")
+            if leader.organisation_id != current_user.organisation_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Selected group leader must belong to your organisation"
+                )
+            if leader.role != "group_leader":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Manager must be a group_leader"
+                )
+            target.manager_id = payload.manager_id
 
     # 4. Update status flags
     if payload.is_active is not None:

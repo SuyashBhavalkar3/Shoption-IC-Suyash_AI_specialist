@@ -119,6 +119,9 @@ type DashboardScreenProps = {
   onLogout: () => void;
   loading: boolean;
   onToggleTrackingNeeded?: (empId: string, currentVal: boolean) => void;
+  onUpdateUser?: (userId: string, data: any) => Promise<void>;
+  onDeleteUser?: (userId: string) => Promise<void>;
+  onToggleUserTracking?: (userId: string, enabled: boolean) => Promise<void>;
 };
 
 export default function DashboardScreen({
@@ -126,14 +129,44 @@ export default function DashboardScreen({
   onLogout,
   loading,
   onToggleTrackingNeeded,
+  onUpdateUser,
+  onDeleteUser,
+  onToggleUserTracking,
 }: DashboardScreenProps) {
   const [selectedView, setSelectedView] = useState<string>("dashboard");
   const [selectedLeaderId, setSelectedLeaderId] = useState<string>("");
   const [selectedWarriorId, setSelectedWarriorId] = useState<string>("");
 
+  // User Management State
+  const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeletingUser, setIsDeletingUser] = useState<UserRecord | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [editFormData, setEditFormData] = useState({
+    full_name: "",
+    email: "",
+    role: "warrior",
+    manager_id: "",
+    system_id: "",
+    is_active: true,
+    is_approved: true,
+    is_tracking_needed: false,
+  });
+  const [actionError, setActionError] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
   const meName = dashboard.me?.full_name ?? "Admin Operator";
+
+  // Recursive Manager Check Helper
+  const isManagedBy = (userId: string, managerId: string, users: UserRecord[]): boolean => {
+    const user = users.find((u) => u.id === userId);
+    if (!user || !user.manager_id) return false;
+    if (user.manager_id === managerId) return true;
+    return isManagedBy(user.manager_id, managerId, users);
+  };
 
   // Filter Lists
   const leadersList = useMemo(() => {
@@ -144,7 +177,7 @@ export default function DashboardScreen({
     return dashboard.users.filter((u) => {
       if (u.role !== "warrior") return false;
       if (selectedLeaderId) {
-        return u.manager_id === selectedLeaderId;
+        return u.manager_id === selectedLeaderId || isManagedBy(u.id, selectedLeaderId, dashboard.users);
       }
       return true;
     });
@@ -153,6 +186,105 @@ export default function DashboardScreen({
   const handleLeaderChange = (leaderId: string) => {
     setSelectedLeaderId(leaderId);
     setSelectedWarriorId("");
+  };
+
+  const roleLevels: Record<string, number> = {
+    super_admin: 4,
+    admin: 3,
+    group_leader: 2,
+    warrior: 1,
+  };
+
+  const getRoleLevel = (role: string) => roleLevels[role] || 1;
+
+  const canManageUser = (targetUser: UserRecord) => {
+    const myRole = dashboard.me?.role || "warrior";
+    if (myRole === "super_admin") return true;
+    return getRoleLevel(myRole) > getRoleLevel(targetUser.role);
+  };
+
+  const handleOpenEditModal = (user: UserRecord) => {
+    setEditingUser(user);
+    const emp = dashboard.employees.find(
+      (e) => e.system_id === user.system_id || (e.email && e.email.toLowerCase() === user.email.toLowerCase())
+    );
+    setEditFormData({
+      full_name: user.full_name || "",
+      email: user.email || "",
+      role: user.role || "warrior",
+      manager_id: user.manager_id || "",
+      system_id: user.system_id || "",
+      is_active: user.is_active,
+      is_approved: user.is_approved,
+      is_tracking_needed: emp ? emp.is_tracking_needed : false,
+    });
+    setActionError("");
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingUser || !onUpdateUser) return;
+    setActionLoading(true);
+    setActionError("");
+    try {
+      const payload: any = {
+        full_name: editFormData.full_name,
+        email: editFormData.email,
+        role: editFormData.role,
+        is_active: editFormData.is_active,
+        is_approved: editFormData.is_approved,
+        system_id: editFormData.system_id || null,
+        manager_id: editFormData.manager_id || null,
+      };
+      
+      // Update User details
+      await onUpdateUser(editingUser.id, payload);
+
+      // Update Employee tracking needed status if changed
+      const emp = dashboard.employees.find(
+        (e) => e.system_id === editingUser.system_id || (e.email && e.email.toLowerCase() === editingUser.email.toLowerCase())
+      );
+      if (emp && emp.is_tracking_needed !== editFormData.is_tracking_needed && onToggleTrackingNeeded) {
+        await onToggleTrackingNeeded(emp.employee_id, emp.is_tracking_needed);
+      }
+
+      setIsEditModalOpen(false);
+      setEditingUser(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to update user");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleOpenDeleteModal = (user: UserRecord) => {
+    setIsDeletingUser(user);
+    setActionError("");
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!isDeletingUser || !onDeleteUser) return;
+    setActionLoading(true);
+    setActionError("");
+    try {
+      await onDeleteUser(isDeletingUser.id);
+      setIsDeleteModalOpen(false);
+      setIsDeletingUser(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to delete user");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleToggleUserTrackingState = async (user: UserRecord) => {
+    if (!onToggleUserTracking) return;
+    try {
+      await onToggleUserTracking(user.id, !user.is_tracking_enabled);
+    } catch (err) {
+      console.error("Failed to toggle user tracking status:", err);
+    }
   };
 
   // Calculate Totals & Stats
@@ -169,7 +301,7 @@ export default function DashboardScreen({
     let filteredReportWarriors = dashboard.report?.warriors ?? [];
     if (selectedLeaderId) {
       filteredReportWarriors = filteredReportWarriors.filter(
-        (w) => w.manager_id === selectedLeaderId || w.warrior_id === selectedLeaderId
+        (w) => w.warrior_id === selectedLeaderId || w.manager_id === selectedLeaderId || isManagedBy(w.warrior_id, selectedLeaderId, dashboard.users)
       );
     }
     if (selectedWarriorId) {
@@ -206,19 +338,20 @@ export default function DashboardScreen({
   const filteredReportWarriors = useMemo(() => {
     let list = dashboard.report?.warriors ?? [];
     if (selectedLeaderId) {
-      list = list.filter((w) => w.manager_id === selectedLeaderId || w.warrior_id === selectedLeaderId);
+      list = list.filter((w) => w.warrior_id === selectedLeaderId || w.manager_id === selectedLeaderId || isManagedBy(w.warrior_id, selectedLeaderId, dashboard.users));
     }
     if (selectedWarriorId) {
       list = list.filter((w) => w.warrior_id === selectedWarriorId);
     }
     return list;
-  }, [dashboard.report, selectedLeaderId, selectedWarriorId]);
+  }, [dashboard.report, dashboard.users, selectedLeaderId, selectedWarriorId]);
 
   const filteredUsersTable = useMemo(() => {
     return dashboard.users.filter((user) => {
       if (selectedLeaderId) {
         if (user.id === selectedLeaderId) return true;
         if (user.manager_id === selectedLeaderId) return true;
+        if (isManagedBy(user.id, selectedLeaderId, dashboard.users)) return true;
         return false;
       }
       if (selectedWarriorId) {
@@ -228,13 +361,24 @@ export default function DashboardScreen({
     });
   }, [dashboard.users, selectedLeaderId, selectedWarriorId]);
 
+  const filteredUsersList = useMemo(() => {
+    return dashboard.users.filter((user) => {
+      const q = userSearchQuery.toLowerCase().trim();
+      if (!q) return true;
+      return (
+        (user.full_name || "").toLowerCase().includes(q) ||
+        (user.email || "").toLowerCase().includes(q)
+      );
+    });
+  }, [dashboard.users, userSearchQuery]);
+
   const leaderSummaryData = useMemo(() => {
     const report = dashboard.report;
     if (!report) return { name: "-", hours: 0, avg: 0, count: 0 };
     if (selectedLeaderId) {
       const leaderUser = dashboard.users.find((u) => u.id === selectedLeaderId);
       const groupWarriors = report.warriors.filter(
-        (w) => w.manager_id === selectedLeaderId || w.manager_name === leaderUser?.full_name
+        (w) => w.warrior_id === selectedLeaderId || w.manager_id === selectedLeaderId || isManagedBy(w.warrior_id, selectedLeaderId, dashboard.users)
       );
       const totalCalls = groupWarriors.reduce((sum, w) => sum + (w.total_calls || 0), 0);
       const totalHours = groupWarriors.reduce((sum, w) => sum + (w.total_calling_hours || 0), 0);
@@ -292,6 +436,7 @@ export default function DashboardScreen({
       >
         <Sidebar
           meName={meName}
+          meRole={dashboard.me?.role}
           onLogout={onLogout}
           selectedView={selectedView}
           setSelectedView={setSelectedView}
@@ -500,8 +645,348 @@ export default function DashboardScreen({
             </div>
           )}
 
+          {selectedView === "user-management" && (
+            <div className="space-y-3 flex-1 flex flex-col min-h-0">
+              <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
+                <div className="flex flex-col gap-0.5 text-left">
+                  <h2 className="text-lg font-bold text-slate-800">User Management Console</h2>
+                  <p className="text-[11px] text-slate-400 font-semibold">
+                    Administer user roles, modify reporting structures, enable/disable tracking (Super Admin only), and remove records.
+                  </p>
+                </div>
+                {/* Search Box */}
+                <div className="relative w-full md:w-72">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Search people by name or email..."
+                    value={userSearchQuery}
+                    onChange={(e) => setUserSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 bg-white text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700 placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+
+              {/* Table wrapper */}
+              <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col min-h-0 mt-3">
+                <div className="overflow-x-auto overflow-y-auto flex-1">
+                  <table className="min-w-full divide-y divide-slate-100 text-left text-xs font-semibold border-collapse">
+                    <thead className="text-slate-500 uppercase tracking-wider font-bold bg-slate-50">
+                      <tr>
+                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">USER NAME / EMAIL</th>
+                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-center">ROLE</th>
+                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-center">REPORTING TO (MANAGER)</th>
+                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-center">SYSTEM ID</th>
+                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-center">CALL TRACKING</th>
+                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-center">ACTIONS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {filteredUsersList.map((user) => {
+                        const directManager = dashboard.users.find(u => u.id === user.manager_id);
+                        const canEditOrDelete = canManageUser(user) && user.id !== dashboard.me?.id;
+                        const isSuperAdmin = dashboard.me?.role === "super_admin";
+
+                        return (
+                          <tr key={user.id} className="hover:bg-slate-50/45 transition-colors">
+                            <td className="px-6 py-4">
+                              <div className="font-bold text-slate-800 text-sm">{user.full_name}</div>
+                              <div className="text-[10px] text-slate-400 font-medium">{user.email}</div>
+                              {!user.is_active && (
+                                <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold text-rose-600 mt-1">
+                                  Inactive
+                                </span>
+                              )}
+                              {!user.is_approved && (
+                                <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-600 mt-1 ml-1.5">
+                                  Pending Approval
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                user.role === "super_admin"
+                                  ? "bg-purple-50 text-purple-700 border border-purple-100"
+                                  : user.role === "admin"
+                                    ? "bg-blue-50 text-blue-700 border border-blue-100"
+                                    : user.role === "group_leader"
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                                      : "bg-slate-50 text-slate-650 border border-slate-200/60"
+                              }`}>
+                                {user.role.replace("_", " ")}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-center text-slate-600 font-medium">
+                              {directManager ? (
+                                <div>
+                                  <div className="font-bold text-slate-700">{directManager.full_name}</div>
+                                  <div className="text-[9px] text-slate-400">({directManager.role.replace("_", " ").toUpperCase()})</div>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-center font-mono text-[11px] text-slate-500 font-bold">
+                              {user.system_id || <span className="text-slate-400 font-normal">-</span>}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <button
+                                disabled={!isSuperAdmin}
+                                onClick={() => handleToggleUserTrackingState(user)}
+                                className={`px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all ${
+                                  user.is_tracking_enabled
+                                    ? "bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] text-[#04693F] border-[#04693F]/15 " + (isSuperAdmin ? "hover:opacity-90" : "opacity-80 cursor-not-allowed")
+                                    : "bg-white text-slate-500 border-slate-200 " + (isSuperAdmin ? "hover:bg-slate-50" : "opacity-60 cursor-not-allowed")
+                                }`}
+                              >
+                                {user.is_tracking_enabled ? "Tracking Enabled" : "Tracking Disabled"}
+                              </button>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              {canEditOrDelete ? (
+                                <div className="flex justify-center gap-2">
+                                  <button
+                                    onClick={() => handleOpenEditModal(user)}
+                                    className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] border border-[#04693F]/15 hover:opacity-90 text-[#04693F] text-[10px] font-bold transition-all shadow-xs"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenDeleteModal(user)}
+                                    className="px-2.5 py-1 rounded-md border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 text-[10px] font-bold transition-all"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 italic text-[10px]">No Access</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </main>
+
+      {/* Edit User Modal */}
+      {isEditModalOpen && editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200 text-left">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div>
+                <h3 className="text-sm font-black text-[#04693F] uppercase tracking-wider">EDIT USER HIERARCHY</h3>
+                <div className="text-xs text-slate-400 font-semibold mt-0.5">
+                  Modifying Profile of {editingUser.full_name}
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+              {actionError && (
+                <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-xs font-semibold text-left">
+                  {actionError}
+                </div>
+              )}
+
+              {/* Full Name */}
+              <div className="flex flex-col text-left">
+                <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={editFormData.full_name}
+                  onChange={(e) => setEditFormData({ ...editFormData, full_name: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700"
+                />
+              </div>
+
+              {/* Email */}
+              <div className="flex flex-col text-left">
+                <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700"
+                />
+              </div>
+
+              {/* System ID */}
+              <div className="flex flex-col text-left">
+                <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">System ID</label>
+                <input
+                  type="text"
+                  placeholder="None"
+                  value={editFormData.system_id}
+                  onChange={(e) => setEditFormData({ ...editFormData, system_id: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700"
+                />
+              </div>
+
+              {/* Role (Conditional on level) */}
+              <div className="flex flex-col text-left">
+                <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">Role Hierarchy</label>
+                <select
+                  value={editFormData.role}
+                  onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700 font-semibold text-slate-600"
+                >
+                  {dashboard.me?.role === "super_admin" && (
+                    <>
+                      <option value="super_admin">Super Admin (Level 4)</option>
+                      <option value="admin">Admin (Level 3)</option>
+                    </>
+                  )}
+                  <option value="group_leader">Group Leader (Level 2)</option>
+                  <option value="warrior">Warrior (Level 1)</option>
+                </select>
+              </div>
+
+              {/* Manager Assignment */}
+              {(editFormData.role === "warrior" || editFormData.role === "group_leader") && (
+                <div className="flex flex-col text-left">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">Assign Manager (Group Leader)</label>
+                  <select
+                    value={editFormData.manager_id}
+                    onChange={(e) => setEditFormData({ ...editFormData, manager_id: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700 font-semibold text-slate-600"
+                  >
+                    <option value="">No Manager (Unassigned)</option>
+                    {dashboard.users
+                      .filter((u) => u.role === "group_leader" && u.id !== editingUser.id)
+                      .map((leader) => (
+                        <option key={leader.id} value={leader.id}>
+                          {leader.full_name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Status Flags */}
+              <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                <span className="text-xs font-bold text-slate-600">Account Approved</span>
+                <input
+                  type="checkbox"
+                  checked={editFormData.is_approved}
+                  onChange={(e) => setEditFormData({ ...editFormData, is_approved: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-350 text-[#04693F] focus:ring-[#04693F]"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-600">Account Active</span>
+                <input
+                  type="checkbox"
+                  checked={editFormData.is_active}
+                  onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-350 text-[#04693F] focus:ring-[#04693F]"
+                />
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold text-slate-600">Tracking Needed</span>
+                  {dashboard.me?.role !== "super_admin" && (
+                    <span className="text-[10px] text-slate-400 font-semibold">(Super Admin access only)</span>
+                  )}
+                </div>
+                <input
+                  type="checkbox"
+                  disabled={dashboard.me?.role !== "super_admin"}
+                  checked={editFormData.is_tracking_needed}
+                  onChange={(e) => setEditFormData({ ...editFormData, is_tracking_needed: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-350 text-[#04693F] focus:ring-[#04693F] disabled:opacity-50"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={actionLoading}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] border border-[#04693F]/15 hover:opacity-95 text-[#04693F] text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                {actionLoading ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Modal */}
+      {isDeleteModalOpen && isDeletingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200 text-left">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <h3 className="text-sm font-black text-rose-600 uppercase tracking-wider">DELETE USER RECORD</h3>
+              <button
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-3">
+              {actionError && (
+                <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-xs font-semibold">
+                  {actionError}
+                </div>
+              )}
+              <p className="text-xs text-slate-500 text-left">
+                Are you absolutely sure you want to permanently delete user <b>{isDeletingUser.full_name}</b>? This action is irreversible and will remove all call statistics association.
+              </p>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+              <button
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={actionLoading}
+                className="px-4 py-2 rounded-xl bg-rose-650 hover:bg-rose-700 text-white text-xs font-bold transition-all"
+              >
+                {actionLoading ? "Deleting..." : "Permanently Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

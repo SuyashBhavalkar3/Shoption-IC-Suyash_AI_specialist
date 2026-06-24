@@ -92,16 +92,14 @@ export default function Home() {
     setDashboard({ me: null, users: [], report: null, employees: [] });
   };
 
-  const handleToggleTrackingNeeded = async (empId: string, currentVal: boolean) => {
+  const handleToggleTrackingNeeded = async (employeeId: string, currentVal: boolean) => {
     if (!token) return;
     try {
-      const res = await fetch(`${getApiBaseUrl()}/org-employees/${empId}`, {
-        method: "PATCH",
+      const res = await fetch(`${getApiBaseUrl()}/org-employees/${encodeURIComponent(employeeId)}/tracking-needed?needed=${!currentVal}`, {
+        method: "PUT",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ is_tracking_needed: !currentVal }),
       });
 
       if (!res.ok) {
@@ -112,7 +110,7 @@ export default function Home() {
       setDashboard((prev) => ({
         ...prev,
         employees: prev.employees.map((emp) =>
-          emp.id === empId ? { ...emp, is_tracking_needed: !currentVal } : emp
+          emp.employee_id === employeeId ? { ...emp, is_tracking_needed: !currentVal } : emp
         ),
       }));
     } catch (err) {
@@ -167,6 +165,53 @@ export default function Home() {
     }
   }
 
+  const handleUpdateUser = async (userId: string, data: any) => {
+    if (!token) return;
+    const res = await fetch(`${getApiBaseUrl()}/users/${userId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!res.ok) {
+      throw new Error(await readError(res));
+    }
+    void loadDashboard(token);
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!token) return;
+    const res = await fetch(`${getApiBaseUrl()}/users/${userId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(await readError(res));
+    }
+    void loadDashboard(token);
+  };
+
+  const handleToggleUserTracking = async (userId: string, enabled: boolean) => {
+    if (!token) return;
+    const res = await fetch(`${getApiBaseUrl()}/users/${userId}/tracking?enabled=${enabled}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(await readError(res));
+    }
+    void loadDashboard(token);
+  };
+
   if (loading && !isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -198,6 +243,9 @@ export default function Home() {
       onLogout={handleLogout}
       loading={loadingData}
       onToggleTrackingNeeded={handleToggleTrackingNeeded}
+      onUpdateUser={handleUpdateUser}
+      onDeleteUser={handleDeleteUser}
+      onToggleUserTracking={handleToggleUserTracking}
     />
   );
 }
