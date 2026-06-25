@@ -437,7 +437,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
 
   const handleExportCSV = () => {
     const headers = [
-      "NAME", "ROLE / DEPT",
+      "NAME", "EMAIL ID", "ROLE / DEPT",
       "TOTAL CALLS", "TOTAL SUCCESS CALLS", "TOTAL MISSED CALLS", "TOTAL MISSED NOT RESPONDED",
       "TOTAL TALKTIME (HH:MM)", "AVERAGE CALL TIME (MM:SS)",
       "TOTAL INCOMING CALLS", "INCOMING TALKTIME", "INCOMING AVR. CALL TT",
@@ -452,6 +452,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       .sort((a, b) => b.metrics.totalCalls - a.metrics.totalCalls)
       .map(({ user, metrics }) => [
         user.full_name,
+        user.email,
         `${user.role.replace("_", " ").toUpperCase()} / ${user.department || "Unassigned"}`,
         metrics.totalCalls,
         metrics.totalSuccessCalls,
@@ -491,11 +492,9 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       .sort((a, b) => b.metrics.totalCalls - a.metrics.totalCalls)
       .map(({ user, metrics }) => `
         <tr>
-          <td>
-            <b>${user.full_name}</b><br/>
-            <small>${user.email}</small><br/>
-            <small style="color: #04693F; font-weight: bold;">${user.role.replace("_", " ").toUpperCase()} / ${user.department || "Unassigned"}</small>
-          </td>
+          <td><b>${user.full_name}</b></td>
+          <td>${user.email}</td>
+          <td style="color: #04693F; font-weight: bold;">${user.role.replace("_", " ").toUpperCase()} / ${user.department || "Unassigned"}</td>
           <td>${metrics.totalCalls}</td>
           <td>${metrics.totalSuccessCalls}</td>
           <td>${metrics.missed}</td>
@@ -532,7 +531,9 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
           <table>
             <thead>
               <tr>
-                <th>NAME<br/><small style="font-weight: normal; opacity: 0.85;">ROLE / DEPT</small></th>
+                <th>NAME</th>
+                <th>EMAIL ID</th>
+                <th>ROLE / DEPT</th>
                 <th>TOTAL CALLS</th>
                 <th>TOTAL SUCCESS CALLS</th>
                 <th>TOTAL MISSED CALLS</th>
@@ -688,9 +689,14 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
           <table className="min-w-full divide-y divide-slate-100 text-left text-xs font-semibold border-collapse">
             <thead className="text-slate-500 uppercase tracking-wider font-bold">
               <tr>
-                <th className="px-6 py-3 sticky top-0 left-0 z-30 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] border-r border-slate-200/80 text-left min-w-[200px]">
+                <th className="px-4 py-3 sticky top-0 left-0 z-30 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] border-r border-slate-200/80 text-left min-w-[140px]">
                   <div className="leading-tight text-[10px] font-bold text-slate-700">NAME</div>
-                  <div className="text-[9px] text-slate-400 font-bold mt-0.5 leading-none">ROLE / DEPT</div>
+                </th>
+                <th className="px-3 py-3 text-left sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[10px] font-bold leading-tight min-w-[150px]">
+                  <div>EMAIL ID</div>
+                </th>
+                <th className="px-3 py-3 text-left sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[10px] font-bold leading-tight min-w-[150px]">
+                  <div>ROLE / DEPT</div>
                 </th>
                 <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[90px]">
                   <div>TOTAL</div>
@@ -752,7 +758,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
             <tbody className="divide-y divide-slate-100 bg-white">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="px-6 py-10 text-center text-slate-400 font-medium">
+                  <td colSpan={17} className="px-6 py-10 text-center text-slate-400 font-medium">
                     No active users match the current hierarchy or search filters.
                   </td>
                 </tr>
@@ -766,27 +772,29 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                   .map(({ user, metrics }) => {
                     return (
                       <tr key={user.id} className="hover:bg-slate-50/45 transition-colors group">
-                        <td className="px-6 py-4 sticky left-0 z-20 bg-white group-hover:bg-slate-50 transition-colors border-r border-slate-100">
-                          <div className="font-bold text-slate-800 text-sm">{user.full_name}</div>
-                          <div className="text-[10px] text-slate-400 font-medium">{user.email}</div>
-                          <div className="text-[10px] text-[#04693F] font-bold mt-1">
-                            {user.role.replace("_", " ").toUpperCase()} / {user.department || "Unassigned"}
-                          </div>
+                        <td className="px-4 py-2 sticky left-0 z-20 bg-white group-hover:bg-slate-50 transition-colors border-r border-slate-100 font-bold text-slate-800 text-xs truncate max-w-[150px]" title={user.full_name}>
+                          {user.full_name}
                         </td>
-                        <td className="px-4 py-4 text-center text-sm font-bold text-slate-800">{metrics.totalCalls}</td>
-                        <td className="px-4 py-4 text-center text-sm font-bold text-[#04693F]">{metrics.totalSuccessCalls}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.missed}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.missedNotResponded}</td>
-                        <td className="px-4 py-4 text-center text-slate-600 font-medium">{metrics.totalTalktime}</td>
-                        <td className="px-4 py-4 text-center text-slate-600 font-medium">{metrics.avgCalltime}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.incomingCalls}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.incomingTalktime}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.incomingAvgTT}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.dialed}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.outgoingSuccessReceived}</td>
-                        <td className="px-4 py-4 text-center text-slate-600 font-medium">{metrics.outgoingTalktime}</td>
-                        <td className="px-4 py-4 text-center text-slate-600">{metrics.outgoingAvgTT}</td>
-                        <td className="px-3 py-4 text-center">
+                        <td className="px-3 py-2 text-left text-xs font-semibold text-slate-500 truncate max-w-[180px]" title={user.email}>
+                          {user.email}
+                        </td>
+                        <td className="px-3 py-2 text-left text-xs font-bold text-[#04693F] whitespace-nowrap">
+                          {user.role.replace("_", " ").toUpperCase()} / {user.department || "Unassigned"}
+                        </td>
+                        <td className="px-4 py-2 text-center text-sm font-bold text-slate-800">{metrics.totalCalls}</td>
+                        <td className="px-4 py-2 text-center text-sm font-bold text-[#04693F]">{metrics.totalSuccessCalls}</td>
+                        <td className="px-4 py-2 text-center text-slate-600">{metrics.missed}</td>
+                        <td className="px-4 py-2 text-center text-slate-600">{metrics.missedNotResponded}</td>
+                        <td className="px-4 py-2 text-center text-slate-600 font-medium">{metrics.totalTalktime}</td>
+                        <td className="px-4 py-2 text-center text-slate-600 font-medium">{metrics.avgCalltime}</td>
+                        <td className="px-4 py-2 text-center text-slate-600">{metrics.incomingCalls}</td>
+                        <td className="px-4 py-2 text-center text-slate-600">{metrics.incomingTalktime}</td>
+                        <td className="px-4 py-2 text-center text-slate-600">{metrics.incomingAvgTT}</td>
+                        <td className="px-4 py-2 text-center text-slate-600">{metrics.dialed}</td>
+                        <td className="px-4 py-2 text-center text-slate-600">{metrics.outgoingSuccessReceived}</td>
+                        <td className="px-4 py-2 text-center text-slate-600 font-medium">{metrics.outgoingTalktime}</td>
+                        <td className="px-4 py-2 text-center text-slate-600">{metrics.outgoingAvgTT}</td>
+                        <td className="px-3 py-2 text-center">
                           <button
                             onClick={() => setSelectedReportUser(user)}
                             className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] border border-[#04693F]/15 hover:opacity-90 text-[#04693F] text-[10px] font-bold transition-all shadow-xs whitespace-nowrap"
