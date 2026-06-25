@@ -80,6 +80,7 @@ class UserOut(UserBase):
     id: UUID
     role: str
     manager_id: Optional[UUID] = None
+    manager_ids: List[UUID] = []
     organisation_id: Optional[UUID] = None
     system_id: Optional[str] = None
     is_approved: bool
@@ -278,6 +279,7 @@ class UserUpdateAdmin(BaseModel):
     email: Optional[EmailStr] = None
     role: Optional[str] = None
     manager_id: Optional[UUID] = None
+    manager_ids: Optional[List[UUID]] = None
     is_active: Optional[bool] = None
     is_approved: Optional[bool] = None
     system_id: Optional[str] = None

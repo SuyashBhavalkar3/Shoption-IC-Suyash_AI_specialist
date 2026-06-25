@@ -21,6 +21,16 @@ class Organisation(Base):
     org_employees = relationship("OrgEmployee", back_populates="organisation", cascade="all, delete-orphan")
 
 
+from sqlalchemy import Table
+
+user_managers = Table(
+    "user_managers",
+    Base.metadata,
+    Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("manager_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -46,8 +56,19 @@ class User(Base):
 
     # Self-referencing relationship
     manager      = relationship("User", remote_side=[id], backref="subordinates")
+    managers     = relationship(
+        "User",
+        secondary=user_managers,
+        primaryjoin="User.id==user_managers.c.user_id",
+        secondaryjoin="User.id==user_managers.c.manager_id",
+        backref="subordinates_multi"
+    )
     call_logs    = relationship("CallLog", back_populates="user", cascade="all, delete-orphan")
     organisation = relationship("Organisation", back_populates="users")
+
+    @property
+    def manager_ids(self):
+        return [m.id for m in self.managers]
 
 
 class CallLog(Base):

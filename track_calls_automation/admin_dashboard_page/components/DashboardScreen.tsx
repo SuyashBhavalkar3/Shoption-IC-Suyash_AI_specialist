@@ -148,6 +148,7 @@ export default function DashboardScreen({
     email: "",
     role: "warrior",
     manager_id: "",
+    manager_ids: [] as string[],
     system_id: "",
     is_active: true,
     is_approved: true,
@@ -163,9 +164,10 @@ export default function DashboardScreen({
   // Recursive Manager Check Helper
   const isManagedBy = (userId: string, managerId: string, users: UserRecord[]): boolean => {
     const user = users.find((u) => u.id === userId);
-    if (!user || !user.manager_id) return false;
-    if (user.manager_id === managerId) return true;
-    return isManagedBy(user.manager_id, managerId, users);
+    if (!user) return false;
+    const directManagers = user.manager_ids || (user.manager_id ? [user.manager_id] : []);
+    if (directManagers.includes(managerId)) return true;
+    return directManagers.some((mId) => isManagedBy(mId, managerId, users));
   };
 
   // Filter Lists
@@ -213,6 +215,7 @@ export default function DashboardScreen({
       email: user.email || "",
       role: user.role || "warrior",
       manager_id: user.manager_id || "",
+      manager_ids: user.manager_ids || (user.manager_id ? [user.manager_id] : []),
       system_id: user.system_id || "",
       is_active: user.is_active,
       is_approved: user.is_approved,
@@ -234,7 +237,7 @@ export default function DashboardScreen({
         is_active: editFormData.is_active,
         is_approved: editFormData.is_approved,
         system_id: editFormData.system_id || null,
-        manager_id: editFormData.manager_id || null,
+        manager_ids: editFormData.manager_ids.length > 0 ? editFormData.manager_ids : null,
       };
       
       // Update User details
@@ -350,7 +353,8 @@ export default function DashboardScreen({
     return dashboard.users.filter((user) => {
       if (selectedLeaderId) {
         if (user.id === selectedLeaderId) return true;
-        if (user.manager_id === selectedLeaderId) return true;
+        const directManagers = user.manager_ids || (user.manager_id ? [user.manager_id] : []);
+        if (directManagers.includes(selectedLeaderId)) return true;
         if (isManagedBy(user.id, selectedLeaderId, dashboard.users)) return true;
         return false;
       }
@@ -687,7 +691,8 @@ export default function DashboardScreen({
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
                       {filteredUsersList.map((user) => {
-                        const directManager = dashboard.users.find(u => u.id === user.manager_id);
+                        const mIds = user.manager_ids || (user.manager_id ? [user.manager_id] : []);
+                        const directManagers = dashboard.users.filter(u => mIds.includes(u.id));
                         const canEditOrDelete = canManageUser(user) && user.id !== dashboard.me?.id;
                         const isSuperAdmin = dashboard.me?.role === "super_admin";
 
@@ -721,10 +726,14 @@ export default function DashboardScreen({
                               </span>
                             </td>
                             <td className="px-6 py-4 text-center text-slate-600 font-medium">
-                              {directManager ? (
-                                <div>
-                                  <div className="font-bold text-slate-700">{directManager.full_name}</div>
-                                  <div className="text-[9px] text-slate-400">({directManager.role.replace("_", " ").toUpperCase()})</div>
+                              {directManagers.length > 0 ? (
+                                <div className="space-y-1">
+                                  {directManagers.map((m) => (
+                                    <div key={m.id} className="leading-tight">
+                                      <div className="font-bold text-slate-700">{m.full_name}</div>
+                                      <div className="text-[9px] text-slate-400">({m.role.replace("_", " ").toUpperCase()})</div>
+                                    </div>
+                                  ))}
                                 </div>
                               ) : (
                                 <span className="text-slate-400">-</span>
@@ -863,23 +872,44 @@ export default function DashboardScreen({
               </div>
 
               {/* Manager Assignment */}
-              {(editFormData.role === "warrior" || editFormData.role === "group_leader") && (
+              {editFormData.role !== "super_admin" && (
                 <div className="flex flex-col text-left">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">Assign Manager (Group Leader)</label>
-                  <select
-                    value={editFormData.manager_id}
-                    onChange={(e) => setEditFormData({ ...editFormData, manager_id: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700 font-semibold text-slate-600"
-                  >
-                    <option value="">No Manager (Unassigned)</option>
+                  <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">Assign Managers (Multiple Allowed)</label>
+                  <div className="border border-slate-200 rounded-xl p-3 max-h-[160px] overflow-y-auto space-y-2 bg-white">
                     {dashboard.users
-                      .filter((u) => u.role === "group_leader" && u.id !== editingUser.id)
-                      .map((leader) => (
-                        <option key={leader.id} value={leader.id}>
-                          {leader.full_name}
-                        </option>
-                      ))}
-                  </select>
+                      .filter((u) => u.id !== editingUser.id && getRoleLevel(u.role) > getRoleLevel(editFormData.role))
+                      .length === 0 ? (
+                      <div className="text-[11px] text-slate-400 font-medium">No higher-ranking managers available</div>
+                    ) : (
+                      dashboard.users
+                        .filter((u) => u.id !== editingUser.id && getRoleLevel(u.role) > getRoleLevel(editFormData.role))
+                        .map((mgr) => {
+                          const isChecked = editFormData.manager_ids.includes(mgr.id);
+                          return (
+                            <label key={mgr.id} className="flex items-center gap-2.5 cursor-pointer hover:bg-slate-50/70 p-1.5 rounded-lg transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  let newIds = [...editFormData.manager_ids];
+                                  if (e.target.checked) {
+                                    newIds.push(mgr.id);
+                                  } else {
+                                    newIds = newIds.filter((id) => id !== mgr.id);
+                                  }
+                                  setEditFormData({ ...editFormData, manager_ids: newIds });
+                                }}
+                                className="h-4 w-4 rounded border-slate-350 text-[#04693F] focus:ring-[#04693F]"
+                              />
+                              <div className="flex flex-col">
+                                <span className="text-xs font-bold text-slate-700 leading-tight">{mgr.full_name}</span>
+                                <span className="text-[9px] font-black uppercase text-[#04693F]/90 mt-0.5">{mgr.role.replace("_", " ")}</span>
+                              </div>
+                            </label>
+                          );
+                        })
+                    )}
+                  </div>
                 </div>
               )}
 

@@ -353,11 +353,10 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         }
       } else if (isOutgoing) {
         totalOutgoingCalls++;
+        dialed++;
         if (isSuccess) {
           outgoingSuccessReceived++;
           outgoingTotalSeconds += c.duration_seconds || 0;
-        } else {
-          dialed++;
         }
       }
     });

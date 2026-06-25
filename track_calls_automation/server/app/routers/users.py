@@ -105,7 +105,8 @@ def get_my_team(
     - warrior       → only themselves
     """
     if current_user.role == "group_leader":
-        users_list = db.query(User).filter(User.manager_id == current_user.id).all()
+        # Fetch users where current_user is one of the assigned managers
+        users_list = db.query(User).filter(User.managers.any(User.id == current_user.id)).all()
     elif current_user.role == "admin":
         org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
         users_list = db.query(User).filter(User.role.in_(["warrior", "group_leader"]), org_filter).all()
@@ -471,12 +472,45 @@ def admin_update_user(
             )
         target.role = payload.role
 
-    # 3. Update manager_id (reassign group leader)
-    if "manager_id" in payload.__fields_set__:
-        if payload.manager_id is None:
+    # 3. Update manager relationships (supporting both manager_id and manager_ids)
+    role_levels = {
+        "super_admin": 4,
+        "admin": 3,
+        "group_leader": 2,
+        "warrior": 1
+    }
+    
+    target_role = payload.role or target.role
+
+    if "manager_ids" in payload.__fields_set__:
+        if payload.manager_ids is None:
+            target.managers = []
             target.manager_id = None
         else:
-            # Check if the manager_id points to a group_leader in the same org
+            new_managers = []
+            for m_id in payload.manager_ids:
+                mgr = db.query(User).filter(User.id == m_id).first()
+                if not mgr:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Manager {m_id} not found")
+                if mgr.organisation_id != current_user.organisation_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Selected manager must belong to your organisation"
+                    )
+                if role_levels.get(mgr.role, 0) <= role_levels.get(target_role, 0):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Manager role ({mgr.role}) must be higher than user role ({target_role})"
+                    )
+                new_managers.append(mgr)
+            target.managers = new_managers
+            target.manager_id = new_managers[0].id if new_managers else None
+
+    elif "manager_id" in payload.__fields_set__:
+        if payload.manager_id is None:
+            target.managers = []
+            target.manager_id = None
+        else:
             leader = db.query(User).filter(User.id == payload.manager_id).first()
             if not leader:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group leader not found")
@@ -485,12 +519,13 @@ def admin_update_user(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Selected group leader must belong to your organisation"
                 )
-            if leader.role != "group_leader":
+            if role_levels.get(leader.role, 0) <= role_levels.get(target_role, 0):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Manager must be a group_leader"
+                    detail=f"Manager role ({leader.role}) must be higher than user role ({target_role})"
                 )
-            target.manager_id = payload.manager_id
+            target.managers = [leader]
+            target.manager_id = leader.id
 
     # 4. Update status flags
     if payload.is_active is not None:

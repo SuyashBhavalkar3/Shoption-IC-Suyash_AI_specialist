@@ -15,6 +15,7 @@ export type UserRecord = {
   created_at: string;
   employee_id?: string | null;
   department?: string | null;
+  manager_ids?: string[];
 };
 
 export type ReportResponse = {
