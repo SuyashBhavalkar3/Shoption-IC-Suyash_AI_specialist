@@ -436,52 +436,109 @@ export default function DashboardScreen({
   onToggleUserTracking,
 }: DashboardScreenProps) {
   const [selectedView, setSelectedView] = useState<string>("dashboard");
-  const [selectedLeaderId, setSelectedLeaderId] = useState<string>("");
-  const [selectedWarriorId, setSelectedWarriorId] = useState<string>("");
+  const [selectedSubordinateId, setSelectedSubordinateId] = useState<string>("");
+  const [subordinateSearchQuery, setSubordinateSearchQuery] = useState<string>("");
+  const [isSubordinateSearchOpen, setIsSubordinateSearchOpen] = useState<boolean>(false);
+
+  // Helper to format Date to YYYY-MM-DD
+  const formatDate = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  };
+
+  // Helper to format Time to HH:MM
+  const formatTime = (date: Date) => {
+    const h = String(date.getHours()).padStart(2, "0");
+    const m = String(date.getMinutes()).padStart(2, "0");
+    return `${h}:${m}`;
+  };
+
+  // Helper to get current shift bounds (9:30 AM based)
+  const getShiftRange = (now: Date = new Date()) => {
+    const todayNineThirty = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 30, 0, 0);
+    if (now >= todayNineThirty) {
+      const start = todayNineThirty;
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 30, 0, 0);
+      return { start, end };
+    } else {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 9, 30, 0, 0);
+      const end = todayNineThirty;
+      return { start, end };
+    }
+  };
+
+  // Default initialization: Today shift range (9:30 AM to tomorrow 9:30 AM)
+  const initialShift = getShiftRange(new Date());
 
   // Date/Time Filters State
-  const [filterStartDate, setFilterStartDate] = useState<string>("");
-  const [filterStartTime, setFilterStartTime] = useState<string>("09:30");
-  const [filterEndDate, setFilterEndDate] = useState<string>("");
-  const [filterEndTime, setFilterEndTime] = useState<string>("23:59");
-  const [selectedRangePreset, setSelectedRangePreset] = useState<string>("");
+  const [filterStartDate, setFilterStartDate] = useState<string>(formatDate(initialShift.start));
+  const [filterStartTime, setFilterStartTime] = useState<string>(formatTime(initialShift.start));
+  const [filterEndDate, setFilterEndDate] = useState<string>(formatDate(initialShift.end));
+  const [filterEndTime, setFilterEndTime] = useState<string>(formatTime(initialShift.end));
+  const [selectedRangePreset, setSelectedRangePreset] = useState<string>("today");
   const [selectedWorkforceUserId, setSelectedWorkforceUserId] = useState<string>("");
   const [workforceExpandedNodes, setWorkforceExpandedNodes] = useState<Record<string, boolean>>({});
+
+  // Auto-update shift on crossing end filter datetime (e.g. crossing 9:30 AM)
+  useEffect(() => {
+    if (selectedRangePreset !== "today") return;
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      const parts = filterEndDate.split("-");
+      if (parts.length === 3) {
+        const [year, month, day] = parts;
+        const timeParts = filterEndTime.split(":");
+        const hours = timeParts[0] ? parseInt(timeParts[0]) : 9;
+        const minutes = timeParts[1] ? parseInt(timeParts[1]) : 30;
+        const currentShiftEnd = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hours, minutes);
+
+        if (now >= currentShiftEnd) {
+          const newShift = getShiftRange(now);
+          setFilterStartDate(formatDate(newShift.start));
+          setFilterStartTime(formatTime(newShift.start));
+          setFilterEndDate(formatDate(newShift.end));
+          setFilterEndTime(formatTime(newShift.end));
+        }
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [selectedRangePreset, filterEndDate, filterEndTime]);
 
   const handlePresetChange = (preset: string) => {
     setSelectedRangePreset(preset);
     if (!preset) {
-      setFilterStartDate("");
-      setFilterStartTime("09:30");
-      setFilterEndDate("");
-      setFilterEndTime("23:59");
       return;
     }
     const now = new Date();
-    const formatDate = (date: Date) => {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, "0");
-      const d = String(date.getDate()).padStart(2, "0");
-      return `${y}-${m}-${d}`;
-    };
+    const currentShift = getShiftRange(now);
 
     let start: Date;
-    if (preset === "last_day") {
-      start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    } else if (preset === "last_7_days") {
-      start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    } else if (preset === "last_15_days") {
-      start = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000);
-    } else if (preset === "last_month") {
-      start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    let end: Date;
+
+    if (preset === "today") {
+      start = currentShift.start;
+      end = currentShift.end;
+    } else if (preset === "yesterday") {
+      start = new Date(currentShift.start.getTime() - 24 * 60 * 60 * 1000);
+      end = currentShift.start;
+    } else if (preset === "last_week") {
+      start = new Date(currentShift.start.getTime() - 7 * 24 * 60 * 60 * 1000);
+      end = currentShift.end;
+    } else if (preset === "last_30_days") {
+      start = new Date(currentShift.start.getTime() - 30 * 24 * 60 * 60 * 1000);
+      end = currentShift.end;
     } else {
       return;
     }
 
     setFilterStartDate(formatDate(start));
-    setFilterStartTime("00:00");
-    setFilterEndDate(formatDate(now));
-    setFilterEndTime("23:59");
+    setFilterStartTime(formatTime(start));
+    setFilterEndDate(formatDate(end));
+    setFilterEndTime(formatTime(end));
   };
 
   const startFilterDateTime = useMemo(() => {
@@ -717,25 +774,40 @@ export default function DashboardScreen({
     }
   }, [selectedWorkforceUserId, buildWorkforceTree]);
 
-  // Filter Lists
-  const leadersList = useMemo(() => {
-    return dashboard.users.filter((u) => u.role === "group_leader");
-  }, [dashboard.users]);
+  // Filter Lists - Get list of subordinates with priority strictly lower than logged in user
+  const searchableSubordinates = useMemo(() => {
+    const me = dashboard.me;
+    if (!me) return [];
 
-  const warriorsList = useMemo(() => {
+    const getRolePriority = (role: string) => {
+      if (role === "super_admin") return 4;
+      if (role === "admin") return 3;
+      if (role === "group_leader") return 2;
+      if (role === "warrior") return 1;
+      return 0;
+    };
+
+    const mePriority = getRolePriority(me.role);
+
     return dashboard.users.filter((u) => {
-      if (u.role !== "warrior") return false;
-      if (selectedLeaderId) {
-        return u.manager_id === selectedLeaderId || isManagedBy(u.id, selectedLeaderId, dashboard.users);
+      // Must be strictly lower role priority
+      if (getRolePriority(u.role) >= mePriority) return false;
+
+      // Must be managed by me (if not admin or super_admin)
+      if (me.role !== "super_admin" && me.role !== "admin") {
+        return u.manager_id === me.id || isManagedBy(u.id, me.id, dashboard.users);
       }
       return true;
     });
-  }, [dashboard.users, selectedLeaderId]);
+  }, [dashboard.users, dashboard.me]);
 
-  const handleLeaderChange = (leaderId: string) => {
-    setSelectedLeaderId(leaderId);
-    setSelectedWarriorId("");
-  };
+  const filteredSearchableSubordinates = useMemo(() => {
+    if (!subordinateSearchQuery) return searchableSubordinates;
+    const q = subordinateSearchQuery.toLowerCase();
+    return searchableSubordinates.filter(
+      u => (u.full_name || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q)
+    );
+  }, [searchableSubordinates, subordinateSearchQuery]);
 
   // Filtered Analytics — Cascading hierarchy lists
   const filteredAdminsList = useMemo(() => {
@@ -877,23 +949,18 @@ export default function DashboardScreen({
     }
   };
 
-  // Calculate Totals & Stats (reacts to leader/warrior filters and date range)
+  // Calculate Totals & Stats (reacts to subordinate filter and date range)
   const totals = useMemo(() => {
     let filteredReportWarriors = dashboard.report?.warriors ?? [];
-    if (selectedLeaderId) {
+    if (selectedSubordinateId) {
       filteredReportWarriors = filteredReportWarriors.filter(
-        (w) => w.warrior_id === selectedLeaderId || w.manager_id === selectedLeaderId || isManagedBy(w.warrior_id, selectedLeaderId, dashboard.users)
-      );
-    }
-    if (selectedWarriorId) {
-      filteredReportWarriors = filteredReportWarriors.filter(
-        (w) => w.warrior_id === selectedWarriorId
+        (w) => w.warrior_id === selectedSubordinateId || w.manager_id === selectedSubordinateId || isManagedBy(w.warrior_id, selectedSubordinateId, dashboard.users)
       );
     }
     return computeTotals(filteredReportWarriors, dashboard.users, dashboard.employees, startFilterDateTime, endFilterDateTime);
-  }, [dashboard, selectedLeaderId, selectedWarriorId, startFilterDateTime, endFilterDateTime]);
+  }, [dashboard, selectedSubordinateId, startFilterDateTime, endFilterDateTime]);
 
-  // Calculate Overall Totals & Stats (stays overall, unfiltered by leader/warrior but filtered by date range)
+  // Calculate Overall Totals & Stats (stays overall, unfiltered by subordinate but filtered by date range)
   const overallTotals = useMemo(() => {
     return computeTotals(dashboard.report?.warriors ?? [], dashboard.users, dashboard.employees, startFilterDateTime, endFilterDateTime);
   }, [dashboard, startFilterDateTime, endFilterDateTime]);
@@ -902,58 +969,55 @@ export default function DashboardScreen({
     return [
       {
         name: "Overall",
-        Total: overallTotals.totalCallsDone,
-        Success: overallTotals.totalSuccessCalls,
+        Total: totals.totalCallsDone,
+        Success: totals.totalSuccessCalls,
       },
       {
         name: "Incoming",
-        Total: overallTotals.incomingCalls,
-        Success: overallTotals.incomingSuccessCalls,
+        Total: totals.incomingCalls,
+        Success: totals.incomingSuccessCalls,
       },
       {
         name: "Outgoing",
-        Total: overallTotals.outgoingCalls,
-        Success: overallTotals.outgoingSuccessCalls,
+        Total: totals.outgoingCalls,
+        Success: totals.outgoingSuccessCalls,
       },
       {
         name: "Missed",
-        Total: overallTotals.totalMissed,
-        "Not Responded": overallTotals.missedNotResponded,
+        Total: totals.totalMissed,
+        "Not Responded": totals.missedNotResponded,
       },
       {
         name: "Dropped",
-        Total: overallTotals.droppedCalls,
-        "Incoming Dropped": overallTotals.incomingDroppedCalls,
-        "Outgoing Dropped": overallTotals.outgoingDroppedCalls,
+        Total: totals.droppedCalls,
+        "Incoming Dropped": totals.incomingDroppedCalls,
+        "Outgoing Dropped": totals.outgoingDroppedCalls,
       },
     ];
-  }, [overallTotals]);
+  }, [totals]);
 
   const directionData = useMemo(() => {
     return [
-      { name: "Incoming", value: overallTotals.incomingCalls, color: "#1F8FFF" },
-      { name: "Outgoing", value: overallTotals.outgoingCalls, color: "#8B5CF6" },
+      { name: "Incoming", value: totals.incomingCalls, color: "#1F8FFF" },
+      { name: "Outgoing", value: totals.outgoingCalls, color: "#8B5CF6" },
     ];
-  }, [overallTotals]);
+  }, [totals]);
 
   const recoveryData = useMemo(() => {
-    const resolved = Math.max(0, overallTotals.totalMissed - overallTotals.missedNotResponded);
+    const resolved = Math.max(0, totals.totalMissed - totals.missedNotResponded);
     return [
       { name: "Responded", value: resolved, color: "#00E6B8" },
-      { name: "Unresponded", value: overallTotals.missedNotResponded, color: "#e11d48" },
+      { name: "Unresponded", value: totals.missedNotResponded, color: "#e11d48" },
     ];
-  }, [overallTotals]);
+  }, [totals]);
 
   const filteredReportWarriors = useMemo(() => {
     let list = dashboard.report?.warriors ?? [];
-    if (selectedLeaderId) {
-      list = list.filter((w) => w.warrior_id === selectedLeaderId || w.manager_id === selectedLeaderId || isManagedBy(w.warrior_id, selectedLeaderId, dashboard.users));
-    }
-    if (selectedWarriorId) {
-      list = list.filter((w) => w.warrior_id === selectedWarriorId);
+    if (selectedSubordinateId) {
+      list = list.filter((w) => w.warrior_id === selectedSubordinateId || w.manager_id === selectedSubordinateId || isManagedBy(w.warrior_id, selectedSubordinateId, dashboard.users));
     }
     return list;
-  }, [dashboard.report, dashboard.users, selectedLeaderId, selectedWarriorId]);
+  }, [dashboard.report, dashboard.users, selectedSubordinateId]);
 
   const filteredUsersList = useMemo(() => {
     return dashboard.users.filter((user) => {
@@ -966,15 +1030,13 @@ export default function DashboardScreen({
     });
   }, [dashboard.users, userSearchQuery]);
 
-
-
   const leaderSummaryData = useMemo(() => {
     const report = dashboard.report;
     if (!report) return { name: "-", hours: 0, avg: 0, count: 0 };
-    if (selectedLeaderId) {
-      const leaderUser = dashboard.users.find((u) => u.id === selectedLeaderId);
+    if (selectedSubordinateId) {
+      const leaderUser = dashboard.users.find((u) => u.id === selectedSubordinateId);
       const groupWarriors = report.warriors.filter(
-        (w) => w.warrior_id === selectedLeaderId || w.manager_id === selectedLeaderId || isManagedBy(w.warrior_id, selectedLeaderId, dashboard.users)
+        (w) => w.warrior_id === selectedSubordinateId || w.manager_id === selectedSubordinateId || isManagedBy(w.warrior_id, selectedSubordinateId, dashboard.users)
       );
       const totalCalls = groupWarriors.reduce((sum, w) => sum + (w.total_calls || 0), 0);
       const totalHours = groupWarriors.reduce((sum, w) => sum + (w.total_calling_hours || 0), 0);
@@ -993,7 +1055,7 @@ export default function DashboardScreen({
       avg: report.overall_average_call_seconds || 0,
       count: report.warriors.length,
     };
-  }, [dashboard, selectedLeaderId]);
+  }, [dashboard, selectedSubordinateId]);
 
   const buildTrend = (warriors: any[]): number[] => {
     if (warriors.length === 0) {
@@ -1197,8 +1259,10 @@ export default function DashboardScreen({
   }, [dashboard, filteredWarriorId]);
 
   const warriorTimeRange = useMemo(() => {
-    if (!selectedWarriorId) return null;
-    const warrior = dashboard.report?.warriors.find(w => w.warrior_id === selectedWarriorId);
+    if (!selectedSubordinateId) return null;
+    const isWarrior = dashboard.users.find(u => u.id === selectedSubordinateId)?.role === "warrior";
+    if (!isWarrior) return null;
+    const warrior = dashboard.report?.warriors.find(w => w.warrior_id === selectedSubordinateId);
     if (!warrior || !warrior.calls || warrior.calls.length === 0) return null;
 
     const dates = warrior.calls
@@ -1231,7 +1295,7 @@ export default function DashboardScreen({
       toDate: formatDate(maxDate),
       toTime: formatTime(maxDate)
     };
-  }, [dashboard, selectedWarriorId]);
+  }, [dashboard, selectedSubordinateId]);
 
   const hourlyAdminsList = useMemo(() => {
     return dashboard.users.filter(u => u.role === "admin" || u.role === "super_admin");
@@ -1664,13 +1728,69 @@ export default function DashboardScreen({
                       onChange={(e) => handlePresetChange(e.target.value)}
                       className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-[#F8FAFC] w-full cursor-pointer"
                     >
+                      <option value="today">Today</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="last_week">Last Week</option>
+                      <option value="last_30_days">Last 30 Days</option>
                       <option value="">Custom Range</option>
-                      <option value="last_day">Last Day</option>
-                      <option value="last_7_days">Last 7 Days</option>
-                      <option value="last_15_days">Last 15 Days</option>
-                      <option value="last_month">Last Month</option>
                     </select>
                   </div>
+
+                  {searchableSubordinates.length > 0 && (
+                    <div className="flex flex-col text-left relative w-[180px]">
+                      <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">Search Person</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search subordinate..."
+                          value={subordinateSearchQuery}
+                          onFocus={() => setIsSubordinateSearchOpen(true)}
+                          onBlur={() => setTimeout(() => setIsSubordinateSearchOpen(false), 200)}
+                          onChange={(e) => {
+                            setSubordinateSearchQuery(e.target.value);
+                            if (!e.target.value) {
+                              setSelectedSubordinateId("");
+                            }
+                            setIsSubordinateSearchOpen(true);
+                          }}
+                          className="rounded-lg border border-slate-800 bg-[#050816] pl-2 pr-6 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-[#F8FAFC] w-full"
+                        />
+                        {selectedSubordinateId && (
+                          <button
+                            onClick={() => {
+                              setSelectedSubordinateId("");
+                              setSubordinateSearchQuery("");
+                              setIsSubordinateSearchOpen(false);
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs cursor-pointer bg-transparent border-0 outline-none"
+                          >
+                            ×
+                          </button>
+                        )}
+                        {isSubordinateSearchOpen && (
+                          <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-[#0E1528] border border-slate-800 rounded-lg shadow-xl z-50 py-1">
+                            {filteredSearchableSubordinates.length === 0 ? (
+                              <div className="px-3 py-2 text-[11px] text-slate-500">No subordinates found</div>
+                            ) : (
+                              filteredSearchableSubordinates.map((u) => (
+                                <button
+                                  key={u.id}
+                                  onClick={() => {
+                                    setSelectedSubordinateId(u.id);
+                                    setSubordinateSearchQuery(u.full_name);
+                                    setIsSubordinateSearchOpen(false);
+                                  }}
+                                  className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors block border-none bg-transparent cursor-pointer font-medium"
+                                >
+                                  {u.full_name} <span className="text-[9px] text-slate-500 ml-1">({u.role.replace("_", " ")})</span>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex flex-col text-left relative w-[130px]">
                     <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">Start Date</label>
@@ -1724,14 +1844,18 @@ export default function DashboardScreen({
                     />
                   </div>
 
-                  {(filterStartDate || filterEndDate || selectedRangePreset) && (
+                  {(filterStartDate || filterEndDate || selectedRangePreset || selectedSubordinateId) && (
                     <button
                       onClick={() => {
-                        setFilterStartDate("");
-                        setFilterStartTime("09:30");
-                        setFilterEndDate("");
-                        setFilterEndTime("23:59");
-                        setSelectedRangePreset("");
+                        const newShift = getShiftRange();
+                        setFilterStartDate(formatDate(newShift.start));
+                        setFilterStartTime(formatTime(newShift.start));
+                        setFilterEndDate(formatDate(newShift.end));
+                        setFilterEndTime(formatTime(newShift.end));
+                        setSelectedRangePreset("today");
+                        setSelectedSubordinateId("");
+                        setSubordinateSearchQuery("");
+                        setIsSubordinateSearchOpen(false);
                       }}
                       className="px-3 py-1.5 rounded-lg border border-rose-950 text-rose-400 hover:bg-rose-950/20 text-[10px] font-bold transition-all self-end cursor-pointer"
                     >
@@ -1748,10 +1872,10 @@ export default function DashboardScreen({
                   <span className="text-[10px] text-[#94A3B8] font-semibold">Overall call volume & talk times</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <CompactMetricCard title="Total Calls Done" value={overallTotals.totalCallsDone} note="All calls placed/received" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
-                  <CompactMetricCard title="Total Call Success" value={overallTotals.totalSuccessCalls} note="Calls answered & >10s duration" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
-                  <CompactMetricCard title="Total Talk Time" value={overallTotals.totalTalkTimeFormatted} note="Accumulated duration (HH:MM)" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
-                  <CompactMetricCard title="Avg Talk Time per Call" value={overallTotals.avgTTCallFormatted} note="Average per call (MM:SS)" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
+                  <CompactMetricCard title="Total Calls Done" value={totals.totalCallsDone} note="All calls placed/received" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
+                  <CompactMetricCard title="Total Call Success" value={totals.totalSuccessCalls} note="Calls answered & >10s duration" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
+                  <CompactMetricCard title="Total Talk Time" value={totals.totalTalkTimeFormatted} note="Accumulated duration (HH:MM)" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
+                  <CompactMetricCard title="Avg Talk Time per Call" value={totals.avgTTCallFormatted} note="Average per call (MM:SS)" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
                 </div>
               </div>
 
@@ -1762,10 +1886,10 @@ export default function DashboardScreen({
                   <span className="text-[10px] text-[#94A3B8] font-semibold">Incoming trends and answer duration</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <CompactMetricCard title="Total Incoming" value={overallTotals.incomingCalls} note="Total calls received" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
-                  <CompactMetricCard title="Success Incoming" value={overallTotals.incomingSuccessCalls} note="Incoming calls answered & >10s" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
-                  <CompactMetricCard title="Incoming Talk Time" value={overallTotals.incomingTalkTimeFormatted} note="Total incoming duration (HH:MM)" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
-                  <CompactMetricCard title="Avg TT per Incoming" value={overallTotals.avgTTIncomingFormatted} note="Average incoming duration (MM:SS)" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
+                  <CompactMetricCard title="Total Incoming" value={totals.incomingCalls} note="Total calls received" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
+                  <CompactMetricCard title="Success Incoming" value={totals.incomingSuccessCalls} note="Incoming calls answered & >10s" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
+                  <CompactMetricCard title="Incoming Talk Time" value={totals.incomingTalkTimeFormatted} note="Total incoming duration (HH:MM)" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
+                  <CompactMetricCard title="Avg TT per Incoming" value={totals.avgTTIncomingFormatted} note="Average incoming duration (MM:SS)" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
                 </div>
               </div>
 
@@ -1776,10 +1900,10 @@ export default function DashboardScreen({
                   <span className="text-[10px] text-[#94A3B8] font-semibold">Outgoing volume and successful connections</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <CompactMetricCard title="Total Outgoing" value={overallTotals.outgoingCalls} note="Total calls placed by sales" textColor="text-amber-500" borderColor="bg-amber-500" />
-                  <CompactMetricCard title="Success Outgoing" value={overallTotals.outgoingSuccessCalls} note="Outgoing calls answered & >10s" textColor="text-amber-500" borderColor="bg-amber-500" />
-                  <CompactMetricCard title="Outgoing Talk Time" value={overallTotals.outgoingTalkTimeFormatted} note="Total outgoing duration (HH:MM)" textColor="text-amber-500" borderColor="bg-amber-500" />
-                  <CompactMetricCard title="Avg TT per Outgoing" value={overallTotals.avgTTOutgoingFormatted} note="Average outgoing duration (MM:SS)" textColor="text-amber-500" borderColor="bg-amber-500" />
+                  <CompactMetricCard title="Total Outgoing" value={totals.outgoingCalls} note="Total calls placed by sales" textColor="text-amber-500" borderColor="bg-amber-500" />
+                  <CompactMetricCard title="Success Outgoing" value={totals.outgoingSuccessCalls} note="Outgoing calls answered & >10s" textColor="text-amber-500" borderColor="bg-amber-500" />
+                  <CompactMetricCard title="Outgoing Talk Time" value={totals.outgoingTalkTimeFormatted} note="Total outgoing duration (HH:MM)" textColor="text-amber-500" borderColor="bg-amber-500" />
+                  <CompactMetricCard title="Avg TT per Outgoing" value={totals.avgTTOutgoingFormatted} note="Average outgoing duration (MM:SS)" textColor="text-amber-500" borderColor="bg-amber-500" />
                 </div>
               </div>
 
@@ -1792,9 +1916,9 @@ export default function DashboardScreen({
                     <span className="text-[10px] text-[#94A3B8] font-semibold">Response and recovery rates</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <CompactMetricCard title="Total Missed Calls" value={overallTotals.totalMissed} note="Incoming - Success Incoming" textColor="text-rose-400" borderColor="bg-rose-500" />
-                    <CompactMetricCard title="Missed Not Responded" value={overallTotals.missedNotResponded} note="No follow-up outgoing call" textColor="text-rose-400" borderColor="bg-rose-500" />
-                    <CompactMetricCard title="Avg Time to Respond" value={overallTotals.avgResponseTimeFormatted} note="Time to call back client" textColor="text-rose-400" borderColor="bg-rose-500" />
+                    <CompactMetricCard title="Total Missed Calls" value={totals.totalMissed} note="Incoming - Success Incoming" textColor="text-rose-400" borderColor="bg-rose-500" />
+                    <CompactMetricCard title="Missed Not Responded" value={totals.missedNotResponded} note="No follow-up outgoing call" textColor="text-rose-400" borderColor="bg-rose-500" />
+                    <CompactMetricCard title="Avg Time to Respond" value={totals.avgResponseTimeFormatted} note="Time to call back client" textColor="text-rose-400" borderColor="bg-rose-500" />
                   </div>
                 </div>
 
@@ -1805,9 +1929,9 @@ export default function DashboardScreen({
                     <span className="text-[10px] text-[#94A3B8] font-semibold">Short duration connection dropouts</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <CompactMetricCard title="Total Dropped Calls" value={overallTotals.droppedCalls} note="Talk duration 0s to 10s" textColor="text-slate-400" borderColor="bg-slate-500" />
-                    <CompactMetricCard title="Incoming Dropped" value={overallTotals.incomingDroppedCalls} note="Incoming talk time 0s to 10s" textColor="text-slate-400" borderColor="bg-slate-500" />
-                    <CompactMetricCard title="Outgoing Dropped" value={overallTotals.outgoingDroppedCalls} note="Outgoing talk time 0s to 10s" textColor="text-slate-400" borderColor="bg-slate-500" />
+                    <CompactMetricCard title="Total Dropped Calls" value={totals.droppedCalls} note="Talk duration 0s to 10s" textColor="text-slate-400" borderColor="bg-slate-500" />
+                    <CompactMetricCard title="Incoming Dropped" value={totals.incomingDroppedCalls} note="Incoming talk time 0s to 10s" textColor="text-slate-400" borderColor="bg-slate-500" />
+                    <CompactMetricCard title="Outgoing Dropped" value={totals.outgoingDroppedCalls} note="Outgoing talk time 0s to 10s" textColor="text-slate-400" borderColor="bg-slate-500" />
                   </div>
                 </div>
               </div>
@@ -1882,13 +2006,13 @@ export default function DashboardScreen({
                           </PieChart>
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                          <span className="text-xs font-black text-white">{overallTotals.totalCallsDone}</span>
+                          <span className="text-xs font-black text-white">{totals.totalCallsDone}</span>
                           <span className="text-[7px] font-bold text-[#94A3B8] uppercase">Total</span>
                         </div>
                       </div>
                       <div className="flex flex-col gap-0.5 mt-2 text-[9px] font-bold text-[#94A3B8]">
-                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#1F8FFF]" /> Incoming ({overallTotals.incomingCalls})</div>
-                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6]" /> Outgoing ({overallTotals.outgoingCalls})</div>
+                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#1F8FFF]" /> Incoming ({totals.incomingCalls})</div>
+                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6]" /> Outgoing ({totals.outgoingCalls})</div>
                       </div>
                     </div>
 
@@ -1915,13 +2039,13 @@ export default function DashboardScreen({
                           </PieChart>
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                          <span className="text-xs font-black text-white">{overallTotals.totalMissed}</span>
+                          <span className="text-xs font-black text-white">{totals.totalMissed}</span>
                           <span className="text-[7px] font-bold text-[#94A3B8] uppercase">Missed</span>
                         </div>
                       </div>
                       <div className="flex flex-col gap-0.5 mt-2 text-[9px] font-bold text-[#94A3B8]">
-                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#00E6B8]" /> Responded ({Math.max(0, overallTotals.totalMissed - overallTotals.missedNotResponded)})</div>
-                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#e11d48]" /> Unresponded ({overallTotals.missedNotResponded})</div>
+                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#00E6B8]" /> Responded ({Math.max(0, totals.totalMissed - totals.missedNotResponded)})</div>
+                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#e11d48]" /> Unresponded ({totals.missedNotResponded})</div>
                       </div>
                     </div>
                   </div>
