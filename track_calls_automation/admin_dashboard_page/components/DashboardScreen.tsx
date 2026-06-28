@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { DashboardState, UserRecord, EmployeeRecord, ReportResponse } from "./types";
 import Sidebar from "./Sidebar";
 import MetricCard from "./MetricCard";
@@ -48,23 +48,47 @@ function parseDbTimestamp(tsStr: string): Date | null {
   return new Date(year, month, day, hours, minutes);
 }
 
-function CompactMetricCard({ title, value, note, textColor = "text-[#04693F]", borderColor = "bg-[#04693F]" }: { title: string; value: string | number; note: string; textColor?: string; borderColor?: string }) {
+function CompactMetricCard({ title, value, note, textColor = "text-[#00E6B8]", borderColor = "bg-[#00E6B8]" }: { title: string; value: string | number; note: string; textColor?: string; borderColor?: string }) {
+  // Map light colors to premium dark theme colors
+  let mappedTextColor = textColor;
+  let mappedBorderColor = borderColor;
+
+  if (textColor.includes("04693F")) {
+    mappedTextColor = "text-[#00E6B8]"; // AI Accent
+    mappedBorderColor = "bg-[#00E6B8]";
+  } else if (textColor.includes("015C96")) {
+    mappedTextColor = "text-[#1F8FFF]"; // Primary Brand
+    mappedBorderColor = "bg-[#1F8FFF]";
+  } else if (textColor.includes("indigo")) {
+    mappedTextColor = "text-[#8B5CF6]"; // Accent
+    mappedBorderColor = "bg-[#8B5CF6]";
+  } else if (textColor.includes("amber")) {
+    mappedTextColor = "text-amber-400";
+    mappedBorderColor = "bg-amber-400";
+  } else if (textColor.includes("rose")) {
+    mappedTextColor = "text-rose-400";
+    mappedBorderColor = "bg-rose-500";
+  } else if (textColor.includes("slate")) {
+    mappedTextColor = "text-[#94A3B8]";
+    mappedBorderColor = "bg-slate-700";
+  }
+
   return (
-    <div className="bg-white border border-slate-100 rounded-xl p-2.5 shadow-xs hover:shadow-sm transition-shadow relative overflow-hidden group flex flex-col justify-between h-20 min-w-[160px] flex-1">
-      {/* Small top border line */}
-      <div className={`absolute top-0 left-0 right-0 h-0.5 ${borderColor}`} />
-
+    <div className="flex-1 min-w-[200px] max-w-[340px] bg-[#0E1528] border border-slate-800/80 rounded-2xl p-4 shadow-sm relative overflow-hidden group hover:border-slate-700 transition-colors">
+      {/* Accent side border */}
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${mappedBorderColor}`} />
+      
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">{title}</span>
+        <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider">{title}</span>
       </div>
-
-      <div className="mt-0.5">
-        <span className={`text-lg font-black ${textColor}`}>
+      
+      <div className="mt-2.5">
+        <span className={`text-xl font-bold ${mappedTextColor}`}>
           {value}
         </span>
       </div>
-
-      <div className="mt-0.5 text-[9px] text-slate-400 font-semibold leading-tight line-clamp-1">
+      
+      <div className="mt-1 text-[9px] text-[#94A3B8]/60 font-medium">
         {note}
       </div>
     </div>
@@ -76,7 +100,7 @@ interface SearchableSelectProps {
   placeholder: string;
   value: string;
   onChange: (val: string) => void;
-  options: { id: string; name: string }[];
+  options: Array<{ id: string; name: string }>;
   allLabel: string;
 }
 
@@ -92,7 +116,7 @@ function SearchableSelect({ label, placeholder, value, onChange, options, allLab
 
   return (
     <div className="flex flex-col text-left relative w-[160px]">
-      <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">{label}</label>
+      <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">{label}</label>
 
       {/* Trigger Button */}
       <button
@@ -101,7 +125,7 @@ function SearchableSelect({ label, placeholder, value, onChange, options, allLab
           setIsOpen(!isOpen);
           setSearch("");
         }}
-        className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none hover:border-slate-300 font-semibold text-slate-600 w-full text-left"
+        className="flex items-center justify-between rounded-lg border border-slate-800 bg-[#050816] px-3 py-1.5 text-xs outline-none hover:border-slate-700 font-semibold text-slate-250 w-full text-left cursor-pointer"
       >
         <span className="truncate">{selectedName}</span>
         <svg
@@ -121,14 +145,14 @@ function SearchableSelect({ label, placeholder, value, onChange, options, allLab
           {/* Overlay to click close */}
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
 
-          <div className="absolute top-[100%] left-0 right-0 mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg p-1.5 flex flex-col max-h-[220px]">
+          <div className="absolute top-[100%] left-0 right-0 mt-1 z-50 bg-[#0E1528] border border-slate-800 rounded-xl shadow-2xl p-1.5 flex flex-col max-h-[220px]">
             {/* Search Box */}
             <input
               type="text"
               placeholder={placeholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-md border border-slate-200 px-2 py-1 text-[11px] outline-none focus:border-[#04693F] font-semibold text-slate-700 mb-1"
+              className="w-full rounded-md border border-slate-800 bg-[#050816] px-2 py-1 text-[11px] outline-none focus:border-[#1F8FFF] font-semibold text-slate-200 mb-1 placeholder-slate-600"
               autoFocus
             />
 
@@ -140,16 +164,16 @@ function SearchableSelect({ label, placeholder, value, onChange, options, allLab
                   onChange("");
                   setIsOpen(false);
                 }}
-                className={`w-full text-left px-2 py-1 rounded-md text-[11px] font-semibold transition-all ${value === ""
-                  ? "bg-[#04693F]/5 text-[#04693F]"
-                  : "text-slate-600 hover:bg-slate-50"
+                className={`w-full text-left px-2 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${value === ""
+                  ? "bg-[#1F8FFF]/10 text-[#1F8FFF]"
+                  : "text-[#94A3B8] hover:bg-slate-800/40 hover:text-white"
                   }`}
               >
                 {allLabel}
               </button>
 
               {filtered.length === 0 ? (
-                <div className="text-[10px] text-slate-400 px-2 py-1.5 font-medium">
+                <div className="text-[10px] text-[#94A3B8] px-2 py-1.5 font-medium">
                   No options found
                 </div>
               ) : (
@@ -161,9 +185,9 @@ function SearchableSelect({ label, placeholder, value, onChange, options, allLab
                       onChange(opt.id);
                       setIsOpen(false);
                     }}
-                    className={`w-full text-left px-2 py-1 rounded-md text-[11px] font-semibold transition-all truncate ${value === opt.id
-                      ? "bg-[#04693F]/5 text-[#04693F]"
-                      : "text-slate-600 hover:bg-slate-50"
+                    className={`w-full text-left px-2 py-1 rounded-md text-[11px] font-semibold transition-all truncate cursor-pointer ${value === opt.id
+                      ? "bg-[#1F8FFF]/10 text-[#1F8FFF]"
+                      : "text-[#94A3B8] hover:bg-slate-800/40 hover:text-white"
                       }`}
                     title={opt.name}
                   >
@@ -419,7 +443,46 @@ export default function DashboardScreen({
   const [filterStartDate, setFilterStartDate] = useState<string>("");
   const [filterStartTime, setFilterStartTime] = useState<string>("09:30");
   const [filterEndDate, setFilterEndDate] = useState<string>("");
-  const [filterEndTime, setFilterEndTime] = useState<string>("");
+  const [filterEndTime, setFilterEndTime] = useState<string>("23:59");
+  const [selectedRangePreset, setSelectedRangePreset] = useState<string>("");
+  const [selectedWorkforceUserId, setSelectedWorkforceUserId] = useState<string>("");
+  const [workforceExpandedNodes, setWorkforceExpandedNodes] = useState<Record<string, boolean>>({});
+
+  const handlePresetChange = (preset: string) => {
+    setSelectedRangePreset(preset);
+    if (!preset) {
+      setFilterStartDate("");
+      setFilterStartTime("09:30");
+      setFilterEndDate("");
+      setFilterEndTime("23:59");
+      return;
+    }
+    const now = new Date();
+    const formatDate = (date: Date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    };
+
+    let start: Date;
+    if (preset === "last_day") {
+      start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    } else if (preset === "last_7_days") {
+      start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (preset === "last_15_days") {
+      start = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000);
+    } else if (preset === "last_month") {
+      start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else {
+      return;
+    }
+
+    setFilterStartDate(formatDate(start));
+    setFilterStartTime("00:00");
+    setFilterEndDate(formatDate(now));
+    setFilterEndTime("23:59");
+  };
 
   const startFilterDateTime = useMemo(() => {
     if (!filterStartDate) return null;
@@ -542,6 +605,117 @@ export default function DashboardScreen({
     if (directManagers.includes(managerId)) return true;
     return directManagers.some((mId) => isManagedBy(mId, managerId, users));
   };
+
+  // Workforce Tree Structures
+  interface TreeNode {
+    user: UserRecord;
+    children: TreeNode[];
+    totalCalls: number;
+    successCalls: number;
+    totalTalkTime: number;
+  }
+
+  const userStatsMap = useMemo(() => {
+    const stats: Record<string, { totalCalls: number; successCalls: number; totalTalkTime: number }> = {};
+    dashboard.users.forEach((u) => {
+      stats[u.id] = { totalCalls: 0, successCalls: 0, totalTalkTime: 0 };
+    });
+
+    (dashboard.report?.warriors ?? []).forEach((w) => {
+      const u = dashboard.users.find(usr => usr.id === w.warrior_id);
+      if (u) {
+        let totalCalls = 0;
+        let successCalls = 0;
+        let totalTalkTime = 0;
+
+        (w.calls || []).forEach((c: any) => {
+          const type = (c.call_type || "").toLowerCase();
+          const status = (c.call_status || "").toLowerCase();
+          const duration = c.duration_seconds || 0;
+
+          const isIncoming = type === "incoming";
+          const isOutgoing = type === "outgoing";
+          const isDropped = (status === "dropped" || status === "rejected" || status === "failed") || (duration >= 0 && duration <= 10);
+          const isMissed = isIncoming && (status === "missed" || status === "missed call" || status.includes("missed") || status === "rejected" || status === "failed" || duration === 0);
+          const isDialed = isOutgoing && (status === "missed" || status === "missed call" || status.includes("missed") || status === "dialed" || status.includes("dialed") || status === "dropped" || status === "rejected" || status === "failed" || duration === 0 || isDropped);
+          const isSuccess = (duration > 10) || (!isDialed && !isMissed && !isDropped && duration > 0);
+
+          totalCalls++;
+          totalTalkTime += duration;
+          if (isSuccess) {
+            successCalls++;
+          }
+        });
+
+        stats[u.id] = { totalCalls, successCalls, totalTalkTime };
+      }
+    });
+
+    return stats;
+  }, [dashboard.users, dashboard.report]);
+
+  const buildWorkforceTree = useCallback((userId: string, visited: Set<string> = new Set()): TreeNode | null => {
+    if (visited.has(userId)) return null;
+    const user = dashboard.users.find((u) => u.id === userId);
+    if (!user) return null;
+
+    const newVisited = new Set(visited);
+    newVisited.add(userId);
+
+    const childrenNodes: TreeNode[] = [];
+    dashboard.users.forEach((u) => {
+      const mIds = u.manager_ids || (u.manager_id ? [u.manager_id] : []);
+      if (mIds.includes(userId)) {
+        const childTree = buildWorkforceTree(u.id, newVisited);
+        if (childTree) {
+          childrenNodes.push(childTree);
+        }
+      }
+    });
+
+    const ownStats = userStatsMap[userId] || { totalCalls: 0, successCalls: 0, totalTalkTime: 0 };
+    let totalCalls = ownStats.totalCalls;
+    let successCalls = ownStats.successCalls;
+    let totalTalkTime = ownStats.totalTalkTime;
+
+    childrenNodes.forEach((c) => {
+      totalCalls += c.totalCalls;
+      successCalls += c.successCalls;
+      totalTalkTime += c.totalTalkTime;
+    });
+
+    return {
+      user,
+      children: childrenNodes,
+      totalCalls,
+      successCalls,
+      totalTalkTime
+    };
+  }, [dashboard.users, userStatsMap]);
+
+  const selectedWorkforceTree = useMemo(() => {
+    if (!selectedWorkforceUserId) return null;
+    return buildWorkforceTree(selectedWorkforceUserId);
+  }, [selectedWorkforceUserId, buildWorkforceTree]);
+
+  useEffect(() => {
+    if (selectedWorkforceUserId) {
+      const flatIds: string[] = [];
+      const collectIds = (node: TreeNode) => {
+        flatIds.push(node.user.id);
+        node.children.forEach(collectIds);
+      };
+      const tree = buildWorkforceTree(selectedWorkforceUserId);
+      if (tree) {
+        collectIds(tree);
+      }
+      const initialExpanded: Record<string, boolean> = {};
+      flatIds.forEach((id) => {
+        initialExpanded[id] = true;
+      });
+      setWorkforceExpandedNodes(initialExpanded);
+    }
+  }, [selectedWorkforceUserId, buildWorkforceTree]);
 
   // Filter Lists
   const leadersList = useMemo(() => {
@@ -757,15 +931,15 @@ export default function DashboardScreen({
 
   const directionData = useMemo(() => {
     return [
-      { name: "Incoming", value: overallTotals.incomingCalls, color: "#015C96" },
-      { name: "Outgoing", value: overallTotals.outgoingCalls, color: "#b45309" },
+      { name: "Incoming", value: overallTotals.incomingCalls, color: "#1F8FFF" },
+      { name: "Outgoing", value: overallTotals.outgoingCalls, color: "#8B5CF6" },
     ];
   }, [overallTotals]);
 
   const recoveryData = useMemo(() => {
     const resolved = Math.max(0, overallTotals.totalMissed - overallTotals.missedNotResponded);
     return [
-      { name: "Responded", value: resolved, color: "#04693F" },
+      { name: "Responded", value: resolved, color: "#00E6B8" },
       { name: "Unresponded", value: overallTotals.missedNotResponded, color: "#e11d48" },
     ];
   }, [overallTotals]);
@@ -791,6 +965,8 @@ export default function DashboardScreen({
       );
     });
   }, [dashboard.users, userSearchQuery]);
+
+
 
   const leaderSummaryData = useMemo(() => {
     const report = dashboard.report;
@@ -1175,13 +1351,224 @@ export default function DashboardScreen({
     return data.filter(d => d.hour >= minHour && d.hour <= maxHour);
   }, [hourlyFilteredCalls]);
 
+  const formatSecondsToDuration = (seconds: number): string => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${String(hrs).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  };
+
+  const exportWorkforceSummaryCSV = () => {
+    if (!selectedWorkforceTree) return;
+    
+    try {
+      const flatNodes: TreeNode[] = [];
+      const collectNodes = (node: TreeNode) => {
+        if (!node) return;
+        flatNodes.push(node);
+        (node.children || []).forEach(collectNodes);
+      };
+      collectNodes(selectedWorkforceTree);
+
+      const rows = [
+        ["Employee Name", "Email", "Role", "Active Tracking Status", "Managers", "Direct Subordinates Count", "Own Call Count", "Total Tree Calls (Inc. Subordinates)", "Total Tree Talk Time (HH:MM:SS)"]
+      ];
+
+      flatNodes.forEach((node) => {
+        const u = node.user;
+        if (!u) return;
+        const ownStats = userStatsMap[u.id] || { totalCalls: 0, successCalls: 0, totalTalkTime: 0 };
+        const mIds = u.manager_ids || (u.manager_id ? [u.manager_id] : []);
+        const managerNames = dashboard.users.filter(x => mIds.includes(x.id)).map(x => x.full_name || x.email).join("; ");
+        
+        rows.push([
+          u.full_name || "",
+          u.email || "",
+          (u.role || "").replace("_", " "),
+          u.is_tracking_active ? "Active" : "Inactive",
+          managerNames || "None",
+          String((node.children || []).length),
+          String(ownStats.totalCalls || 0),
+          String(node.totalCalls || 0),
+          formatSecondsToDuration(node.totalTalkTime || 0)
+        ]);
+      });
+
+      const csvString = rows.map(e => e.map(val => `"${String(val ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      
+      const fileName = `${(selectedWorkforceTree.user?.full_name || "workforce").replace(/\s+/g, "_")}_workforce_summary.csv`;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error exporting workforce summary:", error);
+    }
+  };
+
+  const exportWorkforceDetailedCallsCSV = () => {
+    if (!selectedWorkforceTree) {
+      alert("No employee selected");
+      return;
+    }
+
+    try {
+      const flatUsers: UserRecord[] = [];
+      const collectUsers = (node: TreeNode) => {
+        if (!node) return;
+        flatUsers.push(node.user);
+        (node.children || []).forEach(collectUsers);
+      };
+      collectUsers(selectedWorkforceTree);
+
+      const flatUserIdsNormalized = flatUsers.map(u => String(u.id || "").trim().toLowerCase()).filter(Boolean);
+
+      console.log("DEBUG: flatUserIdsNormalized", flatUserIdsNormalized);
+      console.log("DEBUG: dashboard.report.warriors count", dashboard.report?.warriors?.length);
+
+      const rows = [
+        ["Date/Time", "Employee Name", "Email", "Role", "Phone Number", "Call Type", "Status", "Duration (Seconds)", "Duration (Formatted)"]
+      ];
+
+      let matchCount = 0;
+      let callCount = 0;
+
+      (dashboard.report?.warriors ?? []).forEach((w) => {
+        const wIdNormalized = String(w.warrior_id || "").trim().toLowerCase();
+        if (flatUserIdsNormalized.includes(wIdNormalized)) {
+          matchCount++;
+          const u = flatUsers.find(x => String(x.id || "").trim().toLowerCase() === wIdNormalized);
+          if (u) {
+            (w.calls || []).forEach((c: any) => {
+              callCount++;
+              rows.push([
+                c.timestamp || "",
+                u.full_name || "",
+                u.email || "",
+                u.role || "",
+                c.phone_number || "",
+                c.call_type || "",
+                c.call_status || "Answered",
+                String(c.duration_seconds ?? 0),
+                formatSecondsToDuration(c.duration_seconds ?? 0)
+              ]);
+            });
+          }
+        }
+      });
+
+      const csvString = rows.map(e => e.map(val => `"${String(val ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      
+      const fileName = `${(selectedWorkforceTree.user?.full_name || "workforce").replace(/\s+/g, "_")}_detailed_calls.csv`;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error exporting workforce detailed calls:", error);
+    }
+  };
+
+  const renderTreeNode = (node: TreeNode, depth: number = 0) => {
+    const isExpanded = !!workforceExpandedNodes[node.user.id];
+    const hasChildren = node.children.length > 0;
+    const ownStats = userStatsMap[node.user.id] || { totalCalls: 0, successCalls: 0, totalTalkTime: 0 };
+
+    const toggleExpand = () => {
+      setWorkforceExpandedNodes({
+        ...workforceExpandedNodes,
+        [node.user.id]: !isExpanded
+      });
+    };
+
+    return (
+      <div key={node.user.id} className="select-none text-left">
+        <div 
+          className="flex items-center justify-between py-2.5 px-4 hover:bg-slate-800/30 rounded-xl transition-all border border-transparent hover:border-slate-800/40 cursor-pointer"
+          style={{ marginLeft: `${depth * 20}px` }}
+          onClick={hasChildren ? toggleExpand : undefined}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-5 h-5 flex items-center justify-center shrink-0">
+              {hasChildren ? (
+                <span className="text-slate-400 hover:text-white transition-colors">
+                  {isExpanded ? (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                    </svg>
+                  )}
+                </span>
+              ) : (
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-700"></div>
+              )}
+            </div>
+
+            <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-[#1F8FFF]/10 to-[#8B5CF6]/10 border border-[#1F8FFF]/20 flex items-center justify-center text-[#1F8FFF] font-bold text-[10px] shrink-0">
+              {node.user.full_name[0]?.toUpperCase() ?? "E"}
+            </div>
+
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-[#F8FAFC] truncate">{node.user.full_name}</span>
+                <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-slate-850 text-[#94A3B8] font-bold uppercase tracking-wider shrink-0">
+                  {node.user.role.replace("_", " ")}
+                </span>
+                
+                {node.user.role === "warrior" && (
+                  <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-bold ${
+                    node.user.is_tracking_active 
+                      ? "bg-emerald-950/30 text-emerald-450 border border-emerald-900/50" 
+                      : "bg-slate-900 text-slate-500 border border-slate-800"
+                  }`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${node.user.is_tracking_active ? "bg-emerald-500 animate-pulse" : "bg-slate-650"}`}></span>
+                    {node.user.is_tracking_active ? "Tracking" : "Idle"}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] text-slate-400 truncate">{node.user.email}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-6 text-right font-mono text-[10px] text-slate-400 shrink-0">
+            <div>
+              <span className="text-slate-500 font-sans text-[8px] block uppercase font-bold tracking-wider mb-0.5">Calls (Own / Total)</span>
+              <span>{ownStats.totalCalls} / <strong className="text-white">{node.totalCalls}</strong></span>
+            </div>
+            <div className="w-[100px]">
+              <span className="text-slate-500 font-sans text-[8px] block uppercase font-bold tracking-wider mb-0.5">Total Talk Time</span>
+              <span className="text-[#00E6B8] font-bold">{formatSecondsToDuration(node.totalTalkTime)}</span>
+            </div>
+          </div>
+        </div>
+
+        {hasChildren && isExpanded && (
+          <div className="mt-1 border-l border-slate-800/50 ml-6 pl-2 space-y-1">
+            {node.children.map(child => renderTreeNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="h-screen bg-slate-50 text-slate-800 flex flex-col overflow-hidden">
+    <div className="h-screen bg-[#050816] text-[#F8FAFC] flex flex-col overflow-hidden">
       {/* Backdrop overlay */}
       {isSidebarOpen && (
         <div
           onClick={() => setIsSidebarOpen(false)}
-          className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-40 transition-opacity duration-300"
+          className="fixed inset-0 bg-[#050816]/60 backdrop-blur-xs z-40 transition-opacity duration-300"
         />
       )}
 
@@ -1203,12 +1590,12 @@ export default function DashboardScreen({
       {/* Main Workspace */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Status Header Bar */}
-        <header className="h-16 bg-white border-b border-slate-100 px-5 flex items-center justify-between sticky top-0 z-20">
+        <header className="h-16 bg-[#0E1528] border-b border-slate-800/80 px-5 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-4">
             {/* Hamburger Button (3 horizontal lines) */}
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="p-1.5 -ml-1 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-all flex items-center justify-center"
+              className="p-1.5 -ml-1 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all flex items-center justify-center cursor-pointer"
               aria-label="Open Menu"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
@@ -1225,16 +1612,16 @@ export default function DashboardScreen({
                 alt="LeadLens Logo"
                 width={105}
                 height={24}
-                className="object-contain"
+                className="object-contain brightness-110"
               />
-              <span className="text-[8px] uppercase font-black tracking-widest text-[#04693F] border-l border-slate-200 pl-2.5">
+              <span className="text-[8px] uppercase font-black tracking-widest text-[#00E6B8] border-l border-slate-800 pl-2.5">
                 ERP
               </span>
             </button>
-            <span className="text-xs font-bold text-slate-400 border-l border-slate-200 pl-3 capitalize">
+            <span className="text-xs font-bold text-[#94A3B8] border-l border-slate-800 pl-3 capitalize">
               {selectedView} Console
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-100 bg-emerald-50/50 px-2 py-0.5 text-[10px] font-bold text-[#04693F]">
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-950 bg-emerald-950/20 px-2 py-0.5 text-[10px] font-bold text-[#00E6B8]">
               <span className="relative flex h-1.5 w-1.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
@@ -1242,7 +1629,7 @@ export default function DashboardScreen({
               Live Sync
             </span>
           </div>
-          <div className="text-xs font-semibold text-slate-400">
+          <div className="text-xs font-semibold text-[#94A3B8]">
             {totals.totalUsers} Users
           </div>
         </header>
@@ -1251,74 +1638,102 @@ export default function DashboardScreen({
           {selectedView === "dashboard" && (
             <div className="space-y-2 overflow-y-auto flex-1 pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {/* Category: Employee & Tracking Status */}
-              <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-2.5 space-y-1.5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                  <h3 className="text-xs font-black uppercase text-indigo-700 tracking-wider">Employee & Tracking Status</h3>
-                  <span className="text-[10px] text-slate-400 font-semibold">Active workspace users and background tracking status</span>
+              <div className="bg-[#0E1528] border border-slate-800/80 rounded-xl p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-1">
+                  <h3 className="text-xs font-black uppercase text-[#8B5CF6] tracking-wider">Employee & Tracking Status</h3>
+                  <span className="text-[10px] text-[#94A3B8] font-semibold">Active workspace users and background tracking status</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5 justify-center">
-                  <CompactMetricCard title="Total Employees" value={overallTotals.employees} note="Total workspace employees" textColor="text-indigo-700" borderColor="bg-indigo-600" />
-                  <CompactMetricCard title="Tracking Requested" value={`${overallTotals.employeesTrackingNeeded}/${overallTotals.employees}`} note="Tracking needed flag is True" textColor="text-indigo-700" borderColor="bg-indigo-600" />
-                  <CompactMetricCard title="Tracking Enabled" value={`${overallTotals.trackingOn}/${overallTotals.employees}`} note="App tracking permission enabled" textColor="text-indigo-700" borderColor="bg-indigo-600" />
+                  <CompactMetricCard title="Total Employees" value={overallTotals.employees} note="Total workspace employees" textColor="text-[#8B5CF6]" borderColor="bg-[#8B5CF6]" />
+                  <CompactMetricCard title="Tracking Requested" value={`${overallTotals.employeesTrackingNeeded}/${overallTotals.employees}`} note="Tracking needed flag is True" textColor="text-[#8B5CF6]" borderColor="bg-[#8B5CF6]" />
+                  <CompactMetricCard title="Tracking Enabled" value={`${overallTotals.trackingOn}/${overallTotals.employees}`} note="App tracking permission enabled" textColor="text-[#8B5CF6]" borderColor="bg-[#8B5CF6]" />
                 </div>
               </div>
 
               {/* Page-level Date & Time Filter Bar */}
-              <div className="bg-white border border-slate-100 rounded-xl p-3 shadow-xs flex flex-col md:flex-row gap-3 items-center justify-between">
+              <div className="bg-[#0E1528] border border-slate-800/80 rounded-xl p-3 shadow-xs flex flex-col md:flex-row gap-3 items-center justify-between">
                 <div className="flex flex-col text-left w-full md:w-auto">
-                  <span className="text-[10px] uppercase tracking-widest text-[#04693F] font-bold">Metric Date Range</span>
-                  <span className="text-xs text-slate-400 font-semibold">Filter overall metrics and comparison charts by date & time</span>
+                  <span className="text-[10px] uppercase tracking-widest text-[#1F8FFF] font-bold">Metric Date Range</span>
+                  <span className="text-xs text-[#94A3B8] font-semibold">Filter overall metrics and comparison charts by date & time</span>
                 </div>
                 <div className="flex flex-wrap gap-2.5 items-center w-full md:w-auto justify-end">
                   <div className="flex flex-col text-left relative w-[130px]">
-                    <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Start Date</label>
+                    <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">Quick Range</label>
+                    <select
+                      value={selectedRangePreset}
+                      onChange={(e) => handlePresetChange(e.target.value)}
+                      className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-[#F8FAFC] w-full cursor-pointer"
+                    >
+                      <option value="">Custom Range</option>
+                      <option value="last_day">Last Day</option>
+                      <option value="last_7_days">Last 7 Days</option>
+                      <option value="last_15_days">Last 15 Days</option>
+                      <option value="last_month">Last Month</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col text-left relative w-[130px]">
+                    <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">Start Date</label>
                     <input
                       type="date"
                       value={filterStartDate}
-                      onChange={(e) => setFilterStartDate(e.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 focus:border-[#04693F] font-semibold text-slate-650 w-full"
+                      onChange={(e) => {
+                        setFilterStartDate(e.target.value);
+                        setSelectedRangePreset("");
+                      }}
+                      className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-[#F8FAFC] w-full"
                     />
                   </div>
 
                   <div className="flex flex-col text-left relative w-[80px]">
-                    <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Start Time</label>
+                    <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">Start Time</label>
                     <input
                       type="time"
                       value={filterStartTime}
-                      onChange={(e) => setFilterStartTime(e.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 focus:border-[#04693F] font-semibold text-slate-650 w-full"
+                      onChange={(e) => {
+                        setFilterStartTime(e.target.value);
+                        setSelectedRangePreset("");
+                      }}
+                      className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-[#F8FAFC] w-full"
                     />
                   </div>
 
                   <div className="flex flex-col text-left relative w-[130px]">
-                    <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">End Date</label>
+                    <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">End Date</label>
                     <input
                       type="date"
                       value={filterEndDate}
-                      onChange={(e) => setFilterEndDate(e.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 focus:border-[#04693F] font-semibold text-slate-650 w-full"
+                      onChange={(e) => {
+                        setFilterEndDate(e.target.value);
+                        setSelectedRangePreset("");
+                      }}
+                      className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-[#F8FAFC] w-full"
                     />
                   </div>
 
                   <div className="flex flex-col text-left relative w-[80px]">
-                    <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">End Time</label>
+                    <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">End Time</label>
                     <input
                       type="time"
                       value={filterEndTime}
-                      onChange={(e) => setFilterEndTime(e.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 focus:border-[#04693F] font-semibold text-slate-650 w-full"
+                      onChange={(e) => {
+                        setFilterEndTime(e.target.value);
+                        setSelectedRangePreset("");
+                      }}
+                      className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-[#F8FAFC] w-full"
                     />
                   </div>
 
-                  {(filterStartDate || filterEndDate) && (
+                  {(filterStartDate || filterEndDate || selectedRangePreset) && (
                     <button
                       onClick={() => {
                         setFilterStartDate("");
                         setFilterStartTime("09:30");
                         setFilterEndDate("");
-                        setFilterEndTime("");
+                        setFilterEndTime("23:59");
+                        setSelectedRangePreset("");
                       }}
-                      className="px-3 py-1.5 rounded-lg border border-rose-100 text-rose-600 hover:bg-rose-50/50 text-[10px] font-bold transition-all self-end"
+                      className="px-3 py-1.5 rounded-lg border border-rose-950 text-rose-400 hover:bg-rose-950/20 text-[10px] font-bold transition-all self-end cursor-pointer"
                     >
                       Reset Range
                     </button>
@@ -1327,72 +1742,72 @@ export default function DashboardScreen({
               </div>
 
               {/* Category: Overall Metrics */}
-              <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-2.5 space-y-1.5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                  <h3 className="text-xs font-black uppercase text-[#04693F] tracking-wider">Overall Metrics</h3>
-                  <span className="text-[10px] text-slate-400 font-semibold">Overall call volume & talk times</span>
+              <div className="bg-[#0E1528] border border-slate-800/80 rounded-xl p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-1">
+                  <h3 className="text-xs font-black uppercase text-[#00E6B8] tracking-wider">Overall Metrics</h3>
+                  <span className="text-[10px] text-[#94A3B8] font-semibold">Overall call volume & talk times</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <CompactMetricCard title="Total Calls Done" value={overallTotals.totalCallsDone} note="All calls placed/received" textColor="text-[#04693F]" borderColor="bg-[#04693F]" />
-                  <CompactMetricCard title="Total Call Success" value={overallTotals.totalSuccessCalls} note="Calls answered & >10s duration" textColor="text-[#04693F]" borderColor="bg-[#04693F]" />
-                  <CompactMetricCard title="Total Talk Time" value={overallTotals.totalTalkTimeFormatted} note="Accumulated duration (HH:MM)" textColor="text-[#04693F]" borderColor="bg-[#04693F]" />
-                  <CompactMetricCard title="Avg Talk Time per Call" value={overallTotals.avgTTCallFormatted} note="Average per call (MM:SS)" textColor="text-[#04693F]" borderColor="bg-[#04693F]" />
+                  <CompactMetricCard title="Total Calls Done" value={overallTotals.totalCallsDone} note="All calls placed/received" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
+                  <CompactMetricCard title="Total Call Success" value={overallTotals.totalSuccessCalls} note="Calls answered & >10s duration" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
+                  <CompactMetricCard title="Total Talk Time" value={overallTotals.totalTalkTimeFormatted} note="Accumulated duration (HH:MM)" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
+                  <CompactMetricCard title="Avg Talk Time per Call" value={overallTotals.avgTTCallFormatted} note="Average per call (MM:SS)" textColor="text-[#00E6B8]" borderColor="bg-[#00E6B8]" />
                 </div>
               </div>
 
               {/* Category: Incoming Call Metrics */}
-              <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-2.5 space-y-1.5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                  <h3 className="text-xs font-black uppercase text-[#015C96] tracking-wider">Incoming Call Metrics</h3>
-                  <span className="text-[10px] text-slate-400 font-semibold">Incoming trends and answer duration</span>
+              <div className="bg-[#0E1528] border border-slate-800/80 rounded-xl p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-1">
+                  <h3 className="text-xs font-black uppercase text-[#1F8FFF] tracking-wider">Incoming Call Metrics</h3>
+                  <span className="text-[10px] text-[#94A3B8] font-semibold">Incoming trends and answer duration</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <CompactMetricCard title="Total Incoming" value={overallTotals.incomingCalls} note="Total calls received" textColor="text-[#015C96]" borderColor="bg-[#015C96]" />
-                  <CompactMetricCard title="Success Incoming" value={overallTotals.incomingSuccessCalls} note="Incoming calls answered & >10s" textColor="text-[#015C96]" borderColor="bg-[#015C96]" />
-                  <CompactMetricCard title="Incoming Talk Time" value={overallTotals.incomingTalkTimeFormatted} note="Total incoming duration (HH:MM)" textColor="text-[#015C96]" borderColor="bg-[#015C96]" />
-                  <CompactMetricCard title="Avg TT per Incoming" value={overallTotals.avgTTIncomingFormatted} note="Average incoming duration (MM:SS)" textColor="text-[#015C96]" borderColor="bg-[#015C96]" />
+                  <CompactMetricCard title="Total Incoming" value={overallTotals.incomingCalls} note="Total calls received" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
+                  <CompactMetricCard title="Success Incoming" value={overallTotals.incomingSuccessCalls} note="Incoming calls answered & >10s" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
+                  <CompactMetricCard title="Incoming Talk Time" value={overallTotals.incomingTalkTimeFormatted} note="Total incoming duration (HH:MM)" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
+                  <CompactMetricCard title="Avg TT per Incoming" value={overallTotals.avgTTIncomingFormatted} note="Average incoming duration (MM:SS)" textColor="text-[#1F8FFF]" borderColor="bg-[#1F8FFF]" />
                 </div>
               </div>
 
               {/* Category: Outgoing Call Metrics */}
-              <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-2.5 space-y-1.5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                  <h3 className="text-xs font-black uppercase text-amber-700 tracking-wider">Outgoing Call Metrics</h3>
-                  <span className="text-[10px] text-slate-400 font-semibold">Outgoing volume and successful connections</span>
+              <div className="bg-[#0E1528] border border-slate-800/80 rounded-xl p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-1">
+                  <h3 className="text-xs font-black uppercase text-amber-500 tracking-wider">Outgoing Call Metrics</h3>
+                  <span className="text-[10px] text-[#94A3B8] font-semibold">Outgoing volume and successful connections</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <CompactMetricCard title="Total Outgoing" value={overallTotals.outgoingCalls} note="Total calls placed by sales" textColor="text-amber-700" borderColor="bg-amber-600" />
-                  <CompactMetricCard title="Success Outgoing" value={overallTotals.outgoingSuccessCalls} note="Outgoing calls answered & >10s" textColor="text-amber-700" borderColor="bg-amber-600" />
-                  <CompactMetricCard title="Outgoing Talk Time" value={overallTotals.outgoingTalkTimeFormatted} note="Total outgoing duration (HH:MM)" textColor="text-amber-700" borderColor="bg-amber-600" />
-                  <CompactMetricCard title="Avg TT per Outgoing" value={overallTotals.avgTTOutgoingFormatted} note="Average outgoing duration (MM:SS)" textColor="text-amber-700" borderColor="bg-amber-600" />
+                  <CompactMetricCard title="Total Outgoing" value={overallTotals.outgoingCalls} note="Total calls placed by sales" textColor="text-amber-500" borderColor="bg-amber-500" />
+                  <CompactMetricCard title="Success Outgoing" value={overallTotals.outgoingSuccessCalls} note="Outgoing calls answered & >10s" textColor="text-amber-500" borderColor="bg-amber-500" />
+                  <CompactMetricCard title="Outgoing Talk Time" value={overallTotals.outgoingTalkTimeFormatted} note="Total outgoing duration (HH:MM)" textColor="text-amber-500" borderColor="bg-amber-500" />
+                  <CompactMetricCard title="Avg TT per Outgoing" value={overallTotals.avgTTOutgoingFormatted} note="Average outgoing duration (MM:SS)" textColor="text-amber-500" borderColor="bg-amber-500" />
                 </div>
               </div>
 
               {/* Category: Missed & Dropped Metrics */}
               <div className="grid gap-1.5 md:grid-cols-2">
                 {/* Missed Call Details */}
-                <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                    <h3 className="text-xs font-black uppercase text-rose-600 tracking-wider">Missed Call Metrics</h3>
-                    <span className="text-[10px] text-slate-400 font-semibold">Response and recovery rates</span>
+                <div className="bg-[#0E1528] border border-slate-800/80 rounded-xl p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-1">
+                    <h3 className="text-xs font-black uppercase text-rose-450 tracking-wider">Missed Call Metrics</h3>
+                    <span className="text-[10px] text-[#94A3B8] font-semibold">Response and recovery rates</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <CompactMetricCard title="Total Missed Calls" value={overallTotals.totalMissed} note="Incoming - Success Incoming" textColor="text-rose-600" borderColor="bg-rose-500" />
-                    <CompactMetricCard title="Missed Not Responded" value={overallTotals.missedNotResponded} note="No follow-up outgoing call" textColor="text-rose-600" borderColor="bg-rose-500" />
-                    <CompactMetricCard title="Avg Time to Respond" value={overallTotals.avgResponseTimeFormatted} note="Time to call back client" textColor="text-rose-600" borderColor="bg-rose-500" />
+                    <CompactMetricCard title="Total Missed Calls" value={overallTotals.totalMissed} note="Incoming - Success Incoming" textColor="text-rose-400" borderColor="bg-rose-500" />
+                    <CompactMetricCard title="Missed Not Responded" value={overallTotals.missedNotResponded} note="No follow-up outgoing call" textColor="text-rose-400" borderColor="bg-rose-500" />
+                    <CompactMetricCard title="Avg Time to Respond" value={overallTotals.avgResponseTimeFormatted} note="Time to call back client" textColor="text-rose-400" borderColor="bg-rose-500" />
                   </div>
                 </div>
 
                 {/* Dropped Call Details */}
-                <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                    <h3 className="text-xs font-black uppercase text-slate-600 tracking-wider">Dropped Calls (0s to 10s)</h3>
-                    <span className="text-[10px] text-slate-400 font-semibold">Short duration connection dropouts</span>
+                <div className="bg-[#0E1528] border border-slate-800/80 rounded-xl p-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-1">
+                    <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider">Dropped Calls (0s to 10s)</h3>
+                    <span className="text-[10px] text-[#94A3B8] font-semibold">Short duration connection dropouts</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <CompactMetricCard title="Total Dropped Calls" value={overallTotals.droppedCalls} note="Talk duration 0s to 10s" textColor="text-slate-600" borderColor="bg-slate-500" />
-                    <CompactMetricCard title="Incoming Dropped" value={overallTotals.incomingDroppedCalls} note="Incoming talk time 0s to 10s" textColor="text-slate-600" borderColor="bg-slate-500" />
-                    <CompactMetricCard title="Outgoing Dropped" value={overallTotals.outgoingDroppedCalls} note="Outgoing talk time 0s to 10s" textColor="text-slate-600" borderColor="bg-slate-500" />
+                    <CompactMetricCard title="Total Dropped Calls" value={overallTotals.droppedCalls} note="Talk duration 0s to 10s" textColor="text-slate-400" borderColor="bg-slate-500" />
+                    <CompactMetricCard title="Incoming Dropped" value={overallTotals.incomingDroppedCalls} note="Incoming talk time 0s to 10s" textColor="text-slate-400" borderColor="bg-slate-500" />
+                    <CompactMetricCard title="Outgoing Dropped" value={overallTotals.outgoingDroppedCalls} note="Outgoing talk time 0s to 10s" textColor="text-slate-400" borderColor="bg-slate-500" />
                   </div>
                 </div>
               </div>
@@ -1400,36 +1815,36 @@ export default function DashboardScreen({
               {/* Analytics & Visualizations Section */}
               <div className="grid gap-3 lg:grid-cols-[1.3fr_0.7fr]">
                 {/* Comparison Bar Chart */}
-                <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-xs flex flex-col justify-between min-h-[300px]">
+                <div className="bg-[#0E1528] border border-slate-800/80 rounded-xl p-4 shadow-2xl flex flex-col justify-between min-h-[300px]">
                   <div>
-                    <h3 className="text-sm font-bold text-slate-800">Call Volume & Outcome Comparison</h3>
-                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Comparing total volumes against successful outcomes across call types</p>
+                    <h3 className="text-sm font-bold text-[#F8FAFC]">Call Volume & Outcome Comparison</h3>
+                    <p className="text-[10px] text-[#94A3B8] font-semibold mt-0.5">Comparing total volumes against successful outcomes across call types</p>
                   </div>
 
                   <div className="h-60 mt-3 text-[10px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={comparisonData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />
                         <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} fontWeight="bold" />
                         <YAxis stroke="#94a3b8" fontSize={9} fontWeight="bold" />
                         <ChartTooltip
-                          contentStyle={{ backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #f1f5f9', fontSize: '11px', fontWeight: '600' }}
+                          contentStyle={{ backgroundColor: '#0E1528', borderRadius: '12px', border: '1px solid rgba(148, 163, 184, 0.1)', fontSize: '11px', fontWeight: '600', color: '#F8FAFC' }}
                         />
-                        <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
-                        <Bar dataKey="Total" fill="#015C96" radius={[4, 4, 0, 0]} maxBarSize={30}>
-                          <LabelList dataKey="Total" position="top" formatter={(val: any) => (val > 0 ? `Total: ${val}` : "")} style={{ fontSize: '8px', fill: '#015c96', fontWeight: 'bold' }} />
+                        <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', color: '#94A3B8' }} />
+                        <Bar dataKey="Total" fill="#1F8FFF" radius={[4, 4, 0, 0]} maxBarSize={30}>
+                          <LabelList dataKey="Total" position="top" formatter={(val: any) => (val > 0 ? `Total: ${val}` : "")} style={{ fontSize: '8px', fill: '#1F8FFF', fontWeight: 'bold' }} />
                         </Bar>
-                        <Bar dataKey="Success" fill="#04693F" radius={[4, 4, 0, 0]} maxBarSize={30}>
-                          <LabelList dataKey="Success" position="top" formatter={(val: any) => (val > 0 ? `Success: ${val}` : "")} style={{ fontSize: '8px', fill: '#04693f', fontWeight: 'bold' }} />
+                        <Bar dataKey="Success" fill="#00E6B8" radius={[4, 4, 0, 0]} maxBarSize={30}>
+                          <LabelList dataKey="Success" position="top" formatter={(val: any) => (val > 0 ? `Success: ${val}` : "")} style={{ fontSize: '8px', fill: '#00E6B8', fontWeight: 'bold' }} />
                         </Bar>
                         <Bar dataKey="Not Responded" fill="#e11d48" radius={[4, 4, 0, 0]} maxBarSize={30}>
                           <LabelList dataKey="Not Responded" position="top" formatter={(val: any) => (val > 0 ? `Not Resp: ${val}` : "")} style={{ fontSize: '8px', fill: '#e11d48', fontWeight: 'bold' }} />
                         </Bar>
-                        <Bar dataKey="Incoming Dropped" fill="#475569" radius={[4, 4, 0, 0]} maxBarSize={30}>
-                          <LabelList dataKey="Incoming Dropped" position="top" formatter={(val: any) => (val > 0 ? `Inc Drop: ${val}` : "")} style={{ fontSize: '8px', fill: '#475569', fontWeight: 'bold' }} />
+                        <Bar dataKey="Incoming Dropped" fill="#8B5CF6" radius={[4, 4, 0, 0]} maxBarSize={30}>
+                          <LabelList dataKey="Incoming Dropped" position="top" formatter={(val: any) => (val > 0 ? `Inc Drop: ${val}` : "")} style={{ fontSize: '8px', fill: '#8B5CF6', fontWeight: 'bold' }} />
                         </Bar>
-                        <Bar dataKey="Outgoing Dropped" fill="#64748b" radius={[4, 4, 0, 0]} maxBarSize={30}>
-                          <LabelList dataKey="Outgoing Dropped" position="top" formatter={(val: any) => (val > 0 ? `Out Drop: ${val}` : "")} style={{ fontSize: '8px', fill: '#64748b', fontWeight: 'bold' }} />
+                        <Bar dataKey="Outgoing Dropped" fill="#475569" radius={[4, 4, 0, 0]} maxBarSize={30}>
+                          <LabelList dataKey="Outgoing Dropped" position="top" formatter={(val: any) => (val > 0 ? `Out Drop: ${val}` : "")} style={{ fontSize: '8px', fill: '#94A3B8', fontWeight: 'bold' }} />
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
@@ -1437,16 +1852,16 @@ export default function DashboardScreen({
                 </div>
 
                 {/* Donut Mix Details */}
-                <div className="bg-white border border-slate-100 rounded-xl p-4 shadow-xs flex flex-col justify-between min-h-[300px]">
+                <div className="bg-[#0E1528] border border-slate-800/80 rounded-xl p-4 shadow-2xl flex flex-col justify-between min-h-[300px]">
                   <div>
-                    <h3 className="text-sm font-bold text-slate-800">Call Ratio & Recovery Analytics</h3>
-                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Direction mix and missed call recovery ratios</p>
+                    <h3 className="text-sm font-bold text-[#F8FAFC]">Call Ratio & Recovery Analytics</h3>
+                    <p className="text-[10px] text-[#94A3B8] font-semibold mt-0.5">Direction mix and missed call recovery ratios</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 mt-4 flex-1 items-center">
                     {/* Direction Donut */}
                     <div className="flex flex-col items-center justify-center">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Direction Mix</span>
+                      <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">Direction Mix</span>
                       <div className="h-28 w-28 relative">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -1463,23 +1878,23 @@ export default function DashboardScreen({
                                 <Cell key={`cell-${index}`} fill={entry.color} />
                               ))}
                             </Pie>
-                            <ChartTooltip formatter={(val) => [`${val} calls`, '']} />
+                            <ChartTooltip contentStyle={{ backgroundColor: '#0E1528', border: '1px solid rgba(148, 163, 184, 0.1)', color: '#F8FAFC', fontSize: '10px' }} formatter={(val) => [`${val} calls`, '']} />
                           </PieChart>
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                          <span className="text-xs font-black text-slate-700">{overallTotals.totalCallsDone}</span>
-                          <span className="text-[7px] font-bold text-slate-400 uppercase">Total</span>
+                          <span className="text-xs font-black text-white">{overallTotals.totalCallsDone}</span>
+                          <span className="text-[7px] font-bold text-[#94A3B8] uppercase">Total</span>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-0.5 mt-2 text-[9px] font-bold text-slate-500">
-                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#015C96]" /> Incoming ({overallTotals.incomingCalls})</div>
-                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#d97706]" /> Outgoing ({overallTotals.outgoingCalls})</div>
+                      <div className="flex flex-col gap-0.5 mt-2 text-[9px] font-bold text-[#94A3B8]">
+                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#1F8FFF]" /> Incoming ({overallTotals.incomingCalls})</div>
+                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6]" /> Outgoing ({overallTotals.outgoingCalls})</div>
                       </div>
                     </div>
 
                     {/* Recovery Donut */}
                     <div className="flex flex-col items-center justify-center">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Lead Recovery</span>
+                      <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider mb-1">Lead Recovery</span>
                       <div className="h-28 w-28 relative">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -1496,16 +1911,16 @@ export default function DashboardScreen({
                                 <Cell key={`cell-${index}`} fill={entry.color} />
                               ))}
                             </Pie>
-                            <ChartTooltip formatter={(val) => [`${val} calls`, '']} />
+                            <ChartTooltip contentStyle={{ backgroundColor: '#0E1528', border: '1px solid rgba(148, 163, 184, 0.1)', color: '#F8FAFC', fontSize: '10px' }} formatter={(val) => [`${val} calls`, '']} />
                           </PieChart>
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                          <span className="text-xs font-black text-slate-700">{overallTotals.totalMissed}</span>
-                          <span className="text-[7px] font-bold text-slate-400 uppercase">Missed</span>
+                          <span className="text-xs font-black text-white">{overallTotals.totalMissed}</span>
+                          <span className="text-[7px] font-bold text-[#94A3B8] uppercase">Missed</span>
                         </div>
                       </div>
-                      <div className="flex flex-col gap-0.5 mt-2 text-[9px] font-bold text-slate-500">
-                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#04693F]" /> Responded ({Math.max(0, overallTotals.totalMissed - overallTotals.missedNotResponded)})</div>
+                      <div className="flex flex-col gap-0.5 mt-2 text-[9px] font-bold text-[#94A3B8]">
+                        <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#00E6B8]" /> Responded ({Math.max(0, overallTotals.totalMissed - overallTotals.missedNotResponded)})</div>
                         <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#e11d48]" /> Unresponded ({overallTotals.missedNotResponded})</div>
                       </div>
                     </div>
@@ -1514,18 +1929,18 @@ export default function DashboardScreen({
               </div>
 
               {/* Hourly Call Volume Distribution Section */}
-              <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-4">
-                <div className="border-b border-slate-100 pb-2 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="bg-[#0E1528] border border-slate-800/80 rounded-2xl p-4 shadow-sm space-y-4">
+                <div className="border-b border-slate-800/80 pb-2 flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-bold text-slate-800">Hourly Call Distribution</h3>
-                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Analysis of hourly peak activity across Total, Missed, and Dropped calls</p>
+                    <h3 className="text-sm font-bold text-[#F8FAFC]">Hourly Call Distribution</h3>
+                    <p className="text-[10px] text-[#94A3B8] font-semibold mt-0.5">Analysis of hourly peak activity across Total, Missed, and Dropped calls</p>
                   </div>
                   
                   {/* Cascading Hierarchical Selector */}
                   <div className="flex flex-wrap gap-2.5 items-center">
                     {/* Admin Dropdown */}
                     <div className="flex flex-col text-left w-[150px]">
-                      <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Admin</label>
+                      <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">Admin</label>
                       <select
                         value={hourlySelectedAdminId}
                         onChange={(e) => {
@@ -1533,7 +1948,7 @@ export default function DashboardScreen({
                           setHourlySelectedLeaderId("");
                           setHourlySelectedWarriorId("");
                         }}
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 font-semibold text-slate-600 w-full"
+                        className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 font-semibold text-slate-200 w-full cursor-pointer"
                       >
                         <option value="">All Admins</option>
                         {hourlyAdminsList.map(u => (
@@ -1544,14 +1959,14 @@ export default function DashboardScreen({
 
                     {/* Leader Dropdown */}
                     <div className="flex flex-col text-left w-[150px]">
-                      <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Group Leader</label>
+                      <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">Group Leader</label>
                       <select
                         value={hourlySelectedLeaderId}
                         onChange={(e) => {
                           setHourlySelectedLeaderId(e.target.value);
                           setHourlySelectedWarriorId("");
                         }}
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 font-semibold text-slate-600 w-full"
+                        className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 font-semibold text-slate-200 w-full cursor-pointer"
                       >
                         <option value="">All Leaders</option>
                         {hourlyLeadersList.map(u => (
@@ -1562,11 +1977,11 @@ export default function DashboardScreen({
 
                     {/* Warrior Dropdown */}
                     <div className="flex flex-col text-left w-[150px]">
-                      <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Warrior</label>
+                      <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">Warrior</label>
                       <select
                         value={hourlySelectedWarriorId}
                         onChange={(e) => setHourlySelectedWarriorId(e.target.value)}
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 font-semibold text-slate-600 w-full"
+                        className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 font-semibold text-slate-200 w-full cursor-pointer"
                       >
                         <option value="">All Warriors</option>
                         {hourlyWarriorsList.map(u => (
@@ -1577,45 +1992,45 @@ export default function DashboardScreen({
 
                     {/* Hourly Start Date */}
                     <div className="flex flex-col text-left w-[130px]">
-                      <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Start Date</label>
+                      <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">Start Date</label>
                       <input
                         type="date"
                         value={hourlyStartDate}
                         onChange={(e) => setHourlyStartDate(e.target.value)}
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 focus:border-[#04693F] font-semibold text-slate-600 w-full"
+                        className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 w-full"
                       />
                     </div>
 
                     {/* Hourly Start Time */}
                     <div className="flex flex-col text-left w-[80px]">
-                      <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">Start Time</label>
+                      <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">Start Time</label>
                       <input
                         type="time"
                         value={hourlyStartTime}
                         onChange={(e) => setHourlyStartTime(e.target.value)}
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 focus:border-[#04693F] font-semibold text-slate-600 w-full"
+                        className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 w-full"
                       />
                     </div>
 
                     {/* Hourly End Date */}
                     <div className="flex flex-col text-left w-[130px]">
-                      <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">End Date</label>
+                      <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">End Date</label>
                       <input
                         type="date"
                         value={hourlyEndDate}
                         onChange={(e) => setHourlyEndDate(e.target.value)}
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 focus:border-[#04693F] font-semibold text-slate-600 w-full"
+                        className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 w-full"
                       />
                     </div>
 
                     {/* Hourly End Time */}
                     <div className="flex flex-col text-left w-[80px]">
-                      <label className="text-[9px] text-slate-400 font-bold uppercase mb-0.5">End Time</label>
+                      <label className="text-[9px] text-[#94A3B8] font-bold uppercase mb-0.5">End Time</label>
                       <input
                         type="time"
                         value={hourlyEndTime}
                         onChange={(e) => setHourlyEndTime(e.target.value)}
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none hover:border-slate-300 focus:border-[#04693F] font-semibold text-slate-600 w-full"
+                        className="rounded-lg border border-slate-800 bg-[#050816] px-2 py-1.5 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 w-full"
                       />
                     </div>
 
@@ -1630,7 +2045,7 @@ export default function DashboardScreen({
                           setHourlyEndDate("");
                           setHourlyEndTime("");
                         }}
-                        className="px-3 py-1.5 rounded-lg border border-rose-100 text-rose-600 hover:bg-rose-50/50 text-[10px] font-bold transition-all self-end"
+                        className="px-3 py-1.5 rounded-lg border border-rose-950 text-rose-400 hover:bg-rose-950/20 text-[10px] font-bold transition-all self-end cursor-pointer"
                       >
                         Reset Group
                       </button>
@@ -1641,23 +2056,23 @@ export default function DashboardScreen({
                 {/* Grid of Hourly Charts */}
                 <div className="grid gap-3 md:grid-cols-3">
                   {/* Total Calls Chart */}
-                  <div className="bg-slate-50/40 border border-slate-150/40 rounded-xl p-3 flex flex-col justify-between min-h-[220px]">
-                    <span className="text-[10px] font-bold text-[#015C96] uppercase tracking-wider mb-2">Total Call Volume</span>
+                  <div className="bg-[#050816]/40 border border-slate-800/80 rounded-xl p-3 flex flex-col justify-between min-h-[220px]">
+                    <span className="text-[10px] font-bold text-[#1F8FFF] uppercase tracking-wider mb-2">Total Call Volume</span>
                     <div className="h-40 text-[9px] font-semibold">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={hourlyDistributionData} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
                           <defs>
                             <linearGradient id="totalHourlyGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#015C96" stopOpacity={0.6}/>
-                              <stop offset="95%" stopColor="#015C96" stopOpacity={0}/>
+                              <stop offset="5%" stopColor="#1F8FFF" stopOpacity={0.4}/>
+                              <stop offset="95%" stopColor="#1F8FFF" stopOpacity={0}/>
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />
                           <XAxis dataKey="hourStr" stroke="#94a3b8" />
                           <YAxis stroke="#94a3b8" />
-                          <ChartTooltip contentStyle={{ fontSize: '10px' }} />
-                          <Area type="monotone" dataKey="Total" stroke="#015C96" fillOpacity={1} fill="url(#totalHourlyGrad)">
-                            <LabelList dataKey="Total" position="top" formatter={(val: any) => (val > 0 ? val : "")} style={{ fontSize: '8px', fill: '#015C96', fontWeight: 'bold' }} />
+                          <ChartTooltip contentStyle={{ backgroundColor: '#0E1528', border: '1px solid rgba(148, 163, 184, 0.1)', color: '#F8FAFC', fontSize: '10px' }} />
+                          <Area type="monotone" dataKey="Total" stroke="#1F8FFF" fillOpacity={1} fill="url(#totalHourlyGrad)">
+                            <LabelList dataKey="Total" position="top" formatter={(val: any) => (val > 0 ? val : "")} style={{ fontSize: '8px', fill: '#1F8FFF', fontWeight: 'bold' }} />
                           </Area>
                         </AreaChart>
                       </ResponsiveContainer>
@@ -1665,23 +2080,23 @@ export default function DashboardScreen({
                   </div>
 
                   {/* Missed Calls Chart */}
-                  <div className="bg-slate-50/40 border border-slate-150/40 rounded-xl p-3 flex flex-col justify-between min-h-[220px]">
-                    <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider mb-2">Missed Call Volume</span>
+                  <div className="bg-[#050816]/40 border border-slate-800/80 rounded-xl p-3 flex flex-col justify-between min-h-[220px]">
+                    <span className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-2">Missed Call Volume</span>
                     <div className="h-40 text-[9px] font-semibold">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={hourlyDistributionData} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
                           <defs>
                             <linearGradient id="missedHourlyGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#ef4444" stopOpacity={0.6}/>
+                              <stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/>
                               <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />
                           <XAxis dataKey="hourStr" stroke="#94a3b8" />
                           <YAxis stroke="#94a3b8" />
-                          <ChartTooltip contentStyle={{ fontSize: '10px' }} />
-                          <Area type="monotone" dataKey="Missed" stroke="#dc2626" fillOpacity={1} fill="url(#missedHourlyGrad)">
-                            <LabelList dataKey="Missed" position="top" formatter={(val: any) => (val > 0 ? val : "")} style={{ fontSize: '8px', fill: '#dc2626', fontWeight: 'bold' }} />
+                          <ChartTooltip contentStyle={{ backgroundColor: '#0E1528', border: '1px solid rgba(148, 163, 184, 0.1)', color: '#F8FAFC', fontSize: '10px' }} />
+                          <Area type="monotone" dataKey="Missed" stroke="#ef4444" fillOpacity={1} fill="url(#missedHourlyGrad)">
+                            <LabelList dataKey="Missed" position="top" formatter={(val: any) => (val > 0 ? val : "")} style={{ fontSize: '8px', fill: '#ef4444', fontWeight: 'bold' }} />
                           </Area>
                         </AreaChart>
                       </ResponsiveContainer>
@@ -1689,23 +2104,23 @@ export default function DashboardScreen({
                   </div>
 
                   {/* Dropped Calls Chart */}
-                  <div className="bg-slate-50/40 border border-slate-150/40 rounded-xl p-3 flex flex-col justify-between min-h-[220px]">
-                    <span className="text-[10px] font-bold text-slate-650 uppercase tracking-wider mb-2">Dropped Call Volume</span>
+                  <div className="bg-[#050816]/40 border border-slate-800/80 rounded-xl p-3 flex flex-col justify-between min-h-[220px]">
+                    <span className="text-[10px] font-bold text-[#8B5CF6] uppercase tracking-wider mb-2">Dropped Call Volume</span>
                     <div className="h-40 text-[9px] font-semibold">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={hourlyDistributionData} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
                           <defs>
                             <linearGradient id="droppedHourlyGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#64748b" stopOpacity={0.6}/>
-                              <stop offset="95%" stopColor="#64748b" stopOpacity={0}/>
+                              <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.4}/>
+                              <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0}/>
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />
                           <XAxis dataKey="hourStr" stroke="#94a3b8" />
                           <YAxis stroke="#94a3b8" />
-                          <ChartTooltip contentStyle={{ fontSize: '10px' }} />
-                          <Area type="monotone" dataKey="Dropped" stroke="#475569" fillOpacity={1} fill="url(#droppedHourlyGrad)">
-                            <LabelList dataKey="Dropped" position="top" formatter={(val: any) => (val > 0 ? val : "")} style={{ fontSize: '8px', fill: '#475569', fontWeight: 'bold' }} />
+                          <ChartTooltip contentStyle={{ backgroundColor: '#0E1528', border: '1px solid rgba(148, 163, 184, 0.1)', color: '#F8FAFC', fontSize: '10px' }} />
+                          <Area type="monotone" dataKey="Dropped" stroke="#8B5CF6" fillOpacity={1} fill="url(#droppedHourlyGrad)">
+                            <LabelList dataKey="Dropped" position="top" formatter={(val: any) => (val > 0 ? val : "")} style={{ fontSize: '8px', fill: '#8B5CF6', fontWeight: 'bold' }} />
                           </Area>
                         </AreaChart>
                       </ResponsiveContainer>
@@ -1716,26 +2131,25 @@ export default function DashboardScreen({
 
 
               {/* Filtered Analytics and Visualizations Section */}
-              <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-4">
-                <div className="border-b border-slate-100 pb-2 flex items-center justify-between">
+              <div className="bg-[#0E1528] border border-slate-800/80 rounded-2xl p-4 shadow-sm space-y-4">
+                <div className="border-b border-slate-800/80 pb-2 flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-bold text-slate-800">Filtered Analytics & Visualization</h3>
-                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Dynamic performance insights and statistics based on current filter selection</p>
+                    <h3 className="text-sm font-bold text-[#F8FAFC]">Filtered Analytics & Visualization</h3>
+                    <p className="text-[10px] text-[#94A3B8] font-semibold mt-0.5">Dynamic performance insights and statistics based on current filter selection</p>
                   </div>
-
                 </div>
 
                 {/* Analysis Range Filter Controls — compact single row */}
-                <div className="bg-indigo-50/20 border border-indigo-100/50 rounded-xl px-3 py-2 flex flex-row flex-wrap gap-2 items-center">
+                <div className="bg-[#050816]/60 border border-slate-800/80 rounded-xl px-3 py-2 flex flex-row flex-wrap gap-2 items-center">
                   {/* Label */}
-                  <span className="text-[9px] uppercase font-bold text-indigo-600 tracking-wider whitespace-nowrap mr-1">Analysis Range</span>
-                  <span className="h-3.5 w-px bg-indigo-200 shrink-0" />
+                  <span className="text-[9px] uppercase font-bold text-[#1F8FFF] tracking-wider whitespace-nowrap mr-1">Analysis Range</span>
+                  <span className="h-3.5 w-px bg-slate-800 shrink-0" />
 
                   {/* Hierarchy selects */}
                   <select
                     value={filteredAdminId}
                     onChange={(e) => handleFilteredAdminChange(e.target.value)}
-                    className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] outline-none hover:border-indigo-300 focus:border-indigo-500 font-semibold text-slate-600 max-w-[110px]"
+                    className="rounded-md border border-slate-800 bg-[#050816] px-1.5 py-1 text-[11px] outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 max-w-[110px] cursor-pointer"
                   >
                     <option value="">All Admins</option>
                     {filteredAdminsList.map(u => <option key={u.id} value={u.id}>{u.full_name.split(' ')[0]}</option>)}
@@ -1744,7 +2158,7 @@ export default function DashboardScreen({
                   <select
                     value={filteredLeaderId}
                     onChange={(e) => handleFilteredLeaderChange(e.target.value)}
-                    className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] outline-none hover:border-indigo-300 focus:border-indigo-500 font-semibold text-slate-600 max-w-[110px]"
+                    className="rounded-md border border-slate-800 bg-[#050816] px-1.5 py-1 text-[11px] outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 max-w-[110px] cursor-pointer"
                   >
                     <option value="">All Leaders</option>
                     {filteredLeadersList.map(u => <option key={u.id} value={u.id}>{u.full_name.split(' ')[0]}</option>)}
@@ -1753,44 +2167,44 @@ export default function DashboardScreen({
                   <select
                     value={filteredWarriorId}
                     onChange={(e) => setFilteredWarriorId(e.target.value)}
-                    className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] outline-none hover:border-indigo-300 focus:border-indigo-500 font-semibold text-slate-600 max-w-[110px]"
+                    className="rounded-md border border-slate-800 bg-[#050816] px-1.5 py-1 text-[11px] outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 max-w-[110px] cursor-pointer"
                   >
                     <option value="">All Warriors</option>
                     {filteredWarriorsList.map(u => <option key={u.id} value={u.id}>{u.full_name.split(' ')[0]}</option>)}
                   </select>
 
-                  <span className="h-3.5 w-px bg-slate-200 shrink-0" />
+                  <span className="h-3.5 w-px bg-slate-800 shrink-0" />
 
                   {/* From group */}
-                  <span className="text-[9px] text-slate-400 font-semibold whitespace-nowrap">From:</span>
+                  <span className="text-[9px] text-[#94A3B8] font-semibold whitespace-nowrap">From:</span>
                   <input
                     type="date"
                     value={filteredStartDate}
                     onChange={(e) => setFilteredStartDate(e.target.value)}
-                    className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] outline-none hover:border-indigo-300 focus:border-indigo-500 font-semibold text-slate-600 w-[118px]"
+                    className="rounded-md border border-slate-800 bg-[#050816] px-1.5 py-1 text-[11px] outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 w-[118px]"
                   />
                   <input
                     type="time"
                     value={filteredStartTime}
                     onChange={(e) => setFilteredStartTime(e.target.value)}
-                    className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] outline-none hover:border-indigo-300 focus:border-indigo-500 font-semibold text-slate-600 w-[78px]"
+                    className="rounded-md border border-slate-800 bg-[#050816] px-1.5 py-1 text-[11px] outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 w-[78px]"
                   />
 
-                  <span className="h-3.5 w-px bg-slate-200 shrink-0" />
+                  <span className="h-3.5 w-px bg-slate-800 shrink-0" />
 
                   {/* To group */}
-                  <span className="text-[9px] text-slate-400 font-semibold whitespace-nowrap">To:</span>
+                  <span className="text-[9px] text-[#94A3B8] font-semibold whitespace-nowrap">To:</span>
                   <input
                     type="date"
                     value={filteredEndDate}
                     onChange={(e) => setFilteredEndDate(e.target.value)}
-                    className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] outline-none hover:border-indigo-300 focus:border-indigo-500 font-semibold text-slate-600 w-[118px]"
+                    className="rounded-md border border-slate-800 bg-[#050816] px-1.5 py-1 text-[11px] outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 w-[118px]"
                   />
                   <input
                     type="time"
                     value={filteredEndTime}
                     onChange={(e) => setFilteredEndTime(e.target.value)}
-                    className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] outline-none hover:border-indigo-300 focus:border-indigo-500 font-semibold text-slate-600 w-[78px]"
+                    className="rounded-md border border-slate-800 bg-[#050816] px-1.5 py-1 text-[11px] outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-slate-200 w-[78px]"
                   />
 
                   {(filteredAdminId || filteredLeaderId || filteredWarriorId || filteredStartDate || filteredEndDate || filteredStartTime !== "09:30" || filteredEndTime !== "") && (
@@ -1802,7 +2216,7 @@ export default function DashboardScreen({
                         setFilteredEndDate("");
                         setFilteredEndTime("");
                       }}
-                      className="ml-1 px-2.5 py-1 rounded-md border border-rose-100 text-rose-600 hover:bg-rose-50/50 text-[9px] font-bold transition-all whitespace-nowrap"
+                      className="ml-1 px-2.5 py-1 rounded-md border border-rose-950 text-rose-400 hover:bg-rose-950/20 text-[9px] font-bold transition-all whitespace-nowrap cursor-pointer"
                     >
                       Reset All
                     </button>
@@ -1811,9 +2225,9 @@ export default function DashboardScreen({
 
                 <div className={`grid gap-4 ${filteredWarriorId ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
                   {/* Left Column: Visualizer Chart */}
-                  <div className="bg-slate-50/40 border border-slate-150/40 rounded-xl p-3 flex flex-col justify-between min-h-[260px]">
+                  <div className="bg-[#050816]/40 border border-slate-800/80 rounded-xl p-3 flex flex-col justify-between min-h-[260px]">
                     <div>
-                      <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">
+                      <span className="text-[10px] font-bold text-[#1F8FFF] uppercase tracking-wider">
                         {filteredWarriorId
                           ? "Call Metric Breakdown"
                           : filteredLeaderId
@@ -1828,12 +2242,12 @@ export default function DashboardScreen({
                       <ResponsiveContainer width="100%" height="100%">
                         {filteredWarriorId ? (
                           <BarChart data={filteredVisualizationData as any} margin={{ top: 15, right: 10, left: -25, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />
                             <XAxis dataKey="name" stroke="#94a3b8" />
                             <YAxis stroke="#94a3b8" />
-                            <ChartTooltip contentStyle={{ fontSize: '10px' }} />
-                            <Bar dataKey="value" fill="#015C96" radius={[4, 4, 0, 0]} maxBarSize={30}>
-                              <LabelList dataKey="value" position="top" style={{ fontSize: '8px', fill: '#475569', fontWeight: 'bold' }} />
+                            <ChartTooltip contentStyle={{ backgroundColor: '#0E1528', border: '1px solid rgba(148, 163, 184, 0.1)', color: '#F8FAFC', fontSize: '10px' }} />
+                            <Bar dataKey="value" fill="#1F8FFF" radius={[4, 4, 0, 0]} maxBarSize={30}>
+                              <LabelList dataKey="value" position="top" style={{ fontSize: '8px', fill: '#94a3b8', fontWeight: 'bold' }} />
                               {filteredVisualizationData.map((entry: any, index: number) => (
                                 <Cell key={`cell-${index}`} fill={entry.fill} />
                               ))}
@@ -1841,21 +2255,21 @@ export default function DashboardScreen({
                           </BarChart>
                         ) : (
                           <BarChart data={filteredVisualizationData as any} margin={{ top: 15, right: 10, left: -25, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />
                             <XAxis dataKey="name" stroke="#94a3b8" />
                             <YAxis stroke="#94a3b8" />
-                            <ChartTooltip contentStyle={{ fontSize: '10px' }} />
-                            <Legend verticalAlign="top" height={24} iconSize={8} wrapperStyle={{ fontSize: '9px', fontWeight: 'bold' }} />
-                            <Bar dataKey="Total Calls" fill="#015C96" radius={[3, 3, 0, 0]} maxBarSize={20}>
-                              <LabelList dataKey="Total Calls" position="top" style={{ fontSize: '7px', fill: '#015c96', fontWeight: 'bold' }} />
+                            <ChartTooltip contentStyle={{ backgroundColor: '#0E1528', border: '1px solid rgba(148, 163, 184, 0.1)', color: '#F8FAFC', fontSize: '10px' }} />
+                            <Legend verticalAlign="top" height={24} iconSize={8} wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', color: '#94A3B8' }} />
+                            <Bar dataKey="Total Calls" fill="#1F8FFF" radius={[3, 3, 0, 0]} maxBarSize={20}>
+                              <LabelList dataKey="Total Calls" position="top" style={{ fontSize: '7px', fill: '#1F8FFF', fontWeight: 'bold' }} />
                             </Bar>
                             {filteredLeaderId ? (
-                              <Bar dataKey="Success Calls" fill="#04693F" radius={[3, 3, 0, 0]} maxBarSize={20}>
-                                <LabelList dataKey="Success Calls" position="top" style={{ fontSize: '7px', fill: '#04693f', fontWeight: 'bold' }} />
+                              <Bar dataKey="Success Calls" fill="#00E6B8" radius={[3, 3, 0, 0]} maxBarSize={20}>
+                                <LabelList dataKey="Success Calls" position="top" style={{ fontSize: '7px', fill: '#00E6B8', fontWeight: 'bold' }} />
                               </Bar>
                             ) : (
-                              <Bar dataKey="Calling Hours" fill="#d97706" radius={[3, 3, 0, 0]} maxBarSize={20}>
-                                <LabelList dataKey="Calling Hours" position="top" style={{ fontSize: '7px', fill: '#b45309', fontWeight: 'bold' }} />
+                              <Bar dataKey="Calling Hours" fill="#8B5CF6" radius={[3, 3, 0, 0]} maxBarSize={20}>
+                                <LabelList dataKey="Calling Hours" position="top" style={{ fontSize: '7px', fill: '#8B5CF6', fontWeight: 'bold' }} />
                               </Bar>
                             )}
                           </BarChart>
@@ -1866,25 +2280,25 @@ export default function DashboardScreen({
 
                   {/* Middle Column (Only for selected warrior): Hour-wise distribution */}
                   {filteredWarriorId && (
-                    <div className="bg-slate-50/40 border border-slate-150/40 rounded-xl p-3 flex flex-col justify-between min-h-[260px]">
+                    <div className="bg-[#050816]/40 border border-slate-800/80 rounded-xl p-3 flex flex-col justify-between min-h-[260px]">
                       <div>
-                        <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Hour-wise Call Distribution</span>
+                        <span className="text-[10px] font-bold text-[#8B5CF6] uppercase tracking-wider">Hour-wise Call Distribution</span>
                       </div>
                       <div className="h-48 mt-2 text-[9px] font-semibold">
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={warriorHourlyData} margin={{ top: 15, right: 10, left: -25, bottom: 0 }}>
                             <defs>
                               <linearGradient id="colorCalls" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#818cf8" stopOpacity={0.8}/>
-                                <stop offset="95%" stopColor="#818cf8" stopOpacity={0}/>
+                                <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.4}/>
+                                <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0}/>
                               </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />
                             <XAxis dataKey="hourStr" stroke="#94a3b8" />
                             <YAxis stroke="#94a3b8" />
-                            <ChartTooltip contentStyle={{ fontSize: '10px' }} />
-                            <Area type="monotone" dataKey="Calls" stroke="#4f46e5" fillOpacity={1} fill="url(#colorCalls)">
-                              <LabelList dataKey="Calls" position="top" formatter={(val: any) => (val > 0 ? val : "")} style={{ fontSize: '8px', fill: '#4f46e5', fontWeight: 'bold' }} />
+                            <ChartTooltip contentStyle={{ backgroundColor: '#0E1528', border: '1px solid rgba(148, 163, 184, 0.1)', color: '#F8FAFC', fontSize: '10px' }} />
+                            <Area type="monotone" dataKey="Calls" stroke="#8B5CF6" fillOpacity={1} fill="url(#colorCalls)">
+                              <LabelList dataKey="Calls" position="top" formatter={(val: any) => (val > 0 ? val : "")} style={{ fontSize: '8px', fill: '#8B5CF6', fontWeight: 'bold' }} />
                             </Area>
                           </AreaChart>
                         </ResponsiveContainer>
@@ -1893,28 +2307,28 @@ export default function DashboardScreen({
                   )}
 
                   {/* Right Column: AI Analytical Insights */}
-                  <div className="bg-gradient-to-br from-indigo-50/40 via-emerald-50/10 to-slate-50 border border-slate-150/40 rounded-xl p-4 flex flex-col justify-between">
+                  <div className="bg-[#050816]/40 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center gap-1.5 mb-2">
-                        <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4 text-[#00E6B8]" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364.364l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                         </svg>
-                        <span className="text-[10px] font-black text-indigo-800 uppercase tracking-widest">{filteredInsights.title}</span>
+                        <span className="text-[10px] font-black text-[#00E6B8] uppercase tracking-widest">{filteredInsights.title}</span>
                       </div>
                       <div className="space-y-2 mt-2">
                         {filteredInsights.insights.map((insight, idx) => (
-                          <div key={idx} className="flex items-start gap-2 text-[11px] leading-relaxed text-slate-600 font-semibold text-left">
-                            <span className="text-indigo-500 mt-1 select-none">•</span>
+                          <div key={idx} className="flex items-start gap-2 text-[11px] leading-relaxed text-[#94A3B8] font-semibold text-left">
+                            <span className="text-[#00E6B8] mt-1 select-none">•</span>
                             <span>{insight}</span>
                           </div>
                         ))}
                       </div>
                     </div>
 
-                    <div className="text-[9px] text-slate-400 font-bold mt-4 uppercase border-t border-slate-200/50 pt-2 flex items-center justify-between">
+                    <div className="text-[9px] text-[#94A3B8]/60 font-bold mt-4 uppercase border-t border-slate-850 pt-2 flex items-center justify-between">
                       <span>Generated from Live Telemetry</span>
-                      <span className="text-[#04693F] flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Real-time
+                      <span className="text-[#00E6B8] flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Real-time
                       </span>
                     </div>
                   </div>
@@ -1926,8 +2340,8 @@ export default function DashboardScreen({
           {selectedView === "users" && (
             <div className="space-y-3 flex-1 flex flex-col min-h-0">
               <div className="flex flex-col gap-0.5 text-left">
-                <h2 className="text-lg font-bold text-slate-800">Members & Employee Registry</h2>
-                <p className="text-[11px] text-slate-400 font-semibold">Manage system registry requirements and review employee records.</p>
+                <h2 className="text-lg font-bold text-white">Members & Employee Registry</h2>
+                <p className="text-[11px] text-[#94A3B8] font-semibold">Manage system registry requirements and review employee records.</p>
               </div>
               <RoleTable
                 users={dashboard.users}
@@ -1942,8 +2356,8 @@ export default function DashboardScreen({
             <div className="space-y-3 flex-1 flex flex-col min-h-0">
               <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
                 <div className="flex flex-col gap-0.5 text-left">
-                  <h2 className="text-lg font-bold text-slate-800">User Management Console</h2>
-                  <p className="text-[11px] text-slate-400 font-semibold">
+                  <h2 className="text-lg font-bold text-white">User Management Console</h2>
+                  <p className="text-[11px] text-[#94A3B8] font-semibold">
                     Administer user roles, modify reporting structures, enable/disable tracking (Super Admin only), and remove records.
                   </p>
                 </div>
@@ -1959,26 +2373,28 @@ export default function DashboardScreen({
                     placeholder="Search people by name or email..."
                     value={userSearchQuery}
                     onChange={(e) => setUserSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 bg-white text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700 placeholder:text-slate-400"
+                    className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-800 bg-[#050816] text-xs outline-none transition focus:border-[#1F8FFF] font-semibold text-white placeholder:text-slate-500"
                   />
                 </div>
               </div>
 
               {/* Table wrapper */}
-              <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col min-h-0 mt-3">
+              <div className="bg-[#0E1528] border border-slate-800/80 rounded-2xl shadow-2xl overflow-hidden flex-1 flex flex-col min-h-0 mt-3">
                 <div className="overflow-x-auto overflow-y-auto flex-1">
-                  <table className="min-w-full divide-y divide-slate-100 text-left text-xs font-semibold border-collapse">
-                    <thead className="text-slate-500 uppercase tracking-wider font-bold bg-slate-50">
+                  <table className="min-w-full divide-y divide-slate-800 text-left text-xs font-semibold border-collapse">
+                    <thead className="text-[#94A3B8] uppercase tracking-wider font-bold bg-[#0E1528]/80">
                       <tr>
-                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">USER NAME / EMAIL</th>
-                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-center">ROLE</th>
-                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-center">REPORTING TO (MANAGER)</th>
-                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-center">SYSTEM ID</th>
-                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-center">CALL TRACKING</th>
-                        <th className="px-6 py-3 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-center">ACTIONS</th>
+                        <th className="px-4 py-2 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">USER NAME</th>
+                        <th className="px-4 py-2 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">EMAIL</th>
+                        <th className="px-4 py-2 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-center min-w-[120px] whitespace-nowrap">ROLE</th>
+                        <th className="px-4 py-2 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-center">REPORTING TO</th>
+                        <th className="px-4 py-2 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-center">MANAGER EMAIL</th>
+                        <th className="px-4 py-2 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-center">SYSTEM ID</th>
+                        <th className="px-4 py-2 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-center">CALL TRACKING</th>
+                        <th className="px-4 py-2 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-center">ACTIONS</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
+                    <tbody className="divide-y divide-slate-800 bg-[#0E1528]">
                       {filteredUsersList.map((user) => {
                         const mIds = user.manager_ids || (user.manager_id ? [user.manager_id] : []);
                         const directManagers = dashboard.users.filter(u => mIds.includes(u.id));
@@ -1986,80 +2402,84 @@ export default function DashboardScreen({
                         const isSuperAdmin = dashboard.me?.role === "super_admin";
 
                         return (
-                          <tr key={user.id} className="hover:bg-slate-50/45 transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="font-bold text-slate-800 text-sm">{user.full_name}</div>
-                              <div className="text-[10px] text-slate-400 font-medium">{user.email}</div>
-                              {!user.is_active && (
-                                <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold text-rose-600 mt-1">
-                                  Inactive
-                                </span>
-                              )}
-                              {!user.is_approved && (
-                                <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-600 mt-1 ml-1.5">
-                                  Pending Approval
-                                </span>
-                              )}
+                          <tr key={user.id} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="px-4 py-2">
+                              <div className="font-bold text-white text-xs">{user.full_name}</div>
+                              <div className="flex gap-1 mt-0.5 flex-wrap">
+                                {!user.is_active && (
+                                  <span className="inline-flex items-center gap-1 rounded bg-rose-950/20 px-1 py-0.2 text-[8px] font-bold text-rose-450 border border-rose-900/50">
+                                    Inactive
+                                  </span>
+                                )}
+                                {!user.is_approved && (
+                                  <span className="inline-flex items-center gap-1 rounded bg-amber-950/20 px-1 py-0.2 text-[8px] font-bold text-amber-450 border border-amber-900/50">
+                                    Pending Approval
+                                  </span>
+                                )}
+                              </div>
                             </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${user.role === "super_admin"
-                                ? "bg-purple-50 text-purple-700 border border-purple-100"
+                            <td className="px-4 py-2 text-xs text-[#94A3B8] font-semibold">
+                              {user.email}
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap ${user.role === "super_admin"
+                                ? "bg-purple-950/20 text-purple-400 border border-purple-900/50"
                                 : user.role === "admin"
-                                  ? "bg-blue-50 text-blue-700 border border-blue-100"
+                                  ? "bg-blue-950/20 text-[#1F8FFF] border border-blue-900/50"
                                   : user.role === "group_leader"
-                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                                    : "bg-slate-50 text-slate-650 border border-slate-200/60"
+                                    ? "bg-emerald-950/20 text-[#00E6B8] border border-emerald-900/50"
+                                    : "bg-slate-850/20 text-[#94A3B8] border border-slate-800"
                                 }`}>
                                 {user.role.replace("_", " ")}
                               </span>
                             </td>
-                            <td className="px-6 py-4 text-center text-slate-600 font-medium">
+                            <td className="px-4 py-2 text-center text-slate-200 font-bold">
                               {directManagers.length > 0 ? (
-                                <div className="space-y-1">
-                                  {directManagers.map((m) => (
-                                    <div key={m.id} className="leading-tight">
-                                      <div className="font-bold text-slate-700">{m.full_name}</div>
-                                      <div className="text-[9px] text-slate-400">({m.role.replace("_", " ").toUpperCase()})</div>
-                                    </div>
-                                  ))}
-                                </div>
+                                directManagers.map(m => m.full_name).join(", ")
                               ) : (
-                                <span className="text-slate-400">-</span>
+                                <span className="text-slate-500 font-normal">-</span>
                               )}
                             </td>
-                            <td className="px-6 py-4 text-center font-mono text-[11px] text-slate-500 font-bold">
-                              {user.system_id || <span className="text-slate-400 font-normal">-</span>}
+                            <td className="px-4 py-2 text-center text-xs text-[#94A3B8] font-semibold">
+                              {directManagers.length > 0 ? (
+                                directManagers.map(m => m.email).join(", ")
+                              ) : (
+                                <span className="text-slate-500 font-normal">-</span>
+                              )}
                             </td>
-                            <td className="px-6 py-4 text-center">
+                            <td className="px-4 py-2 text-center font-mono text-[11px] text-slate-300 font-bold">
+                              {user.system_id || <span className="text-slate-500 font-normal">-</span>}
+                            </td>
+                            <td className="px-4 py-2 text-center">
                               <button
                                 disabled={!isSuperAdmin}
                                 onClick={() => handleToggleUserTrackingState(user)}
-                                className={`px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all ${user.is_tracking_enabled
-                                  ? "bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] text-[#04693F] border-[#04693F]/15 " + (isSuperAdmin ? "hover:opacity-90" : "opacity-80 cursor-not-allowed")
-                                  : "bg-white text-slate-500 border-slate-200 " + (isSuperAdmin ? "hover:bg-slate-50" : "opacity-60 cursor-not-allowed")
+                                className={`px-2 py-1 rounded-full text-[9px] font-bold border transition-all cursor-pointer ${user.is_tracking_enabled
+                                  ? "bg-gradient-to-r from-[#1F8FFF]/10 to-[#8B5CF6]/10 text-white border-[#1F8FFF]/25 " + (isSuperAdmin ? "hover:opacity-90" : "opacity-80 cursor-not-allowed")
+                                  : "bg-[#050816] text-[#94A3B8] border-slate-800 " + (isSuperAdmin ? "hover:bg-slate-800/40" : "opacity-60 cursor-not-allowed")
                                   }`}
                               >
-                                {user.is_tracking_enabled ? "Tracking Enabled" : "Tracking Disabled"}
+                                {user.is_tracking_enabled ? "Enabled" : "Disabled"}
                               </button>
                             </td>
-                            <td className="px-6 py-4 text-center">
+                            <td className="px-4 py-2 text-center">
                               {canEditOrDelete ? (
-                                <div className="flex justify-center gap-2">
+                                <div className="flex justify-center gap-1">
                                   <button
                                     onClick={() => handleOpenEditModal(user)}
-                                    className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] border border-[#04693F]/15 hover:opacity-90 text-[#04693F] text-[10px] font-bold transition-all shadow-xs"
+                                    className="px-2 py-0.5 rounded bg-[#1F8FFF]/10 hover:bg-[#1F8FFF]/20 border border-[#1F8FFF]/20 text-[#1F8FFF] text-[9px] font-bold transition-all shadow-xs cursor-pointer"
                                   >
                                     Edit
                                   </button>
                                   <button
                                     onClick={() => handleOpenDeleteModal(user)}
-                                    className="px-2.5 py-1 rounded-md border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 text-[10px] font-bold transition-all"
+                                    className="px-2 py-0.5 rounded border border-rose-950 bg-[#050816] hover:bg-rose-950/20 text-rose-450 text-[9px] font-bold transition-all cursor-pointer"
                                   >
                                     Delete
                                   </button>
                                 </div>
                               ) : (
-                                <span className="text-slate-400 italic text-[10px]">No Access</span>
+                                <span className="text-slate-500 italic text-[10px]">No Access</span>
                               )}
                             </td>
                           </tr>
@@ -2072,24 +2492,101 @@ export default function DashboardScreen({
             </div>
           )}
 
+          {selectedView === "workforce" && (
+            <div className="space-y-4 flex-1 flex flex-col min-h-0">
+              {/* View Header */}
+              <div className="flex flex-col md:flex-row gap-3 items-center justify-between text-left">
+                <div className="flex flex-col gap-0.5">
+                  <h2 className="text-lg font-bold text-white">Workforce Hierarchy & Registry</h2>
+                  <p className="text-[11px] text-[#94A3B8] font-semibold">
+                    Select any manager or employee to view their reporting subordinates tree and download call summaries.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={!selectedWorkforceTree}
+                    onClick={exportWorkforceSummaryCSV}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700/85 disabled:opacity-40 text-xs font-bold transition-all text-white flex items-center gap-2 cursor-pointer shadow-lg disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6.75 12-3-3m0 0-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                    </svg>
+                    Export Tree Summary
+                  </button>
+
+                  <button
+                    disabled={!selectedWorkforceTree}
+                    onClick={exportWorkforceDetailedCallsCSV}
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#1F8FFF] to-[#8B5CF6] hover:opacity-90 disabled:opacity-40 text-xs font-bold transition-all text-white flex items-center gap-2 cursor-pointer shadow-lg shadow-[#1F8FFF]/10 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                    Export Detailed Calls
+                  </button>
+                </div>
+              </div>
+
+              {/* Selector Bar */}
+              <div className="bg-[#0E1528] border border-slate-800/80 rounded-2xl p-4 flex flex-col md:flex-row gap-3 items-center justify-between mt-1">
+                <div className="flex flex-col text-left w-full md:w-auto">
+                  <span className="text-[10px] uppercase tracking-widest text-[#1F8FFF] font-bold">Select Employee</span>
+                  <span className="text-xs text-[#94A3B8] font-semibold">Choose any operator to build their organization reporting structure</span>
+                </div>
+
+                <div className="w-full md:w-80">
+                  <select
+                    value={selectedWorkforceUserId}
+                    onChange={(e) => setSelectedWorkforceUserId(e.target.value)}
+                    className="rounded-xl border border-slate-800 bg-[#050816] px-3.5 py-2 text-xs outline-none hover:border-slate-700 focus:border-[#1F8FFF] font-semibold text-[#F8FAFC] w-full cursor-pointer"
+                  >
+                    <option value="">-- Choose Employee --</option>
+                    {dashboard.users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.full_name} ({u.role.replace("_", " ")})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Tree View Panel */}
+              <div className="bg-[#0E1528] border border-slate-800/80 rounded-2xl p-5 shadow-2xl flex-1 overflow-y-auto min-h-0 flex flex-col mt-2">
+                {selectedWorkforceTree ? (
+                  <div className="space-y-3 overflow-y-auto flex-1 pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                    {renderTreeNode(selectedWorkforceTree)}
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-slate-500 py-10 space-y-2">
+                    <svg className="w-10 h-10 text-slate-700" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
+                    </svg>
+                    <p className="text-xs font-semibold">Select an employee from the dropdown above to display the workforce tree.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
       </main>
 
       {/* Edit User Modal */}
       {isEditModalOpen && editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200 text-left">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#050816]/70 backdrop-blur-sm">
+          <div className="bg-[#0E1528] rounded-3xl border border-slate-800 shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200 text-left text-white">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-[#050816]/30">
               <div>
-                <h3 className="text-sm font-black text-[#04693F] uppercase tracking-wider">EDIT USER HIERARCHY</h3>
-                <div className="text-xs text-slate-400 font-semibold mt-0.5">
+                <h3 className="text-sm font-black text-[#1F8FFF] uppercase tracking-wider">EDIT USER HIERARCHY</h3>
+                <div className="text-xs text-[#94A3B8] font-semibold mt-0.5">
                   Modifying Profile of {editingUser.full_name}
                 </div>
               </div>
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all"
+                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-850 hover:text-white transition-all cursor-pointer"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -2100,52 +2597,52 @@ export default function DashboardScreen({
             {/* Modal Body */}
             <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
               {actionError && (
-                <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-xs font-semibold text-left">
+                <div className="p-3 bg-rose-950/20 border border-rose-900/50 text-rose-400 rounded-xl text-xs font-semibold text-left">
                   {actionError}
                 </div>
               )}
 
               {/* Full Name */}
               <div className="flex flex-col text-left">
-                <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">Full Name</label>
+                <label className="text-[10px] text-[#94A3B8] font-bold uppercase mb-1">Full Name</label>
                 <input
                   type="text"
                   value={editFormData.full_name}
                   onChange={(e) => setEditFormData({ ...editFormData, full_name: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700"
+                  className="w-full rounded-xl border border-slate-800 bg-[#050816] px-3.5 py-2 text-xs outline-none transition focus:border-[#1F8FFF] font-semibold text-white"
                 />
               </div>
 
               {/* Email */}
               <div className="flex flex-col text-left">
-                <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">Email Address</label>
+                <label className="text-[10px] text-[#94A3B8] font-bold uppercase mb-1">Email Address</label>
                 <input
                   type="email"
                   value={editFormData.email}
                   onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700"
+                  className="w-full rounded-xl border border-slate-800 bg-[#050816] px-3.5 py-2 text-xs outline-none transition focus:border-[#1F8FFF] font-semibold text-white"
                 />
               </div>
 
               {/* System ID */}
               <div className="flex flex-col text-left">
-                <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">System ID</label>
+                <label className="text-[10px] text-[#94A3B8] font-bold uppercase mb-1">System ID</label>
                 <input
                   type="text"
                   placeholder="None"
                   value={editFormData.system_id}
                   onChange={(e) => setEditFormData({ ...editFormData, system_id: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700"
+                  className="w-full rounded-xl border border-slate-800 bg-[#050816] px-3.5 py-2 text-xs outline-none transition focus:border-[#1F8FFF] font-semibold text-white"
                 />
               </div>
 
               {/* Role (Conditional on level) */}
               <div className="flex flex-col text-left">
-                <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">Role Hierarchy</label>
+                <label className="text-[10px] text-[#94A3B8] font-bold uppercase mb-1">Role Hierarchy</label>
                 <select
                   value={editFormData.role}
                   onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700 font-semibold text-slate-600"
+                  className="w-full rounded-xl border border-slate-800 bg-[#050816] px-3.5 py-2 text-xs outline-none transition focus:border-[#1F8FFF] font-semibold text-white cursor-pointer"
                 >
                   {dashboard.me?.role === "super_admin" && (
                     <>
@@ -2174,7 +2671,7 @@ export default function DashboardScreen({
 
                 return (
                   <div className="flex flex-col text-left">
-                    <label className="text-[10px] text-slate-400 font-bold uppercase mb-1">Assign Managers (Multiple Allowed)</label>
+                    <label className="text-[10px] text-[#94A3B8] font-bold uppercase mb-1">Assign Managers (Multiple Allowed)</label>
                     {availableManagers.length > 0 && (
                       <div className="mb-2">
                         <input
@@ -2182,20 +2679,20 @@ export default function DashboardScreen({
                           placeholder="Search managers..."
                           value={managerSearchQuery}
                           onChange={(e) => setManagerSearchQuery(e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none transition focus:border-[#04693F] font-semibold text-slate-700 placeholder-slate-400"
+                          className="w-full rounded-xl border border-slate-800 bg-[#050816] px-3 py-1.5 text-xs outline-none transition focus:border-[#1F8FFF] font-semibold text-white placeholder-slate-650"
                         />
                       </div>
                     )}
-                    <div className="border border-slate-200 rounded-xl p-3 max-h-[160px] overflow-y-auto space-y-2 bg-white">
+                    <div className="border border-slate-800 rounded-xl p-3 max-h-[160px] overflow-y-auto space-y-2 bg-[#050816]">
                       {availableManagers.length === 0 ? (
-                        <div className="text-[11px] text-slate-400 font-medium">No higher-ranking managers available</div>
+                        <div className="text-[11px] text-[#94A3B8] font-medium">No higher-ranking managers available</div>
                       ) : filteredManagers.length === 0 ? (
-                        <div className="text-[11px] text-slate-400 font-medium">No matching managers found</div>
+                        <div className="text-[11px] text-[#94A3B8] font-medium">No matching managers found</div>
                       ) : (
                         filteredManagers.map((mgr) => {
                           const isChecked = editFormData.manager_ids.includes(mgr.id);
                           return (
-                            <label key={mgr.id} className="flex items-center gap-2.5 cursor-pointer hover:bg-slate-50/70 p-1.5 rounded-lg transition-colors">
+                            <label key={mgr.id} className="flex items-center gap-2.5 cursor-pointer hover:bg-slate-800/40 p-1.5 rounded-lg transition-colors">
                               <input
                                 type="checkbox"
                                 checked={isChecked}
@@ -2208,11 +2705,11 @@ export default function DashboardScreen({
                                   }
                                   setEditFormData({ ...editFormData, manager_ids: newIds });
                                 }}
-                                className="h-4 w-4 rounded border-slate-350 text-[#04693F] focus:ring-[#04693F]"
+                                className="h-4 w-4 rounded border-slate-800 text-[#1F8FFF] focus:ring-[#1F8FFF] cursor-pointer"
                               />
                               <div className="flex flex-col">
-                                <span className="text-xs font-bold text-slate-700 leading-tight">{mgr.full_name}</span>
-                                <span className="text-[9px] font-black uppercase text-[#04693F]/90 mt-0.5">{mgr.role.replace("_", " ")}</span>
+                                <span className="text-xs font-bold text-[#F8FAFC] leading-tight">{mgr.full_name}</span>
+                                <span className="text-[9px] font-black uppercase text-[#00E6B8] mt-0.5">{mgr.role.replace("_", " ")}</span>
                               </div>
                             </label>
                           );
@@ -2224,29 +2721,29 @@ export default function DashboardScreen({
               })()}
 
               {/* Status Flags */}
-              <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-                <span className="text-xs font-bold text-slate-600">Account Approved</span>
+              <div className="flex items-center justify-between border-t border-slate-800/80 pt-3">
+                <span className="text-xs font-bold text-slate-350">Account Approved</span>
                 <input
                   type="checkbox"
                   checked={editFormData.is_approved}
                   onChange={(e) => setEditFormData({ ...editFormData, is_approved: e.target.checked })}
-                  className="h-4 w-4 rounded border-slate-350 text-[#04693F] focus:ring-[#04693F]"
+                  className="h-4 w-4 rounded border-slate-800 text-[#1F8FFF] focus:ring-[#1F8FFF] cursor-pointer"
                 />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-600">Account Active</span>
+                <span className="text-xs font-bold text-slate-350">Account Active</span>
                 <input
                   type="checkbox"
                   checked={editFormData.is_active}
                   onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.checked })}
-                  className="h-4 w-4 rounded border-slate-350 text-[#04693F] focus:ring-[#04693F]"
+                  className="h-4 w-4 rounded border-slate-800 text-[#1F8FFF] focus:ring-[#1F8FFF] cursor-pointer"
                 />
               </div>
-              <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+              <div className="flex items-center justify-between border-t border-slate-800/80 pt-3">
                 <div className="flex flex-col">
-                  <span className="text-xs font-bold text-slate-600">Tracking Needed</span>
+                  <span className="text-xs font-bold text-slate-350">Tracking Needed</span>
                   {dashboard.me?.role !== "super_admin" && (
-                    <span className="text-[10px] text-slate-400 font-semibold">(Super Admin access only)</span>
+                    <span className="text-[10px] text-[#94A3B8] font-semibold">(Super Admin access only)</span>
                   )}
                 </div>
                 <input
@@ -2254,23 +2751,23 @@ export default function DashboardScreen({
                   disabled={dashboard.me?.role !== "super_admin"}
                   checked={editFormData.is_tracking_needed}
                   onChange={(e) => setEditFormData({ ...editFormData, is_tracking_needed: e.target.checked })}
-                  className="h-4 w-4 rounded border-slate-350 text-[#04693F] focus:ring-[#04693F] disabled:opacity-50"
+                  className="h-4 w-4 rounded border-slate-800 text-[#1F8FFF] focus:ring-[#1F8FFF] disabled:opacity-50 cursor-pointer"
                 />
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-slate-800 bg-[#050816]/30 flex justify-end gap-3">
               <button
                 onClick={() => setIsEditModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all"
+                className="px-4 py-2 rounded-xl border border-slate-800 bg-[#050816] hover:bg-slate-800 text-slate-250 text-xs font-bold transition-all cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveEdit}
                 disabled={actionLoading}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] border border-[#04693F]/15 hover:opacity-95 text-[#04693F] text-xs font-bold transition-all flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#1F8FFF] to-[#8B5CF6] text-white text-xs font-bold hover:opacity-95 transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 {actionLoading ? "Saving..." : "Save Changes"}
               </button>
@@ -2281,14 +2778,14 @@ export default function DashboardScreen({
 
       {/* Delete User Modal */}
       {isDeleteModalOpen && isDeletingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200 text-left">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#050816]/70 backdrop-blur-sm">
+          <div className="bg-[#0E1528] rounded-3xl border border-slate-800 shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200 text-left text-white">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <h3 className="text-sm font-black text-rose-600 uppercase tracking-wider">DELETE USER RECORD</h3>
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-[#050816]/30">
+              <h3 className="text-sm font-black text-rose-450 uppercase tracking-wider">DELETE USER RECORD</h3>
               <button
                 onClick={() => setIsDeleteModalOpen(false)}
-                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all"
+                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-850 hover:text-white transition-all cursor-pointer"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -2299,27 +2796,27 @@ export default function DashboardScreen({
             {/* Modal Body */}
             <div className="p-6 space-y-3">
               {actionError && (
-                <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-xs font-semibold">
+                <div className="p-3 bg-rose-950/20 border border-rose-900/50 text-rose-450 rounded-xl text-xs font-semibold">
                   {actionError}
                 </div>
               )}
-              <p className="text-xs text-slate-500 text-left">
+              <p className="text-xs text-[#94A3B8] text-left leading-relaxed">
                 Are you absolutely sure you want to permanently delete user <b>{isDeletingUser.full_name}</b>? This action is irreversible and will remove all call statistics association.
               </p>
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-slate-800 bg-[#050816]/30 flex justify-end gap-3">
               <button
                 onClick={() => setIsDeleteModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all"
+                className="px-4 py-2 rounded-xl border border-slate-800 bg-[#050816] hover:bg-slate-800 text-slate-250 text-xs font-bold transition-all cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmDelete}
                 disabled={actionLoading}
-                className="px-4 py-2 rounded-xl bg-rose-650 hover:bg-rose-700 text-white text-xs font-bold transition-all"
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all cursor-pointer"
               >
                 {actionLoading ? "Deleting..." : "Permanently Delete"}
               </button>

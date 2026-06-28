@@ -197,20 +197,39 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
         # Resolve dynamic tracking status
         is_tracking_enabled_dynamic = False
         if warrior.is_tracking_enabled:
+            should_deactivate = False
             if warrior.last_activity_timestamp:
                 diff = (datetime.utcnow() - warrior.last_activity_timestamp).total_seconds()
                 if diff < 120:
                     is_tracking_enabled_dynamic = warrior.is_tracking_active
                 else:
-                    if warrior.is_tracking_active:
-                        warrior.is_tracking_active = False
-                        db.add(warrior)
-                        db.commit()
+                    should_deactivate = True
             else:
+                should_deactivate = True
+
+            if should_deactivate:
                 if warrior.is_tracking_active:
                     warrior.is_tracking_active = False
                     db.add(warrior)
                     db.commit()
+                    # Sync offline state to Firestore
+                    try:
+                        from app.firebase_service import update_tracking_status_in_firestore
+                        from app.models import OrgEmployee
+                        emp_id = ""
+                        if warrior.system_id:
+                            emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == warrior.system_id).first()
+                            if emp_rec:
+                                emp_id = emp_rec.employee_id
+                        update_tracking_status_in_firestore(
+                            emp_id=emp_id,
+                            organisation_id=str(warrior.organisation_id) if warrior.organisation_id else "",
+                            system_id=warrior.system_id or "",
+                            is_tracking_enabled=False,
+                            last_activity_timestamp=warrior.last_activity_timestamp or datetime.utcnow()
+                        )
+                    except Exception as ex:
+                        print(f"ERROR: Failed to update Firestore on offline timeout: {ex}")
 
         warrior_reports.append(
             WarriorReport(

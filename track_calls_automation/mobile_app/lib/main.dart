@@ -245,7 +245,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
       ),
     );
     if (confirmed == true && mounted) {
-      await ApiService.clearSession();
+      await ApiService.logout();
       Navigator.pushReplacementNamed(context, '/login');
     }
   }

@@ -54,16 +54,36 @@ def get_all_users(
         
     for u in users_list:
         if u.is_tracking_active:
+            should_deactivate = False
             if u.last_activity_timestamp:
                 diff = (datetime.utcnow() - u.last_activity_timestamp).total_seconds()
                 if diff >= 120:
-                    u.is_tracking_active = False
-                    db.add(u)
-                    db.commit()
+                    should_deactivate = True
             else:
+                should_deactivate = True
+
+            if should_deactivate:
                 u.is_tracking_active = False
                 db.add(u)
                 db.commit()
+                # Sync offline state to Firestore
+                try:
+                    from app.firebase_service import update_tracking_status_in_firestore
+                    from app.models import OrgEmployee
+                    emp_id = ""
+                    if u.system_id:
+                        emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == u.system_id).first()
+                        if emp_rec:
+                            emp_id = emp_rec.employee_id
+                    update_tracking_status_in_firestore(
+                        emp_id=emp_id,
+                        organisation_id=str(u.organisation_id) if u.organisation_id else "",
+                        system_id=u.system_id or "",
+                        is_tracking_enabled=False,
+                        last_activity_timestamp=u.last_activity_timestamp or datetime.utcnow()
+                    )
+                except Exception as ex:
+                    print(f"ERROR: Failed to update Firestore on offline timeout: {ex}")
     return users_list
 
 
@@ -118,16 +138,36 @@ def get_my_team(
 
     for u in users_list:
         if u.is_tracking_active:
+            should_deactivate = False
             if u.last_activity_timestamp:
                 diff = (datetime.utcnow() - u.last_activity_timestamp).total_seconds()
                 if diff >= 120:
-                    u.is_tracking_active = False
-                    db.add(u)
-                    db.commit()
+                    should_deactivate = True
             else:
+                should_deactivate = True
+
+            if should_deactivate:
                 u.is_tracking_active = False
                 db.add(u)
                 db.commit()
+                # Sync offline state to Firestore
+                try:
+                    from app.firebase_service import update_tracking_status_in_firestore
+                    from app.models import OrgEmployee
+                    emp_id = ""
+                    if u.system_id:
+                        emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == u.system_id).first()
+                        if emp_rec:
+                            emp_id = emp_rec.employee_id
+                    update_tracking_status_in_firestore(
+                        emp_id=emp_id,
+                        organisation_id=str(u.organisation_id) if u.organisation_id else "",
+                        system_id=u.system_id or "",
+                        is_tracking_enabled=False,
+                        last_activity_timestamp=u.last_activity_timestamp or datetime.utcnow()
+                    )
+                except Exception as ex:
+                    print(f"ERROR: Failed to update Firestore on offline timeout: {ex}")
                 
     return users_list
 

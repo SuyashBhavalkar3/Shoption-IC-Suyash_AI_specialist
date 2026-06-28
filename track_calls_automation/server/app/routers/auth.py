@@ -309,11 +309,38 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
-def logout(current_user: User = Depends(get_current_user)):
+def logout(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
-    Logout endpoint. JWT is stateless so the actual token invalidation happens
-    client-side (delete from SharedPreferences). This endpoint acts as a
-    server-side acknowledgment and can be extended to support a token blacklist
-    in the future.
+    Logout endpoint. Sets user's tracking state to inactive in the database
+    and synchronizes the status immediately with Firestore.
     """
-    return {"detail": f"User '{current_user.email}' logged out successfully."}
+    from app.firebase_service import update_tracking_status_in_firestore
+    from app.models import OrgEmployee
+    from datetime import datetime
+
+    # 1. Update PostgreSQL tracking states
+    current_user.is_tracking_active = False
+    current_user.is_tracking_enabled = False
+    current_user.last_activity_timestamp = datetime.utcnow()
+    db.add(current_user)
+    db.commit()
+
+    # 2. Sync to Firestore registry
+    emp_id = ""
+    if current_user.system_id:
+        emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == current_user.system_id).first()
+        if emp_rec:
+            emp_id = emp_rec.employee_id
+            
+    try:
+        update_tracking_status_in_firestore(
+            emp_id=emp_id,
+            organisation_id=str(current_user.organisation_id) if current_user.organisation_id else "",
+            system_id=current_user.system_id or "",
+            is_tracking_enabled=False,
+            last_activity_timestamp=current_user.last_activity_timestamp
+        )
+    except Exception as e:
+        print(f"ERROR: Failed to update Firestore on logout: {e}")
+
+    return {"detail": f"User '{current_user.email}' logged out successfully and tracking deactivated."}

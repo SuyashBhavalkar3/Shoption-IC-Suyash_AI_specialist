@@ -41,6 +41,7 @@ function parseDbTimestamp(tsStr: string): Date | null {
 export default function RoleTable({ users, employees, onToggleTrackingNeeded, report }: RoleTableProps) {
   const [activeTab, setActiveTab] = useState<"users" | "registry">("users");
   const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [fromTime, setFromTime] = useState("");
   const [toDate, setToDate] = useState("");
@@ -410,14 +411,20 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
     };
   };
 
-  // Filter users by search query
+  // Filter users by search query and role filter
   const filteredUsers = users.filter((u) => {
-    const query = searchQuery.toLowerCase();
+    if (roleFilter && u.role !== roleFilter) {
+      return false;
+    }
+    const query = searchQuery.toLowerCase().trim();
     const dept = u.department || "Unassigned";
+    const roleNormalized = (u.role || "").replace(/_/g, " ").toLowerCase();
+    const roleOriginal = (u.role || "").toLowerCase();
     return (
       (u.full_name || "").toLowerCase().includes(query) ||
       (u.email || "").toLowerCase().includes(query) ||
-      (u.role || "").toLowerCase().includes(query) ||
+      roleOriginal.includes(query) ||
+      roleNormalized.includes(query) ||
       (u.system_id || "").toLowerCase().includes(query) ||
       dept.toLowerCase().includes(query)
     );
@@ -566,14 +573,14 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
   };
 
   return (
-    <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden mt-3 flex-1 flex flex-col min-h-0">
+    <div className="bg-[#0E1528] border border-slate-800/80 rounded-2xl shadow-sm overflow-hidden mt-3 flex-1 flex flex-col min-h-0 text-[#F8FAFC]">
       {/* Tabs */}
-      <div className="flex border-b border-slate-100 bg-slate-50/50 p-1.5 gap-1.5">
+      <div className="flex border-b border-slate-800 bg-[#0E1528] p-1.5 gap-1.5">
         <button
           onClick={() => setActiveTab("users")}
           className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${activeTab === "users"
-              ? "bg-white text-[#04693F] shadow-sm"
-              : "text-slate-500 hover:text-slate-800 hover:bg-white/50"
+              ? "bg-slate-800 text-[#1F8FFF] shadow-sm"
+              : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
             }`}
         >
           Active Users Directory ({filteredUsers.length})
@@ -581,8 +588,8 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         <button
           onClick={() => setActiveTab("registry")}
           className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${activeTab === "registry"
-              ? "bg-white text-[#04693F] shadow-sm"
-              : "text-slate-500 hover:text-slate-800 hover:bg-white/50"
+              ? "bg-slate-800 text-[#1F8FFF] shadow-sm"
+              : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
             }`}
         >
           Employee Registry ({filteredEmployees.length})
@@ -590,92 +597,113 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       </div>
 
       {/* ERP Control Panel */}
-      <div className="p-2 bg-slate-50/10 border-b border-slate-100/60 flex items-center justify-between gap-3 flex-wrap">
-        {/* Search Input */}
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <input
-            type="text"
-            placeholder={activeTab === "users" ? "Search active users by name, email, role, or dept..." : "Search registered..."}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-full border border-slate-200 bg-white px-3 py-1.5 pl-8 text-xs outline-none transition focus:border-[#04693F] focus:ring-1 focus:ring-[#04693F]/5 font-semibold text-slate-700"
-          />
-          {/* Search Icon */}
-          <svg
-            className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+      <div className="p-2 bg-slate-900/40 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+        {/* Search & Role Filters */}
+        <div className="flex items-center gap-2 flex-wrap flex-1 max-w-lg">
+          {/* Search Input */}
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <input
+              type="text"
+              placeholder={activeTab === "users" ? "Search active users by name, email, role..." : "Search registered..."}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-full border border-slate-800 bg-[#050816] px-3 py-1.5 pl-8 text-xs outline-none transition focus:border-[#1F8FFF] focus:ring-1 focus:ring-[#1F8FFF]/10 font-semibold text-[#F8FAFC] placeholder-[#94A3B8]/50"
+            />
+            {/* Search Icon */}
+            <svg
+              className="absolute left-3 top-2.5 h-3.5 w-3.5 text-[#94A3B8]"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+
+          {/* Role Filter Dropdown */}
+          {activeTab === "users" && (
+            <div className="relative min-w-[130px]">
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                className="rounded-full border border-slate-800 bg-[#050816] px-3 py-1.5 text-xs outline-none text-[#F8FAFC] font-semibold transition focus:border-[#1F8FFF] cursor-pointer"
+              >
+                <option value="">All Roles</option>
+                <option value="super_admin">Super Admin</option>
+                <option value="admin">Admin</option>
+                <option value="group_leader">Group Leader</option>
+                <option value="warrior">Warrior</option>
+              </select>
+            </div>
+          )}
         </div>
 
-        {/* Date & Time Range Filters (Aligned next to search) */}
+        {/* Date & Time Range Filters */}
         {activeTab === "users" && (
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 bg-slate-50/50 px-2 py-0.5 rounded-lg border border-slate-100/50">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider whitespace-nowrap">From:</span>
+            <div className="flex items-center gap-1.5 bg-slate-900/40 px-2 py-0.5 rounded-lg border border-slate-800">
+              <span className="text-[10px] text-[#94A3B8] font-bold uppercase tracking-wider whitespace-nowrap">From:</span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-600 outline-none transition focus:border-[#04693F]"
+                className="rounded border border-slate-800 bg-[#050816] px-1.5 py-0.5 text-xs font-semibold text-[#F8FAFC] outline-none transition focus:border-[#1F8FFF]"
               />
               <input
                 type="time"
                 value={fromTime}
                 onChange={(e) => setFromTime(e.target.value)}
-                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-600 outline-none transition focus:border-[#04693F]"
+                className="rounded border border-slate-800 bg-[#050816] px-1.5 py-0.5 text-xs font-semibold text-[#F8FAFC] outline-none transition focus:border-[#1F8FFF]"
               />
             </div>
-            <div className="flex items-center gap-1.5 bg-slate-50/50 px-2 py-0.5 rounded-lg border border-slate-100/50">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider whitespace-nowrap">To:</span>
+            <div className="flex items-center gap-1.5 bg-slate-900/40 px-2 py-0.5 rounded-lg border border-slate-800">
+              <span className="text-[10px] text-[#94A3B8] font-bold uppercase tracking-wider whitespace-nowrap">To:</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-600 outline-none transition focus:border-[#04693F]"
+                className="rounded border border-slate-800 bg-[#050816] px-1.5 py-0.5 text-xs font-semibold text-[#F8FAFC] outline-none transition focus:border-[#1F8FFF]"
               />
               <input
                 type="time"
                 value={toTime}
                 onChange={(e) => setToTime(e.target.value)}
-                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-600 outline-none transition focus:border-[#04693F]"
+                className="rounded border border-slate-800 bg-[#050816] px-1.5 py-0.5 text-xs font-semibold text-[#F8FAFC] outline-none transition focus:border-[#1F8FFF]"
               />
             </div>
           </div>
         )}
 
-        {/* Clear Filters Button (Shows next to inputs when active) */}
-        {(searchQuery || fromDate || fromTime || toDate || toTime) && (
+        {/* Clear Filters Button */}
+        {(searchQuery || roleFilter || fromDate || fromTime || toDate || toTime) && (
           <button
             onClick={() => {
               setSearchQuery("");
+              setRoleFilter("");
               setFromDate("");
               setFromTime("");
               setToDate("");
               setToTime("");
             }}
-            className="text-rose-500 hover:text-rose-700 text-[10px] font-bold transition-all whitespace-nowrap"
+            className="text-rose-400 hover:text-rose-300 text-[10px] font-bold transition-all whitespace-nowrap"
           >
             Clear Filters
           </button>
         )}
 
-        {/* Export Buttons (Aligned to the right end) */}
+        {/* Export Buttons */}
         {activeTab === "users" && (
           <div className="flex gap-1.5">
             <button
               onClick={handleExportCSV}
-              className="px-2.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap"
+              className="px-2.5 py-1 rounded-md border border-slate-800 bg-[#050816] hover:bg-slate-850 text-[#F8FAFC] text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap"
             >
               Export Excel
             </button>
             <button
               onClick={handleExportPDF}
-              className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] border border-[#04693F]/15 hover:opacity-95 text-[#04693F] text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap"
+              className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#1F8FFF]/10 to-[#8B5CF6]/10 border border-[#1F8FFF]/30 hover:opacity-95 text-[#1F8FFF] text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap"
             >
               Export PDF
             </button>
@@ -686,79 +714,79 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       {/* Table Content */}
       <div className="overflow-x-auto overflow-y-auto flex-1">
         {activeTab === "users" ? (
-          <table className="min-w-full divide-y divide-slate-100 text-left text-xs font-semibold border-collapse">
-            <thead className="text-slate-500 uppercase tracking-wider font-bold">
+          <table className="min-w-full divide-y divide-slate-800 text-left text-xs font-semibold border-collapse">
+            <thead className="text-[#94A3B8] uppercase tracking-wider font-bold">
               <tr>
-                <th className="px-4 py-3 sticky top-0 left-0 z-30 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] border-r border-slate-200/80 text-left min-w-[140px]">
-                  <div className="leading-tight text-[10px] font-bold text-slate-700">NAME</div>
+                <th className="px-4 py-3 sticky top-0 left-0 z-30 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] border-r border-slate-800 text-left min-w-[140px]">
+                  <div className="leading-tight text-[10px] font-bold text-[#F8FAFC]">NAME</div>
                 </th>
-                <th className="px-3 py-3 text-left sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[10px] font-bold leading-tight min-w-[150px]">
+                <th className="px-3 py-3 text-left sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[10px] font-bold leading-tight min-w-[150px]">
                   <div>EMAIL ID</div>
                 </th>
-                <th className="px-3 py-3 text-left sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[10px] font-bold leading-tight min-w-[150px]">
+                <th className="px-3 py-3 text-left sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[10px] font-bold leading-tight min-w-[150px]">
                   <div>ROLE / DEPT</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[90px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[90px]">
                   <div>TOTAL</div>
                   <div>CALLS</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
                   <div>TOTAL SUCCESS</div>
                   <div>CALLS</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[110px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[110px]">
                   <div>TOTAL MISSED</div>
                   <div>CALLS</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[145px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[145px]">
                   <div>TOTAL MISSED</div>
                   <div>NOT RESPONDED</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
                   <div>TOTAL TALKTIME</div>
                   <div>(HH:MM)</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[110px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[110px]">
                   <div>AVERAGE CALL</div>
                   <div>TIME (MM:SS)</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[130px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[130px]">
                   <div>TOTAL INCOMING</div>
                   <div>CALLS</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[100px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[100px]">
                   <div>INCOMING</div>
                   <div>TALKTIME</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
                   <div>INCOMING</div>
                   <div>AVR. CALL TT</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[90px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[90px]">
                   <div>TOTAL</div>
                   <div>DIALED</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
                   <div>TOTAL SUCCESS</div>
                   <div>DIALED</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[100px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[100px]">
                   <div>OUTGOING</div>
                   <div>TALKTIME</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
                   <div>OUTCOMING</div>
                   <div>AVR. CALL TT</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)] text-[9px] font-bold leading-tight min-w-[110px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[110px]">
                   <div>ACTION</div>
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody className="divide-y divide-slate-800 bg-[#0E1528]">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={17} className="px-6 py-10 text-center text-slate-400 font-medium">
+                  <td colSpan={17} className="px-6 py-10 text-center text-[#94A3B8]/60 font-medium">
                     No active users match the current hierarchy or search filters.
                   </td>
                 </tr>
@@ -771,33 +799,33 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                   .sort((a, b) => b.metrics.totalCalls - a.metrics.totalCalls)
                   .map(({ user, metrics }) => {
                     return (
-                      <tr key={user.id} className="hover:bg-slate-50/45 transition-colors group">
-                        <td className="px-4 py-2 sticky left-0 z-20 bg-white group-hover:bg-slate-50 transition-colors border-r border-slate-100 font-bold text-slate-800 text-xs truncate max-w-[150px]" title={user.full_name}>
+                      <tr key={user.id} className="hover:bg-slate-800/30 transition-colors group">
+                        <td className="px-4 py-2 sticky left-0 z-20 bg-[#0E1528] group-hover:bg-slate-800/40 transition-colors border-r border-slate-800 font-bold text-[#F8FAFC] text-xs truncate max-w-[150px]" title={user.full_name}>
                           {user.full_name}
                         </td>
-                        <td className="px-3 py-2 text-left text-xs font-semibold text-slate-500 truncate max-w-[180px]" title={user.email}>
+                        <td className="px-3 py-2 text-left text-xs font-semibold text-[#94A3B8] truncate max-w-[180px]" title={user.email}>
                           {user.email}
                         </td>
-                        <td className="px-3 py-2 text-left text-xs font-bold text-[#04693F] whitespace-nowrap">
+                        <td className="px-3 py-2 text-left text-xs font-bold text-[#1F8FFF] whitespace-nowrap">
                           {user.role.replace("_", " ").toUpperCase()} / {user.department || "Unassigned"}
                         </td>
-                        <td className="px-4 py-2 text-center text-sm font-bold text-slate-800">{metrics.totalCalls}</td>
-                        <td className="px-4 py-2 text-center text-sm font-bold text-[#04693F]">{metrics.totalSuccessCalls}</td>
-                        <td className="px-4 py-2 text-center text-slate-600">{metrics.missed}</td>
-                        <td className="px-4 py-2 text-center text-slate-600">{metrics.missedNotResponded}</td>
-                        <td className="px-4 py-2 text-center text-slate-600 font-medium">{metrics.totalTalktime}</td>
-                        <td className="px-4 py-2 text-center text-slate-600 font-medium">{metrics.avgCalltime}</td>
-                        <td className="px-4 py-2 text-center text-slate-600">{metrics.incomingCalls}</td>
-                        <td className="px-4 py-2 text-center text-slate-600">{metrics.incomingTalktime}</td>
-                        <td className="px-4 py-2 text-center text-slate-600">{metrics.incomingAvgTT}</td>
-                        <td className="px-4 py-2 text-center text-slate-600">{metrics.dialed}</td>
-                        <td className="px-4 py-2 text-center text-slate-600">{metrics.outgoingSuccessReceived}</td>
-                        <td className="px-4 py-2 text-center text-slate-600 font-medium">{metrics.outgoingTalktime}</td>
-                        <td className="px-4 py-2 text-center text-slate-600">{metrics.outgoingAvgTT}</td>
+                        <td className="px-4 py-2 text-center text-sm font-bold text-[#F8FAFC]">{metrics.totalCalls}</td>
+                        <td className="px-4 py-2 text-center text-sm font-bold text-[#00E6B8]">{metrics.totalSuccessCalls}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.missed}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.missedNotResponded}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] font-medium">{metrics.totalTalktime}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] font-medium">{metrics.avgCalltime}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.incomingCalls}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.incomingTalktime}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.incomingAvgTT}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.dialed}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.outgoingSuccessReceived}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] font-medium">{metrics.outgoingTalktime}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.outgoingAvgTT}</td>
                         <td className="px-3 py-2 text-center">
                           <button
                             onClick={() => setSelectedReportUser(user)}
-                            className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] border border-[#04693F]/15 hover:opacity-90 text-[#04693F] text-[10px] font-bold transition-all shadow-xs whitespace-nowrap"
+                            className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#1F8FFF]/10 to-[#8B5CF6]/10 border border-[#1F8FFF]/25 hover:opacity-90 text-[#1F8FFF] text-[10px] font-bold transition-all shadow-xs whitespace-nowrap"
                           >
                             View Report
                           </button>
@@ -809,45 +837,45 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
             </tbody>
           </table>
         ) : (
-          <table className="min-w-full divide-y divide-slate-100 text-left text-sm border-collapse">
-            <thead className="text-slate-500 uppercase tracking-wider text-xs font-semibold">
+          <table className="min-w-full divide-y divide-slate-800 text-left text-sm border-collapse">
+            <thead className="text-[#94A3B8] uppercase tracking-wider text-xs font-semibold">
               <tr>
-                <th className="px-6 py-4 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Employee ID / Email</th>
-                <th className="px-6 py-4 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">System ID</th>
-                <th className="px-6 py-4 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Department</th>
-                <th className="px-6 py-4 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Created Date</th>
-                <th className="px-6 py-4 sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">Call Tracking</th>
+                <th className="px-6 py-4 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">Employee ID / Email</th>
+                <th className="px-6 py-4 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">System ID</th>
+                <th className="px-6 py-4 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">Department</th>
+                <th className="px-6 py-4 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">Created Date</th>
+                <th className="px-6 py-4 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">Call Tracking</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+            <tbody className="divide-y divide-slate-800 bg-[#0E1528]">
               {filteredEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-slate-400 font-medium">
+                  <td colSpan={5} className="px-6 py-10 text-center text-[#94A3B8]/60 font-medium">
                     No registered employees match the search filter.
                   </td>
                 </tr>
               ) : (
                 filteredEmployees.map((emp) => (
-                  <tr key={emp.id} className="hover:bg-slate-50/40 transition-colors">
+                  <tr key={emp.id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="px-6 py-4">
-                      <div className="font-semibold text-slate-800">{emp.employee_id}</div>
-                      <div className="text-xs text-slate-400 font-medium">{emp.email ?? "No email provided"}</div>
+                      <div className="font-semibold text-[#F8FAFC]">{emp.employee_id}</div>
+                      <div className="text-xs text-[#94A3B8] font-medium">{emp.email ?? "No email provided"}</div>
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs font-bold text-[#015C96]">
+                    <td className="px-6 py-4 font-mono text-xs font-bold text-[#1F8FFF]">
                       {emp.system_id}
                     </td>
-                    <td className="px-6 py-4 text-xs font-semibold text-slate-700">
+                    <td className="px-6 py-4 text-xs font-semibold text-[#F8FAFC]">
                       {emp.department || "Unassigned"}
                     </td>
-                    <td className="px-6 py-4 text-slate-500 font-medium">
+                    <td className="px-6 py-4 text-[#94A3B8] font-medium">
                       {new Date(emp.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
                       <button
                         onClick={() => onToggleTrackingNeeded?.(emp.employee_id, emp.is_tracking_needed)}
                         className={`px-4 py-2 rounded-full text-xs font-bold border transition-all ${emp.is_tracking_needed
-                            ? "bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] text-[#04693F] border-[#04693F]/15 hover:opacity-90"
-                            : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                            ? "bg-gradient-to-r from-[#00E6B8]/10 to-[#1F8FFF]/10 text-[#00E6B8] border-[#00E6B8]/30 hover:opacity-90"
+                            : "bg-[#050816] text-[#94A3B8] border-slate-850 hover:bg-slate-800/40"
                           }`}
                       >
                         {emp.is_tracking_needed ? "Tracking Required" : "Tracking Disabled"}
@@ -1036,19 +1064,19 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         };
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#050816]/75 backdrop-blur-xs">
+            <div className="bg-[#0E1528] rounded-3xl border border-slate-800 shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
               {/* Modal Header */}
-              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/40">
                 <div>
-                  <h3 className="text-sm font-black text-[#04693F] uppercase tracking-wider">DETAILED CALL ANALYTICS REPORT</h3>
-                  <div className="text-xs font-bold text-slate-700 mt-0.5">
-                    {userName} &nbsp;&bull;&nbsp; <span className="text-[#04693F]">{userDept}</span>
+                  <h3 className="text-sm font-black text-[#1F8FFF] uppercase tracking-wider">DETAILED CALL ANALYTICS REPORT</h3>
+                  <div className="text-xs font-bold text-[#F8FAFC] mt-0.5">
+                    {userName} &nbsp;&bull;&nbsp; <span className="text-[#00E6B8]">{userDept}</span>
                   </div>
                 </div>
                 <button
                   onClick={() => setSelectedReportUser(null)}
-                  className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all"
+                  className="p-1.5 rounded-xl text-[#94A3B8] hover:bg-slate-800 hover:text-[#F8FAFC] transition-all"
                   aria-label="Close Modal"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
@@ -1058,13 +1086,13 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
               </div>
 
               {/* Modal Tab Switcher */}
-              <div className="flex border-b border-slate-100 bg-slate-50/50 p-1.5 gap-1.5 mx-6 mt-3">
+              <div className="flex border-b border-slate-800 bg-slate-900/40 p-1.5 gap-1.5 mx-6 mt-3">
                 <button
                   onClick={() => setModalTab("missed")}
                   className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${
                     modalTab === "missed"
-                      ? "bg-white text-[#04693F] shadow-xs border border-slate-100/60"
-                      : "text-slate-500 hover:text-slate-800 hover:bg-white/50"
+                      ? "bg-[#0E1528] text-[#1F8FFF] shadow-xs border border-slate-800"
+                      : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
                   }`}
                 >
                   Missed Call Report ({reportData.length})
@@ -1073,8 +1101,8 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                   onClick={() => setModalTab("all")}
                   className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${
                     modalTab === "all"
-                      ? "bg-white text-[#04693F] shadow-xs border border-slate-100/60"
-                      : "text-slate-500 hover:text-slate-800 hover:bg-white/50"
+                      ? "bg-[#0E1528] text-[#1F8FFF] shadow-xs border border-slate-800"
+                      : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
                   }`}
                 >
                   All Call Logs ({allLogsData.length})
@@ -1084,47 +1112,47 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
               {/* Modal Body */}
               <div className="px-6 pb-6 pt-0 flex-grow overflow-y-auto min-h-0 mt-3">
                 {modalTab === "missed" ? (
-                  <table className="min-w-full divide-y divide-slate-100 text-left text-xs font-semibold border-collapse">
-                    <thead className="text-slate-500 uppercase tracking-wider font-bold bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">
+                  <table className="min-w-full divide-y divide-slate-800 text-left text-xs font-semibold border-collapse">
+                    <thead className="text-[#94A3B8] uppercase tracking-wider font-bold bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
                       <tr>
-                        <th className="px-4 py-3 text-left sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">NUMBER</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">MISSED DATE</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">MISSED TIME</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">NO RESPOND DURATION</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">RESPONDED DATE</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">RESPONDED TIME</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">RESPONSE TYPE</th>
+                        <th className="px-4 py-3 text-left sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">NUMBER</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">MISSED DATE</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">MISSED TIME</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">NO RESPOND DURATION</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">RESPONDED DATE</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">RESPONDED TIME</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">RESPONSE TYPE</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
+                    <tbody className="divide-y divide-slate-800 bg-[#0E1528]">
                       {reportData.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="px-6 py-10 text-center text-slate-400 font-medium">
+                          <td colSpan={7} className="px-6 py-10 text-center text-[#94A3B8]/60 font-medium">
                             No missed calls recorded for this user under the active filters.
                           </td>
                         </tr>
                       ) : (
                         reportData.map((row, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/45 transition-colors">
-                            <td className="px-4 py-3 text-left text-sm font-bold text-slate-800">{row.number}</td>
-                            <td className="px-4 py-3 text-center text-slate-600">{row.missedDate}</td>
-                            <td className="px-4 py-3 text-center text-slate-600">{row.missedTime}</td>
-                            <td className={`px-4 py-3 text-center font-bold ${row.respondDuration === "Not Responded" ? "text-rose-500" : "text-emerald-600"}`}>
+                          <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="px-4 py-3 text-left text-sm font-bold text-[#F8FAFC]">{row.number}</td>
+                            <td className="px-4 py-3 text-center text-[#94A3B8]">{row.missedDate}</td>
+                            <td className="px-4 py-3 text-center text-[#94A3B8]">{row.missedTime}</td>
+                            <td className={`px-4 py-3 text-center font-bold ${row.respondDuration === "Not Responded" ? "text-rose-400" : "text-[#00E6B8]"}`}>
                               {row.respondDuration}
                             </td>
-                            <td className="px-4 py-3 text-center text-slate-600">{row.respondedDate}</td>
-                            <td className="px-4 py-3 text-center text-slate-600">{row.respondedTime}</td>
+                            <td className="px-4 py-3 text-center text-[#94A3B8]">{row.respondedDate}</td>
+                            <td className="px-4 py-3 text-center text-[#94A3B8]">{row.respondedTime}</td>
                             <td className="px-4 py-3 text-center">
                               {row.responseType !== "-" ? (
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                   row.responseType === "INCOMING" 
-                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-100" 
-                                    : "bg-blue-50 text-blue-700 border border-blue-100"
+                                    ? "bg-[#00E6B8]/10 text-[#00E6B8] border border-[#00E6B8]/20" 
+                                    : "bg-[#1F8FFF]/10 text-[#1F8FFF] border border-[#1F8FFF]/20"
                                 }`}>
                                   {row.responseType}
                                 </span>
                               ) : (
-                                <span className="text-slate-400">-</span>
+                                <span className="text-[#94A3B8]/60">-</span>
                               )}
                             </td>
                           </tr>
@@ -1133,47 +1161,47 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                     </tbody>
                   </table>
                 ) : (
-                  <table className="min-w-full divide-y divide-slate-100 text-left text-xs font-semibold border-collapse">
-                    <thead className="text-slate-500 uppercase tracking-wider font-bold bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">
+                  <table className="min-w-full divide-y divide-slate-800 text-left text-xs font-semibold border-collapse">
+                    <thead className="text-[#94A3B8] uppercase tracking-wider font-bold bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">
                       <tr>
-                        <th className="px-4 py-3 text-left sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">NUMBER</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">CALL TYPE</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">DATE</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">TIME</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">DURATION</th>
-                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_rgba(0,0,0,0.05)]">STATUS</th>
+                        <th className="px-4 py-3 text-left sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">NUMBER</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">CALL TYPE</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">DATE</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">TIME</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">DURATION</th>
+                        <th className="px-4 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">STATUS</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
+                    <tbody className="divide-y divide-slate-800 bg-[#0E1528]">
                       {allLogsData.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-6 py-10 text-center text-slate-400 font-medium">
+                          <td colSpan={6} className="px-6 py-10 text-center text-[#94A3B8]/60 font-medium">
                             No call logs recorded for this user under the active filters.
                           </td>
                         </tr>
                       ) : (
                         allLogsData.map((row, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/45 transition-colors">
-                            <td className="px-4 py-3 text-left text-sm font-bold text-slate-800">{row.number}</td>
+                          <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="px-4 py-3 text-left text-sm font-bold text-[#F8FAFC]">{row.number}</td>
                             <td className="px-4 py-3 text-center">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                 row.type === "INCOMING" 
-                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-100" 
-                                  : "bg-blue-50 text-blue-700 border border-blue-100"
+                                  ? "bg-[#00E6B8]/10 text-[#00E6B8] border border-[#00E6B8]/20" 
+                                  : "bg-[#1F8FFF]/10 text-[#1F8FFF] border border-[#1F8FFF]/20"
                               }`}>
                                 {row.type}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-center text-slate-600">{row.date}</td>
-                            <td className="px-4 py-3 text-center text-slate-600">{row.time}</td>
-                            <td className="px-4 py-3 text-center text-slate-600">{row.duration}</td>
+                            <td className="px-4 py-3 text-center text-[#94A3B8]">{row.date}</td>
+                            <td className="px-4 py-3 text-center text-[#94A3B8]">{row.time}</td>
+                            <td className="px-4 py-3 text-center text-[#94A3B8]">{row.duration}</td>
                             <td className="px-4 py-3 text-center">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                 row.status.toLowerCase().includes("missed") 
-                                  ? "bg-rose-50 text-rose-700 border border-rose-100" 
+                                  ? "bg-rose-500/10 text-rose-400 border border-rose-500/20" 
                                   : row.status.toLowerCase().includes("answered") || row.status.toLowerCase().includes("success")
-                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                                    : "bg-slate-100 text-slate-700 border border-slate-200"
+                                    ? "bg-[#00E6B8]/10 text-[#00E6B8] border border-[#00E6B8]/20"
+                                    : "bg-slate-800 text-[#94A3B8] border border-slate-700"
                               }`}>
                                 {row.status}
                               </span>
@@ -1187,16 +1215,16 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
               </div>
 
               {/* Modal Footer */}
-              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+              <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/40 flex justify-end gap-3">
                 <button
                   onClick={handleModalCSV}
-                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all"
+                  className="px-4 py-2 rounded-xl border border-slate-850 bg-[#050816] hover:bg-slate-800/40 text-[#F8FAFC] text-xs font-bold transition-all"
                 >
                   Export CSV
                 </button>
                 <button
                   onClick={handleModalPrint}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#e6f7ee] to-[#e8f4fc] border border-[#04693F]/15 hover:opacity-95 text-[#04693F] text-xs font-bold transition-all"
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#1F8FFF]/10 to-[#8B5CF6]/10 border border-[#1F8FFF]/30 hover:opacity-95 text-[#1F8FFF] text-xs font-bold transition-all"
                 >
                   Print Report
                 </button>

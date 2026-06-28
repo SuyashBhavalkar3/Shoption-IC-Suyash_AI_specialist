@@ -386,8 +386,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
   }
 
   Future<void> _handleLogout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    await ApiService.logout();
     if (mounted) {
       Navigator.pushReplacementNamed(context, '/login');
     }
