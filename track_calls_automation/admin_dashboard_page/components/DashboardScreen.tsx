@@ -77,17 +77,17 @@ function CompactMetricCard({ title, value, note, textColor = "text-[#00E6B8]", b
     <div className="flex-1 min-w-[200px] max-w-[340px] bg-[#0E1528] border border-slate-800/80 rounded-2xl p-4 shadow-sm relative overflow-hidden group hover:border-slate-700 transition-colors">
       {/* Accent side border */}
       <div className={`absolute left-0 top-0 bottom-0 w-1 ${mappedBorderColor}`} />
-      
+
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-wider">{title}</span>
       </div>
-      
+
       <div className="mt-2.5">
         <span className={`text-xl font-bold ${mappedTextColor}`}>
           {value}
         </span>
       </div>
-      
+
       <div className="mt-1 text-[9px] text-[#94A3B8]/60 font-medium">
         {note}
       </div>
@@ -1019,16 +1019,7 @@ export default function DashboardScreen({
     return list;
   }, [dashboard.report, dashboard.users, selectedSubordinateId]);
 
-  const filteredUsersList = useMemo(() => {
-    return dashboard.users.filter((user) => {
-      const q = userSearchQuery.toLowerCase().trim();
-      if (!q) return true;
-      return (
-        (user.full_name || "").toLowerCase().includes(q) ||
-        (user.email || "").toLowerCase().includes(q)
-      );
-    });
-  }, [dashboard.users, userSearchQuery]);
+
 
   const leaderSummaryData = useMemo(() => {
     const report = dashboard.report;
@@ -1368,7 +1359,7 @@ export default function DashboardScreen({
 
   const hourlyDistributionData = useMemo(() => {
     const hourlyCounts: Record<number, { hourStr: string; hour: number; Total: number; Missed: number; Dropped: number }> = {};
-    
+
     for (let h = 0; h < 24; h++) {
       const ampm = h >= 12 ? "PM" : "AM";
       const displayHour = h % 12 === 0 ? 12 : h % 12;
@@ -1424,7 +1415,7 @@ export default function DashboardScreen({
 
   const exportWorkforceSummaryCSV = () => {
     if (!selectedWorkforceTree) return;
-    
+
     try {
       const flatNodes: TreeNode[] = [];
       const collectNodes = (node: TreeNode) => {
@@ -1444,7 +1435,7 @@ export default function DashboardScreen({
         const ownStats = userStatsMap[u.id] || { totalCalls: 0, successCalls: 0, totalTalkTime: 0 };
         const mIds = u.manager_ids || (u.manager_id ? [u.manager_id] : []);
         const managerNames = dashboard.users.filter(x => mIds.includes(x.id)).map(x => x.full_name || x.email).join("; ");
-        
+
         rows.push([
           u.full_name || "",
           u.email || "",
@@ -1463,7 +1454,7 @@ export default function DashboardScreen({
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.setAttribute("href", url);
-      
+
       const fileName = `${(selectedWorkforceTree.user?.full_name || "workforce").replace(/\s+/g, "_")}_workforce_summary.csv`;
       link.setAttribute("download", fileName);
       document.body.appendChild(link);
@@ -1530,7 +1521,7 @@ export default function DashboardScreen({
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.setAttribute("href", url);
-      
+
       const fileName = `${(selectedWorkforceTree.user?.full_name || "workforce").replace(/\s+/g, "_")}_detailed_calls.csv`;
       link.setAttribute("download", fileName);
       document.body.appendChild(link);
@@ -1555,7 +1546,7 @@ export default function DashboardScreen({
 
     return (
       <div key={node.user.id} className="select-none text-left">
-        <div 
+        <div
           className="flex items-center justify-between py-2.5 px-4 hover:bg-slate-800/30 rounded-xl transition-all border border-transparent hover:border-slate-800/40 cursor-pointer"
           style={{ marginLeft: `${depth * 20}px` }}
           onClick={hasChildren ? toggleExpand : undefined}
@@ -1589,13 +1580,12 @@ export default function DashboardScreen({
                 <span className="text-[8px] px-1.5 py-0.5 rounded-md bg-slate-850 text-[#94A3B8] font-bold uppercase tracking-wider shrink-0">
                   {node.user.role.replace("_", " ")}
                 </span>
-                
+
                 {node.user.role === "warrior" && (
-                  <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-bold ${
-                    node.user.is_tracking_active 
-                      ? "bg-emerald-950/30 text-emerald-450 border border-emerald-900/50" 
-                      : "bg-slate-900 text-slate-500 border border-slate-800"
-                  }`}>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-bold ${node.user.is_tracking_active
+                    ? "bg-emerald-950/30 text-emerald-450 border border-emerald-900/50"
+                    : "bg-slate-900 text-slate-500 border border-slate-800"
+                    }`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${node.user.is_tracking_active ? "bg-emerald-500 animate-pulse" : "bg-slate-650"}`}></span>
                     {node.user.is_tracking_active ? "Tracking" : "Idle"}
                   </span>
@@ -2059,7 +2049,7 @@ export default function DashboardScreen({
                     <h3 className="text-sm font-bold text-[#F8FAFC]">Hourly Call Distribution</h3>
                     <p className="text-[10px] text-[#94A3B8] font-semibold mt-0.5">Analysis of hourly peak activity across Total, Missed, and Dropped calls</p>
                   </div>
-                  
+
                   {/* Cascading Hierarchical Selector */}
                   <div className="flex flex-wrap gap-2.5 items-center">
                     {/* Admin Dropdown */}
@@ -2187,8 +2177,8 @@ export default function DashboardScreen({
                         <AreaChart data={hourlyDistributionData} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
                           <defs>
                             <linearGradient id="totalHourlyGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#1F8FFF" stopOpacity={0.4}/>
-                              <stop offset="95%" stopColor="#1F8FFF" stopOpacity={0}/>
+                              <stop offset="5%" stopColor="#1F8FFF" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="#1F8FFF" stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />
@@ -2211,8 +2201,8 @@ export default function DashboardScreen({
                         <AreaChart data={hourlyDistributionData} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
                           <defs>
                             <linearGradient id="missedHourlyGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#ef4444" stopOpacity={0.4}/>
-                              <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                              <stop offset="5%" stopColor="#ef4444" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />
@@ -2235,8 +2225,8 @@ export default function DashboardScreen({
                         <AreaChart data={hourlyDistributionData} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
                           <defs>
                             <linearGradient id="droppedHourlyGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.4}/>
-                              <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0}/>
+                              <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />
@@ -2413,8 +2403,8 @@ export default function DashboardScreen({
                           <AreaChart data={warriorHourlyData} margin={{ top: 15, right: 10, left: -25, bottom: 0 }}>
                             <defs>
                               <linearGradient id="colorCalls" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.4}/>
-                                <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0}/>
+                                <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.4} />
+                                <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
                               </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.05)" />

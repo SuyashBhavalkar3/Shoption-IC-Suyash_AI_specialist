@@ -134,6 +134,17 @@ export default function Home() {
         fetch(`${getApiBaseUrl()}/org-employees/`, { headers }),
       ]);
 
+      // If token is invalid or expired, log out immediately
+      if (
+        meRes.status === 401 || meRes.status === 403 ||
+        usersRes.status === 401 || usersRes.status === 403 ||
+        reportRes.status === 401 || reportRes.status === 403
+      ) {
+        console.warn("Authentication failed (401/403). Logging out...");
+        handleLogout();
+        return;
+      }
+
       if (!meRes.ok) throw new Error(await readError(meRes));
       if (!usersRes.ok) throw new Error(await readError(usersRes));
       if (!reportRes.ok) throw new Error(await readError(reportRes));
@@ -156,9 +167,9 @@ export default function Home() {
         employees,
       });
     } catch (err) {
+      console.error("Dashboard polling error:", err);
       setError(err instanceof Error ? err.message : "Failed to load dashboard data");
-      // Enforce strict login: if data load fails (e.g. invalid/expired token), logout immediately
-      handleLogout();
+      // Do NOT trigger handleLogout() here to prevent logging out during network drops or transient server restarts
     } finally {
       setLoadingData(false);
       setLoading(false);
