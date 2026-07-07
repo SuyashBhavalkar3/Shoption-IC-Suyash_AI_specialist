@@ -1,7 +1,5 @@
 import psycopg2
 
-db_url = "postgresql://postgres.rtxyhcsxakkmrklxvpqd:eQk87e%25BsvK%23%2F-z@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require"
-
 print("Connecting to database...")
 try:
     conn = psycopg2.connect(db_url)

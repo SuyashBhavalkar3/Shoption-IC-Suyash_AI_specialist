@@ -130,7 +130,7 @@ export default function Home() {
       const [meRes, usersRes, reportRes, employeesRes] = await Promise.all([
         fetch(`${getApiBaseUrl()}/users/me`, { headers }),
         fetch(`${getApiBaseUrl()}/users/`, { headers }),
-        fetch(`${getApiBaseUrl()}/calls/reports`, { headers }),
+        fetch(`/api/reports`, { headers }),
         fetch(`${getApiBaseUrl()}/org-employees/`, { headers }),
       ]);
 
@@ -257,6 +257,11 @@ export default function Home() {
       onUpdateUser={handleUpdateUser}
       onDeleteUser={handleDeleteUser}
       onToggleUserTracking={handleToggleUserTracking}
+      onRefresh={async () => {
+        if (token) {
+          await loadDashboard(token);
+        }
+      }}
     />
   );
 }

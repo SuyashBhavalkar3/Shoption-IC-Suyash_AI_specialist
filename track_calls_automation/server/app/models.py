@@ -45,7 +45,6 @@ class User(Base):
     # Approval flow: warrior registers → is_approved=False → admin approves + assigns → True
     is_approved  = Column(Boolean, nullable=False, server_default=text("false"))
     is_active    = Column(Boolean, nullable=False, server_default=text("true"))
-    is_tracking_enabled = Column(Boolean, nullable=False, server_default=text("true"), default=True)
     is_tracking_active  = Column(Boolean, nullable=False, server_default=text("false"), default=False)
     created_at   = Column(DateTime, server_default=text("now()"), nullable=False)
     # system_id links this user to their org_employees record (set at registration if employee_id is provided)
@@ -75,18 +74,18 @@ class CallLog(Base):
     __tablename__ = "call_logs"
 
     id               = Column(Integer, primary_key=True, index=True)
-    user_id          = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id          = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     phone_number     = Column(String, nullable=False)
     call_type        = Column(String, nullable=False)
     call_status      = Column(String, nullable=False, server_default="Answered")
     duration_seconds = Column(Integer, nullable=False)
     timestamp        = Column(String, nullable=False)
-    system_call_id   = Column(String, nullable=False)
+    system_call_id   = Column(String, nullable=False, index=True)
     created_at       = Column(DateTime, server_default=text("now()"), nullable=False)
     # system_id is copied from user.system_id at call-log creation time for cross-table access
     system_id        = Column(String(6), nullable=True, index=True)
     employee_id      = Column(String, nullable=True)
-    org_id           = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="SET NULL"), nullable=True)
+    org_id           = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Relationships
     user = relationship("User", back_populates="call_logs")
@@ -168,3 +167,17 @@ class WebhookLog(Base):
     created_at      = Column(DateTime, server_default=text("now()"), nullable=False)
 
     subscription    = relationship("WebhookSubscription", back_populates="logs")
+
+
+class DemoBooking(Base):
+    __tablename__ = "demo_bookings"
+
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    full_name   = Column(String, nullable=False)
+    email       = Column(String, nullable=False)
+    phone       = Column(String, nullable=False)
+    org_name    = Column(String, nullable=False)
+    pain_plan   = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    created_at  = Column(DateTime, server_default=text("now()"), nullable=False)
+

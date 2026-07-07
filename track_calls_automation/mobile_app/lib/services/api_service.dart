@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:path_provider/path_provider.dart';
 
 class ApiService {
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -198,6 +200,16 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> fetchMyCallStats() async {
+    final url = Uri.parse('$baseUrl/calls/stats/me');
+    final response = await _get(url);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception(_parseError(response.body));
+    }
+  }
+
   static Future<Map<String, dynamic>> updateTrackingStatus({
     required String empId,
     required String organisationId,
@@ -274,8 +286,20 @@ class ApiService {
     }
   }
 
-  static Future<List<dynamic>> getMyCallLogs() async {
-    final url = Uri.parse('$baseUrl/calls/');
+  static Future<List<dynamic>> getMyCallLogs({
+    int limit = 100,
+    int offset = 0,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final Map<String, String> queryParams = {
+      'limit': limit.toString(),
+      'offset': offset.toString(),
+    };
+    if (startDate != null) queryParams['start_date'] = startDate;
+    if (endDate != null) queryParams['end_date'] = endDate;
+
+    final url = Uri.parse('$baseUrl/calls/').replace(queryParameters: queryParams);
     final response = await _get(url);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -286,13 +310,54 @@ class ApiService {
 
   // ── Reports ──
 
-  static Future<Map<String, dynamic>> getReports() async {
-    final url = Uri.parse('$baseUrl/calls/reports');
-    final response = await _get(url);
+  static Future<Map<String, dynamic>> getReports({
+    String? leaderId,
+    String? warriorId,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final Map<String, String> queryParams = {};
+    if (leaderId != null) queryParams['leader_id'] = leaderId;
+    if (warriorId != null) queryParams['warrior_id'] = warriorId;
+    if (startDate != null) queryParams['start_date'] = startDate;
+    if (endDate != null) queryParams['end_date'] = endDate;
+
+    final uri = Uri.parse('$baseUrl/calls/reports').replace(queryParameters: queryParams);
+    final response = await _get(uri);
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
       throw Exception(_parseError(response.body));
+    }
+  }
+
+  static Future<File> downloadReportAsFile({
+    required String format,
+    String? leaderId,
+    String? warriorId,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final Map<String, String> queryParams = {};
+    if (leaderId != null) queryParams['leader_id'] = leaderId;
+    if (warriorId != null) queryParams['warrior_id'] = warriorId;
+    if (startDate != null) queryParams['start_date'] = startDate;
+    if (endDate != null) queryParams['end_date'] = endDate;
+
+    final uri = Uri.parse('$baseUrl/calls/reports/export/$format').replace(queryParameters: queryParams);
+    debugPrint('API download URL: $uri');
+    final response = await _get(uri);
+    
+    if (response.statusCode == 200) {
+      final dir = await getTemporaryDirectory();
+      final now = DateTime.now();
+      final ext = format == 'pdf' ? 'pdf' : 'csv';
+      final filename = 'report_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour}${now.minute}.$ext';
+      final file = File('${dir.path}/$filename');
+      await file.writeAsBytes(response.bodyBytes);
+      return file;
+    } else {
+      throw Exception('Failed to download report: ${response.statusCode}');
     }
   }
 

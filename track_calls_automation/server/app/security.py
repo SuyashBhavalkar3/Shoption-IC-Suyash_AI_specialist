@@ -31,7 +31,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(
+import time
+
+# Simple in-memory cache for authenticated users to reduce database read load.
+# Keys are user_id string, values are (user_object, expiry_timestamp)
+_USER_CACHE = {}
+_CACHE_TTL_SECONDS = 30
+
+def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db)
 ) -> User:
@@ -51,12 +58,41 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
         
+    now = time.time()
+    cached_entry = _USER_CACHE.get(token_data.user_id)
+    
+    if cached_entry:
+        cached_user, expiry = cached_entry
+        if now < expiry:
+            # Re-associate the cached user object with the current session
+            return db.merge(cached_user, load=False)
+            
+    # Cache miss or expired
     user = db.query(User).filter(User.id == token_data.user_id).first()
     if user is None:
         raise credentials_exception
-    return user
+        
+    # Pre-fetch employee_id to store in cache alongside User to save DB hits in GET /users/me
+    user.cached_employee_id = None
+    if user.system_id:
+        from app.models import OrgEmployee
+        emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == user.system_id).first()
+        if emp_rec:
+            user.cached_employee_id = emp_rec.employee_id
+        
+    # Expunge the user from current session so it can be cached and shared safely
+    db.expunge(user)
+    _USER_CACHE[token_data.user_id] = (user, now + _CACHE_TTL_SECONDS)
+    
+    # Re-merge to attach back to the active request session for caller use
+    return db.merge(user, load=False)
 
-async def get_current_web_user(
+def invalidate_user_cache(user_id: str):
+    _USER_CACHE.pop(str(user_id), None)
+
+_WEB_USER_CACHE = {}
+
+def get_current_web_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db)
 ):
@@ -75,10 +111,20 @@ async def get_current_web_user(
     except JWTError:
         raise credentials_exception
         
+    now = time.time()
+    cached_entry = _WEB_USER_CACHE.get(user_id)
+    if cached_entry:
+        cached_user, expiry = cached_entry
+        if now < expiry:
+            return db.merge(cached_user, load=False)
+
     web_user = db.query(WebUser).filter(WebUser.id == user_id).first()
     if web_user is None:
         raise credentials_exception
-    return web_user
+        
+    db.expunge(web_user)
+    _WEB_USER_CACHE[user_id] = (web_user, now + _CACHE_TTL_SECONDS)
+    return db.merge(web_user, load=False)
 
 # Role enforcement checks
 class RoleChecker:

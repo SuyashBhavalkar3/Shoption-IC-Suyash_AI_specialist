@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
-from app.routers import auth, users, calls, org_employees, web_auth, webhooks
+from app.routers import auth, users, calls, org_employees, web_auth, webhooks, demo
 from app import firebase_service
 
 # Create database tables automatically if not already present
@@ -30,6 +30,7 @@ app.include_router(calls.router)
 app.include_router(org_employees.router)
 app.include_router(web_auth.router)
 app.include_router(webhooks.router)
+app.include_router(demo.router)
 
 @app.get("/")
 def read_root():

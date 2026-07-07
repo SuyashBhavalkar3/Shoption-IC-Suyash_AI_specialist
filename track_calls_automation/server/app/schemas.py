@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
 from uuid import UUID
@@ -85,11 +85,14 @@ class UserOut(UserBase):
     system_id: Optional[str] = None
     is_approved: bool
     is_active: bool
-    is_tracking_enabled: bool
     is_tracking_active: bool
     created_at: datetime
     employee_id: Optional[str] = None
     department: Optional[str] = None
+
+    @property
+    def is_tracking_enabled(self) -> bool:
+        return self.is_tracking_active
 
     class Config:
         from_attributes = True
@@ -101,10 +104,13 @@ class UserOutBasic(BaseModel):
     email: EmailStr
     role: str
     is_approved: bool
-    is_tracking_enabled: bool
     is_tracking_active: bool
     organisation_id: Optional[UUID] = None
     system_id: Optional[str] = None
+
+    @property
+    def is_tracking_enabled(self) -> bool:
+        return self.is_tracking_active
 
     class Config:
         from_attributes = True
@@ -283,3 +289,54 @@ class UserUpdateAdmin(BaseModel):
     is_active: Optional[bool] = None
     is_approved: Optional[bool] = None
     system_id: Optional[str] = None
+
+
+class DemoBookingCreate(BaseModel):
+    fullName: str = Field(..., min_length=1)
+    email: EmailStr
+    phone: str
+    orgName: str = Field(..., min_length=1)
+    painPlan: str = Field(..., min_length=1)
+    description: str = Field(..., min_length=10)
+
+    @field_validator("email")
+    @classmethod
+    def validate_work_email(cls, v: EmailStr) -> EmailStr:
+        email_lower = str(v).strip().lower()
+        blocked_domains = {
+            "gmail.com", "yahoo.com", "ymail.com", "outlook.com", "hotmail.com",
+            "live.com", "msn.com", "aol.com", "icloud.com", "mail.com",
+            "zoho.com", "protonmail.com", "proton.me", "gmx.com"
+        }
+        parts = email_lower.split("@")
+        if len(parts) == 2:
+            domain = parts[1]
+            if domain in blocked_domains:
+                raise ValueError("Only company email is required (free email providers are not allowed)")
+        return v
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        import re
+        digits = re.sub(r"\D", "", v)
+        if len(digits) < 10:
+            raise ValueError("Phone number must contain at least 10 digits")
+        if len(digits) not in [10, 11, 12]:
+            raise ValueError("Phone number must be a 10-digit number (excluding country code)")
+        return v
+
+
+class DemoBookingOut(BaseModel):
+    id: UUID
+    full_name: str
+    email: EmailStr
+    phone: str
+    org_name: str
+    pain_plan: str
+    description: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+

@@ -7,9 +7,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'providers/app_providers.dart';
+import 'services/api_service.dart';
 
 class AppWrapper extends ConsumerStatefulWidget { 
   final Widget child;
@@ -21,6 +23,7 @@ class AppWrapper extends ConsumerStatefulWidget {
 
 class _AppWrapperState extends ConsumerState<AppWrapper> {
   Timer? _maintenanceTimer;
+  Timer? _trackingPingTimer;
   Map<String, dynamic>? _maintenanceData;
   String? _userEmail;
   bool _isAdmin = false;
@@ -33,6 +36,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
     _loadCurrentVersion();
     _loadUserEmail();
     _initMaintenanceListener();
+    _initTrackingPingListener();
   }
 
   Future<void> _loadCurrentVersion() async {
@@ -72,6 +76,42 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
     });
   }
 
+  void _initTrackingPingListener() {
+    // Poll every 10 seconds. Unconditional heartbeat ping.
+    _trackingPingTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final toggledActive = prefs.getBool('tracking_toggled_active') ?? false;
+        
+        const platform = MethodChannel('com.shoption.calltracker/tracking');
+        bool running = false;
+        try {
+          running = await platform.invokeMethod('isTrackingActive');
+        } catch (_) {}
+
+        final isTrackingActive = toggledActive && running;
+
+        final empId = prefs.getString('user_emp_id') ?? '';
+        final orgId = prefs.getString('user_org_id') ?? '';
+        final systemId = prefs.getString('user_system_id') ?? '';
+
+        if (systemId.isNotEmpty) {
+          final now = DateTime.now().toUtc().toIso8601String();
+          await ApiService.updateTrackingStatus(
+            empId: empId,
+            organisationId: orgId,
+            systemId: systemId,
+            isTrackingEnabled: isTrackingActive,
+            lastActivityTimestamp: now,
+          );
+          debugPrint('[GLOBAL HEARTBEAT] Sent active=$isTrackingActive ping successfully');
+        }
+      } catch (e) {
+        debugPrint('[GLOBAL HEARTBEAT ERROR] Failed to send heartbeat: $e');
+      }
+    });
+  }
+
   Future<void> _fetchMaintenanceStatus() async {
     try {
       final response = await http.get(Uri.parse(
@@ -97,6 +137,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
   void dispose() {
     AppRouteObserver.currentRoute.removeListener(_onRouteChanged);
     _maintenanceTimer?.cancel();
+    _trackingPingTimer?.cancel();
     super.dispose();
   }
 
@@ -153,7 +194,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFF050816),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
@@ -164,7 +205,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
                 const Icon(
                   Icons.system_update_rounded,
                   size: 80,
-                  color: Color(0xFF04693F),
+                  color: Color(0xFF1F8FFF),
                 ),
                 const SizedBox(height: 32),
                 const Text(
@@ -173,7 +214,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF010B26),
+                    color: Color(0xFFF8FAFC),
                     height: 1.3,
                   ),
                 ),
@@ -182,7 +223,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
                   "A brand new version of the app is available. Please update your app to use our amazing features.",
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.black54,
+                    color: Color(0xFF94A3B8),
                     fontSize: 14,
                     height: 1.5,
                   ),
@@ -194,7 +235,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
                   child: ElevatedButton(
                     onPressed: _launchStore,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF04693F),
+                      backgroundColor: const Color(0xFF1F8FFF),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -219,7 +260,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFF050816),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(24.0),
@@ -230,7 +271,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
                 const Icon(
                   Icons.construction_rounded,
                   size: 80,
-                  color: Color(0xFF04693F),
+                  color: Color(0xFF1F8FFF),
                 ),
                 const SizedBox(height: 32),
                 const Text(
@@ -239,7 +280,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF010B26),
+                    color: Color(0xFFF8FAFC),
                     height: 1.3,
                   ),
                 ),
@@ -248,7 +289,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
                   message,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                    color: Colors.black54,
+                    color: Color(0xFF94A3B8),
                     fontSize: 14,
                     height: 1.5,
                   ),

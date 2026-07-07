@@ -12,10 +12,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from app import models
 from app.database import Base, engine as azure_engine
 
-# Connection Strings
-SUPABASE_URL = "postgresql://postgres.rtxyhcsxakkmrklxvpqd:eQk87e%25BsvK%23%2F-z@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require"
-AZURE_URL = "postgresql://shoptionadmin:DB%402026%21@shoption-call-trackdb.postgres.database.azure.com:5432/calltracking_testing?sslmode=require"
-
 def run_migration():
     print("--- STEP 1: Recreating database tables on Azure via SQLAlchemy ---")
     try:

@@ -20,7 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _errorMessage;
 
   final List<Map<String, String>> _roles = [
-    {'value': 'warrior', 'label': 'Warrior (Call Tracking Agent)'},
+    {'value': 'warrior', 'label': 'Employee (Call Tracking Agent)'},
     {'value': 'group_leader', 'label': 'Group Leader (Manager)'},
     {'value': 'admin', 'label': 'Admin (Approver / Reports)'},
     {'value': 'super_admin', 'label': 'Super Admin (Organization Creator)'},
@@ -65,17 +65,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          title: const Text('Registration Successful'),
-          content: Text(_selectedRole == 'super_admin'
-              ? 'Your Super Admin account has been created and auto-approved!'
-              : 'Your registration request has been submitted. Please wait for an administrator to approve your account.'),
+          backgroundColor: const Color(0xFF0E1528),
+          title: const Text('Registration Successful', style: TextStyle(color: Color(0xFFF8FAFC))),
+          content: Text(
+            _selectedRole == 'super_admin'
+                ? 'Your Super Admin account has been created and auto-approved!'
+                : 'Your registration request has been submitted. Please wait for an administrator to approve your account.',
+            style: const TextStyle(color: Color(0xFF94A3B8)),
+          ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.pop(ctx); // Close dialog
                 Navigator.pop(context); // Go back to login screen
               },
-              child: const Text('OK'),
+              child: const Text('OK', style: TextStyle(color: Color(0xFF1F8FFF), fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -94,12 +98,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF050816),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFF050816),
         elevation: 0,
         scrolledUnderElevation: 0,
-        iconTheme: const IconThemeData(color: Color(0xFF010B26)),
+        iconTheme: const IconThemeData(color: Color(0xFFF8FAFC)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -116,7 +120,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     errorBuilder: (_, __, ___) => const Icon(
                       Icons.phone_callback_rounded,
                       size: 60,
-                      color: Color(0xFF04693F),
+                      color: Color(0xFF1F8FFF),
                     ),
                   ),
                 ),
@@ -126,31 +130,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF010B26),
+                    color: Color(0xFFF8FAFC),
                   ),
                 ),
                 const SizedBox(height: 8),
                 const Text(
                   'Join the LeadLens Team. Select your appropriate role.',
-                  style: TextStyle(fontSize: 14, color: Color(0xFF666666)),
+                  style: TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: 25),
                 if (_errorMessage != null) ...[
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFF2F2),
+                      color: const Color(0xFF881337).withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
+                      border: Border.all(color: const Color(0xFFFDA4AF).withOpacity(0.3)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+                        const Icon(Icons.error_outline, color: Color(0xFFFDA4AF), size: 20),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             _errorMessage!,
-                            style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                            style: const TextStyle(color: Color(0xFFFDA4AF), fontSize: 13),
                           ),
                         ),
                       ],
@@ -160,28 +164,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ],
                 const Text(
                   'Full Name',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _nameController,
-                  style: const TextStyle(color: Color(0xFF010B26)),
+                  style: const TextStyle(color: Color(0xFFF8FAFC)),
                   decoration: InputDecoration(
                     hintText: 'Enter your full name',
-                    hintStyle: const TextStyle(color: Colors.grey),
+                    hintStyle: const TextStyle(color: Color(0xFF475569)),
                     filled: true,
-                    fillColor: const Color(0xFFF9F9F9),
+                    fillColor: const Color(0xFF111827),
+                    prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF475569), size: 20),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF04693F), width: 1.5),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
                     ),
                   ),
                   validator: (val) {
@@ -192,29 +197,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 20),
                 const Text(
                   'Email Address',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(color: Color(0xFF010B26)),
+                  style: const TextStyle(color: Color(0xFFF8FAFC)),
                   decoration: InputDecoration(
                     hintText: 'Enter your email',
-                    hintStyle: const TextStyle(color: Colors.grey),
+                    hintStyle: const TextStyle(color: Color(0xFF475569)),
                     filled: true,
-                    fillColor: const Color(0xFFF9F9F9),
+                    fillColor: const Color(0xFF111827),
+                    prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF475569), size: 20),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF04693F), width: 1.5),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
                     ),
                   ),
                   validator: (val) {
@@ -226,27 +232,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 20),
                 const Text(
                   'Role Selection',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   value: _selectedRole,
-                  dropdownColor: Colors.white,
-                  style: const TextStyle(color: Color(0xFF010B26)),
+                  dropdownColor: const Color(0xFF111827),
+                  style: const TextStyle(color: Color(0xFFF8FAFC)),
                   decoration: InputDecoration(
                     filled: true,
-                    fillColor: const Color(0xFFF9F9F9),
+                    fillColor: const Color(0xFF111827),
+                    prefixIcon: const Icon(Icons.badge_outlined, color: Color(0xFF475569), size: 20),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF04693F), width: 1.5),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
                     ),
                   ),
                   items: _roles.map((r) {
@@ -266,57 +273,57 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 20),
                 const Text(
                   'Organisation Invite Code',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _inviteCodeController,
-                  style: const TextStyle(color: Color(0xFF010B26)),
+                  style: const TextStyle(color: Color(0xFFF8FAFC)),
                   decoration: InputDecoration(
                     hintText: 'Enter Invite Code (optional)',
                     hintStyle: const TextStyle(color: Colors.grey),
                     filled: true,
-                    fillColor: const Color(0xFFF9F9F9),
+                    fillColor: const Color(0xFF0E1528),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                      borderSide: const BorderSide(color: Color(0xFF1E293B)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                      borderSide: const BorderSide(color: Color(0xFF1E293B)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF04693F), width: 1.5),
+                      borderSide: const BorderSide(color: Color(0xFF1F8FFF), width: 1.5),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
                 const Text(
                   'Password',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
-                  style: const TextStyle(color: Color(0xFF010B26)),
+                  style: const TextStyle(color: Color(0xFFF8FAFC)),
                   decoration: InputDecoration(
                     hintText: 'Create a password',
                     hintStyle: const TextStyle(color: Colors.grey),
                     filled: true,
-                    fillColor: const Color(0xFFF9F9F9),
+                    fillColor: const Color(0xFF0E1528),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                      borderSide: const BorderSide(color: Color(0xFF1E293B)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                      borderSide: const BorderSide(color: Color(0xFF1E293B)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF04693F), width: 1.5),
+                      borderSide: const BorderSide(color: Color(0xFF1F8FFF), width: 1.5),
                     ),
                   ),
                   validator: (val) {
@@ -325,16 +332,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 35),
-                SizedBox(
+                const SizedBox(height: 40),
+                Container(
                   width: double.infinity,
                   height: 54,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF3B82F6), Color(0xFF6366F1)],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF3B82F6).withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _handleRegister,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF010B26),
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.grey[300],
+                      disabledBackgroundColor: Colors.transparent,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -352,13 +375,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                   ),
                 ),
-                const SizedBox(height: 25),
+                const SizedBox(height: 28),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Text(
                       "Already have an account? ",
-                      style: TextStyle(color: Color(0xFF666666)),
+                      style: TextStyle(color: Color(0xFF94A3B8)),
                     ),
                     GestureDetector(
                       onTap: () {
@@ -367,12 +390,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       child: const Text(
                         'Sign In',
                         style: TextStyle(
-                          color: Color(0xFF04693F),
+                          color: Color(0xFF3B82F6),
                           fontWeight: FontWeight.bold,
                           decoration: TextDecoration.underline,
                         ),
                       ),
-                    )
+                    ),
                   ],
                 ),
               ],

@@ -194,13 +194,13 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('Error', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-        content: Text(message),
+        backgroundColor: const Color(0xFF0E1528),
+        title: const Text('Error', style: TextStyle(color: Color(0xFFFDA4AF), fontWeight: FontWeight.bold)),
+        content: Text(message, style: const TextStyle(color: Color(0xFF94A3B8))),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('OK', style: TextStyle(color: Color(0xFF010B26))),
+            child: const Text('OK', style: TextStyle(color: Color(0xFF1F8FFF))),
           ),
         ],
       ),
@@ -211,19 +211,19 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('Upload Summary', style: TextStyle(color: Color(0xFF010B26), fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF0E1528),
+        title: const Text('Upload Summary', style: TextStyle(color: Color(0xFFF8FAFC), fontWeight: FontWeight.bold)),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Successfully Created: $created', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-              Text('Skipped / Ignored: $skipped', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
+              Text('Successfully Created: $created', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00E6B8))),
+              Text('Skipped / Ignored: $skipped', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF8B5CF6))),
               if (skippedDetails.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                const Text('Skipped Details:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Skipped Details:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF8FAFC))),
                 const SizedBox(height: 6),
                 Expanded(
                   child: ListView.builder(
@@ -234,7 +234,7 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Text(
                           '• ${item['employee_id']}: ${item['reason']}',
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF666666)),
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
                         ),
                       );
                     },
@@ -247,7 +247,7 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('OK', style: TextStyle(color: Color(0xFF010B26))),
+            child: const Text('OK', style: TextStyle(color: Color(0xFF1F8FFF))),
           ),
         ],
       ),
@@ -261,19 +261,22 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('Add Single Employee', style: TextStyle(color: Color(0xFF010B26), fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF0E1528),
+        title: const Text('Add Single Employee', style: TextStyle(color: Color(0xFFF8FAFC), fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: empIdController,
+              style: const TextStyle(color: Color(0xFFF8FAFC)),
               decoration: const InputDecoration(
                 labelText: 'Employee ID',
+                labelStyle: TextStyle(color: Color(0xFF1F8FFF)),
                 hintText: 'Enter company employee ID',
-                border: OutlineInputBorder(),
+                hintStyle: TextStyle(color: Colors.grey),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF1E293B))),
                 focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFF04693F), width: 1.5),
+                  borderSide: BorderSide(color: Color(0xFF1F8FFF), width: 1.5),
                 ),
               ),
             ),
@@ -281,12 +284,15 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
             TextField(
               controller: emailController,
               keyboardType: TextInputType.emailAddress,
+              style: const TextStyle(color: Color(0xFFF8FAFC)),
               decoration: const InputDecoration(
                 labelText: 'Email Address',
+                labelStyle: TextStyle(color: Color(0xFF1F8FFF)),
                 hintText: 'Enter employee email address',
-                border: OutlineInputBorder(),
+                hintStyle: TextStyle(color: Colors.grey),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF1E293B))),
                 focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFF04693F), width: 1.5),
+                  borderSide: BorderSide(color: Color(0xFF1F8FFF), width: 1.5),
                 ),
               ),
             ),
@@ -295,7 +301,7 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF666666))),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
           ),
           ElevatedButton(
             onPressed: () {
@@ -303,7 +309,7 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
               _handleAddSingle(empIdController.text, emailController.text);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF04693F),
+              backgroundColor: const Color(0xFF1F8FFF),
               foregroundColor: Colors.white,
             ),
             child: const Text('Add'),
@@ -318,8 +324,8 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('Bulk Add Employees', style: TextStyle(color: Color(0xFF010B26), fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF0E1528),
+        title: const Text('Bulk Add Employees', style: TextStyle(color: Color(0xFFF8FAFC), fontWeight: FontWeight.bold)),
         content: SizedBox(
           width: MediaQuery.of(context).size.width * 0.8,
           child: Column(
@@ -328,17 +334,19 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
             children: [
               const Text(
                 'Enter "Employee ID, Email" (one per line):',
-                style: TextStyle(color: Color(0xFF666666), fontSize: 13),
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: controller,
                 maxLines: 8,
+                style: const TextStyle(color: Color(0xFFF8FAFC)),
                 decoration: const InputDecoration(
                   hintText: 'EMP-101, employee1@mail.com\nEMP-102, employee2@mail.com\nEMP-103',
-                  border: OutlineInputBorder(),
+                  hintStyle: TextStyle(color: Colors.grey),
+                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF1E293B))),
                   focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: Color(0xFF04693F), width: 1.5),
+                    borderSide: BorderSide(color: Color(0xFF1F8FFF), width: 1.5),
                   ),
                 ),
               ),
@@ -348,7 +356,7 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF666666))),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
           ),
           ElevatedButton(
             onPressed: () {
@@ -368,7 +376,7 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
               _handleBulkUpload(employees);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF04693F),
+              backgroundColor: const Color(0xFF1F8FFF),
               foregroundColor: Colors.white,
             ),
             child: const Text('Upload'),
@@ -381,9 +389,10 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
   void _showOptionsBottomSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF0E1528),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        side: BorderSide(color: Color(0xFF1E293B), width: 1),
       ),
       builder: (context) {
         return SafeArea(
@@ -394,32 +403,32 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
                 padding: EdgeInsets.symmetric(vertical: 16.0),
                 child: Text(
                   'Add Employees',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFF8FAFC)),
                 ),
               ),
-              const Divider(height: 1),
+              const Divider(height: 1, color: Color(0xFF1E293B)),
               ListTile(
-                leading: const Icon(Icons.person_add_alt_1, color: Color(0xFF04693F)),
-                title: const Text('Add Single Employee'),
-                subtitle: const Text('Manually enter employee ID and email'),
+                leading: const Icon(Icons.person_add_alt_1, color: Color(0xFF1F8FFF)),
+                title: const Text('Add Single Employee', style: TextStyle(color: Color(0xFFF8FAFC))),
+                subtitle: const Text('Manually enter employee ID and email', style: TextStyle(color: Color(0xFF94A3B8))),
                 onTap: () {
                   Navigator.pop(context);
                   _showAddSingleDialog();
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.playlist_add, color: Color(0xFF04693F)),
-                title: const Text('Bulk Add Employees (Manual)'),
-                subtitle: const Text('Enter multiple IDs and emails (comma separated)'),
+                leading: const Icon(Icons.playlist_add, color: Color(0xFF1F8FFF)),
+                title: const Text('Bulk Add Employees (Manual)', style: TextStyle(color: Color(0xFFF8FAFC))),
+                subtitle: const Text('Enter multiple IDs and emails (comma separated)', style: TextStyle(color: Color(0xFF94A3B8))),
                 onTap: () {
                   Navigator.pop(context);
                   _showBulkAddDialog();
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.upload_file, color: Color(0xFF04693F)),
-                title: const Text('Upload Employee File'),
-                subtitle: const Text('Select a .csv, .xlsx, .xls, .tsv, .txt, or .json file'),
+                leading: const Icon(Icons.upload_file, color: Color(0xFF1F8FFF)),
+                title: const Text('Upload Employee File', style: TextStyle(color: Color(0xFFF8FAFC))),
+                subtitle: const Text('Select a .csv, .xlsx, .xls, .tsv, .txt, or .json file', style: TextStyle(color: Color(0xFF94A3B8))),
                 onTap: () {
                   Navigator.pop(context);
                   _handleFilePicker();
@@ -435,40 +444,40 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: const ShoptionAppBar(
-        title: 'Registry',
-        subtitle: 'Employee Mapping',
-      ),
-      body: RefreshIndicator(
+    return RefreshIndicator(
         onRefresh: _fetchEmployees,
-        color: const Color(0xFF04693F),
+        color: const Color(0xFF1F8FFF),
         child: Column(
           children: [
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: TextField(
                 controller: _searchController,
+                style: const TextStyle(color: Color(0xFFF8FAFC)),
                 decoration: InputDecoration(
                   hintText: 'Search Employee ID / Email / System ID...',
-                  prefixIcon: const Icon(Icons.search, color: Color(0xFF666666)),
+                  hintStyle: const TextStyle(color: Colors.grey),
+                  prefixIcon: const Icon(Icons.search, color: Color(0xFF94A3B8)),
                   filled: true,
-                  fillColor: const Color(0xFFF9F9F9),
+                  fillColor: const Color(0xFF0E1528),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                    borderSide: const BorderSide(color: Color(0xFF1E293B)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFF1E293B)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFF04693F), width: 1.5),
+                    borderSide: const BorderSide(color: Color(0xFF1F8FFF), width: 1.5),
                   ),
                 ),
               ),
             ),
             Expanded(
               child: _isLoading && _employees.isEmpty
-                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF04693F)))
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF1F8FFF)))
                   : _errorMessage != null
                       ? ListView(
                           padding: const EdgeInsets.all(24),
@@ -476,16 +485,17 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFFF2F2),
+                                color: const Color(0xFF881337).withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFFFDA4AF).withOpacity(0.3)),
                               ),
-                              child: Text(_errorMessage!, style: const TextStyle(color: Colors.redAccent)),
+                              child: Text(_errorMessage!, style: const TextStyle(color: Color(0xFFFDA4AF))),
                             ),
                             const SizedBox(height: 20),
                             ElevatedButton(
                               onPressed: _fetchEmployees,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF010B26),
+                                backgroundColor: const Color(0xFF1F8FFF),
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               ),
@@ -500,18 +510,18 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
                                 Center(
                                   child: Column(
                                     children: [
-                                      const Icon(Icons.badge_outlined, size: 60, color: Color(0xFF666666)),
+                                      const Icon(Icons.badge_outlined, size: 60, color: Color(0xFF94A3B8)),
                                       const SizedBox(height: 16),
                                       const Text(
                                         'No Employees Found',
-                                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
+                                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFF8FAFC)),
                                       ),
                                       const SizedBox(height: 8),
                                       Text(
                                         _searchController.text.isNotEmpty
                                             ? 'Try a different search query.'
                                             : 'Add employees to get started.',
-                                        style: const TextStyle(color: Color(0xFF666666)),
+                                        style: const TextStyle(color: Color(0xFF94A3B8)),
                                       ),
                                     ],
                                   ),
@@ -524,20 +534,20 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
                               itemBuilder: (context, index) {
                                 final emp = _filteredEmployees[index];
                                 return Card(
-                                  color: const Color(0xFFF9F9F9),
+                                  color: const Color(0xFF0E1528),
                                   elevation: 0,
                                   margin: const EdgeInsets.only(bottom: 12),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
-                                    side: const BorderSide(color: Color(0xFFEEEEEE)),
+                                    side: const BorderSide(color: Color(0xFF1E293B)),
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.all(16.0),
                                     child: Row(
                                       children: [
                                         const CircleAvatar(
-                                          backgroundColor: Color(0xFFEEEEEE),
-                                          foregroundColor: Color(0xFF010B26),
+                                          backgroundColor: Color(0xFF1E293B),
+                                          foregroundColor: Color(0xFF1F8FFF),
                                           child: Icon(Icons.badge),
                                         ),
                                         const SizedBox(width: 16),
@@ -547,22 +557,22 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
                                             children: [
                                               Text(
                                                 'Emp ID: ${emp['employee_id']}',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF010B26)),
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFFF8FAFC)),
                                               ),
                                               if (emp['email'] != null && emp['email'].toString().isNotEmpty) ...[
                                                 const SizedBox(height: 4),
                                                 Text(
                                                   'Email: ${emp['email']}',
-                                                  style: const TextStyle(color: Color(0xFF666666), fontSize: 13),
+                                                  style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
                                                 ),
                                               ],
                                               const SizedBox(height: 4),
                                               Row(
                                                 children: [
-                                                  const Text('System ID: ', style: TextStyle(color: Color(0xFF666666), fontSize: 13)),
+                                                  const Text('System ID: ', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13)),
                                                   Text(
                                                     '${emp['system_id']}',
-                                                    style: const TextStyle(color: Color(0xFF04693F), fontWeight: FontWeight.bold, fontSize: 13),
+                                                    style: const TextStyle(color: Color(0xFF1F8FFF), fontWeight: FontWeight.bold, fontSize: 13),
                                                   ),
                                                 ],
                                               ),
@@ -578,7 +588,7 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
                                               style: TextStyle(
                                                 fontSize: 10,
                                                 fontWeight: FontWeight.w600,
-                                                color: (emp['is_tracking_needed'] ?? true) ? const Color(0xFF04693F) : const Color(0xFF666666),
+                                                color: (emp['is_tracking_needed'] ?? true) ? const Color(0xFF00E6B8) : const Color(0xFF94A3B8),
                                               ),
                                             ),
                                             const SizedBox(height: 2),
@@ -586,10 +596,10 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
                                               height: 36,
                                               child: Switch(
                                                 value: emp['is_tracking_needed'] ?? true,
-                                                activeColor: const Color(0xFF04693F),
-                                                activeTrackColor: const Color(0xFFE8F5E9),
-                                                inactiveThumbColor: const Color(0xFF888888),
-                                                inactiveTrackColor: const Color(0xFFE0E0E0),
+                                                activeColor: const Color(0xFF00E6B8),
+                                                activeTrackColor: const Color(0xFF00E6B8).withOpacity(0.2),
+                                                inactiveThumbColor: const Color(0xFF94A3B8),
+                                                inactiveTrackColor: const Color(0xFF1E293B),
                                                 onChanged: (bool value) {
                                                   _toggleTrackingNeeded(emp['employee_id'], value);
                                                 },
@@ -606,13 +616,6 @@ class _OrgEmployeesScreenState extends State<OrgEmployeesScreen> {
             ),
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showOptionsBottomSheet,
-        backgroundColor: const Color(0xFF04693F),
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.add),
-      ),
-    );
+      );
   }
 }

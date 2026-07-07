@@ -9,7 +9,11 @@
     <application
         android:label="LeadLens Call Tracker"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon">
+        android:icon="@mipmap/launcher_icon"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/backup_rules"
+        android:hasFragileUserData="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

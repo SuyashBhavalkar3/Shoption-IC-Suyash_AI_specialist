@@ -14,6 +14,8 @@ import 'screens/reports_screen.dart';
 import 'screens/pending_users_screen.dart';
 import 'screens/org_employees_screen.dart';
 import 'screens/warrior_management_screen.dart';
+import 'screens/profile_screen.dart';
+import 'screens/unified_shell_screen.dart';
 import 'app_wrapper.dart';
 
 
@@ -26,6 +28,9 @@ void main() async {
   }
   // Load .env so ApiService can read API_BASE_URL.
   await dotenv.load(fileName: ".env");
+  final prefs = await SharedPreferences.getInstance();
+  final apiBaseUrl = dotenv.env['API_BASE_URL'] ?? 'https://shoption-calltracker-api-cjdjatchb5bzb9dp.centralindia-01.azurewebsites.net';
+  await prefs.setString('api_base_url', apiBaseUrl);
   runApp(const ProviderScope(child: CallTrackerApp()));
 }
 
@@ -98,13 +103,14 @@ class CallTrackerApp extends StatelessWidget {
       title: 'LeadLens Call Tracker',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: Colors.white,
-        colorScheme: const ColorScheme.light(
-          primary: Color(0xFF010B26),     // Deep Navy/Black from logo
-          secondary: Color(0xFF04693F),   // Green from logo
-          surface: Colors.white,
-          background: Colors.white,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF090D1A),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF3B82F6),      // Electric Blue
+          secondary: Color(0xFF6366F1),    // Royale Indigo
+          surface: Color(0xFF111827),      // Slate surface
+          background: Color(0xFF090D1A),   // Slate background
+          outline: Color(0xFF1F2937),      // Gray border
         ),
         useMaterial3: true,
         fontFamily: 'Inter',
@@ -119,7 +125,7 @@ class CallTrackerApp extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
               body: Center(
-                child: CircularProgressIndicator(color: Color(0xFF04693F)),
+                child: CircularProgressIndicator(color: Color(0xFF1F8FFF)),
               ),
             );
           }
@@ -134,6 +140,7 @@ class CallTrackerApp extends StatelessWidget {
         '/approvals': (context) => const PendingUsersScreen(),
         '/reports': (context) => const ReportsScreen(),
         '/warrior-management': (context) => const WarriorManagementScreen(),
+        '/profile': (context) => const ProfileScreen(),
       },
     );
   }
@@ -191,18 +198,13 @@ class _RoleRouterWidgetState extends State<RoleRouterWidget> {
     if (_isLoading) {
       return const Scaffold(
         body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF2F5C36)),
+          child: CircularProgressIndicator(color: Color(0xFF1F8FFF)),
         ),
       );
     }
 
-    if (_role == 'warrior') {
-      return const WarriorHomeScreen();
-    } else if (_role == 'group_leader') {
-      return const ReportsScreen();
-    } else if (_role == 'admin' || _role == 'super_admin') {
-      // Admin dashboard with bottom navigation to switch between reports and approvals
-      return const AdminNavigationShell();
+    if (_role != null) {
+      return const UnifiedShellScreen();
     }
 
     return const LoginScreen();
@@ -225,18 +227,18 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('Logout', style: TextStyle(color: Color(0xFF111111))),
-        content: const Text('Are you sure you want to log out?'),
+        backgroundColor: const Color(0xFF0E1528),
+        title: const Text('Logout', style: TextStyle(color: Color(0xFFF8FAFC))),
+        content: const Text('Are you sure you want to log out?', style: TextStyle(color: Color(0xFF94A3B8))),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF666666))),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2F5C36),
+              backgroundColor: const Color(0xFF1F8FFF),
               foregroundColor: Colors.white,
             ),
             child: const Text('Logout'),
@@ -255,7 +257,7 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
     if (_isLoading) {
       return const Scaffold(
         body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF2F5C36)),
+          child: CircularProgressIndicator(color: Color(0xFF1F8FFF)),
         ),
       );
     }
@@ -270,9 +272,9 @@ class _AdminNavigationShellState extends State<AdminNavigationShell> {
       body: screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        selectedItemColor: const Color(0xFF2F5C36),
-        unselectedItemColor: const Color(0xFF666666),
-        backgroundColor: Colors.white,
+        selectedItemColor: const Color(0xFF1F8FFF),
+        unselectedItemColor: const Color(0xFF94A3B8),
+        backgroundColor: const Color(0xFF0E1528),
         elevation: 8,
         onTap: (index) {
           final logoutIndex = 3;

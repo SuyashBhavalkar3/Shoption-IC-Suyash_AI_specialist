@@ -142,18 +142,6 @@ def add_single_employee(
     db.commit()
     db.refresh(record)
 
-    # Sync to Firestore
-    from app.firebase_service import update_tracking_status_in_firestore
-    from datetime import datetime
-    update_tracking_status_in_firestore(
-        emp_id=record.employee_id,
-        organisation_id=str(record.org_id),
-        system_id=record.system_id,
-        is_tracking_enabled=False,
-        last_activity_timestamp=datetime.utcnow(),
-        is_tracking_needed=True
-    )
-
     return record
 
 def _parse_uploaded_file(file: UploadFile) -> tuple[List[str], List[dict]]:
@@ -387,19 +375,6 @@ def bulk_upload_employees(
 
     db.commit()
 
-    # Sync successfully committed employees to Firestore
-    from app.firebase_service import update_tracking_status_in_firestore
-    from datetime import datetime
-    for record in records_to_sync:
-        update_tracking_status_in_firestore(
-            emp_id=record.employee_id,
-            organisation_id=str(record.org_id),
-            system_id=record.system_id,
-            is_tracking_enabled=False,
-            last_activity_timestamp=datetime.utcnow(),
-            is_tracking_needed=True
-        )
-
     return OrgEmployeeBulkUploadResult(
         total_rows=created + len(skipped_details),
         created=created,
@@ -431,7 +406,7 @@ def list_org_employees(
     response_model=OrgEmployeeOut,
     summary="Update the is_tracking_needed status of an employee (super_admin / admin only)",
 )
-def update_employee_tracking_needed(
+async def update_employee_tracking_needed(
     employee_id: str,
     needed: bool,
     db: Session = Depends(get_db),
@@ -455,16 +430,14 @@ def update_employee_tracking_needed(
     db.commit()
     db.refresh(record)
     
-    # Sync update to Firestore
-    from app.firebase_service import update_tracking_status_in_firestore
-    from datetime import datetime
-    update_tracking_status_in_firestore(
-        emp_id=record.employee_id,
-        organisation_id=str(record.org_id),
-        system_id=record.system_id,
-        is_tracking_enabled=False,
-        last_activity_timestamp=datetime.utcnow(),
-        is_tracking_needed=needed
-    )
-    
+    # Find associated User and broadcast updates to SSE
+    from app.models import User as DBUser
+    user = db.query(DBUser).filter(DBUser.system_id == record.system_id).first()
+    if not user and record.email:
+        user = db.query(DBUser).filter(DBUser.email.ilike(record.email.strip())).first()
+        
+    if user:
+        from app.routers.users import broadcast_user_status
+        await broadcast_user_status(user, db)
+        
     return record

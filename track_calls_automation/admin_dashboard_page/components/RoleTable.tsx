@@ -48,6 +48,38 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
   const [toTime, setToTime] = useState("");
   const [selectedReportUser, setSelectedReportUser] = useState<UserRecord | null>(null);
   const [modalTab, setModalTab] = useState<"missed" | "all">("missed");
+  const [registryPreset, setRegistryPreset] = useState<"today" | "1m" | "3m" | "overall" | "">("overall");
+
+  const formatDateToYYYYMMDD = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const handleRegistryPreset = (preset: "today" | "1m" | "3m" | "overall") => {
+    setRegistryPreset(preset);
+    if (preset === "overall") {
+      setFromDate("");
+      setFromTime("");
+      setToDate("");
+      setToTime("");
+    } else {
+      const end = new Date();
+      const start = new Date();
+      if (preset === "today") {
+        // start is today
+      } else if (preset === "1m") {
+        start.setMonth(end.getMonth() - 1);
+      } else if (preset === "3m") {
+        start.setMonth(end.getMonth() - 3);
+      }
+      setFromDate(formatDateToYYYYMMDD(start));
+      setFromTime("00:00");
+      setToDate(formatDateToYYYYMMDD(end));
+      setToTime("23:59");
+    }
+  };
 
   const getMissedCallReportDetails = (user: UserRecord) => {
     const warriorData = report?.warriors?.find((w) => w.warrior_id === user.id);
@@ -78,7 +110,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       calls = calls.filter((c) => {
         const callDate = parseDbTimestamp(c.timestamp);
         if (!callDate) return false;
-        
+
         if (startLimit && callDate < startLimit) return false;
         if (endLimit && callDate > endLimit) return false;
         return true;
@@ -95,7 +127,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
     // Map each missed call to its response details
     return missedCalls.map((mc) => {
       const mcTime = parseDbTimestamp(mc.timestamp);
-      
+
       // Split missed timestamp into date and time
       let missedDateStr = "-";
       let missedTimeStr = "-";
@@ -128,7 +160,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
             const timeB = parseDbTimestamp(b.timestamp);
             return (timeA?.getTime() ?? 0) - (timeB?.getTime() ?? 0);
           });
-        
+
         if (subsequentCalls.length > 0) {
           firstResponse = subsequentCalls[0];
           responseTime = parseDbTimestamp(firstResponse.timestamp);
@@ -195,7 +227,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       calls = calls.filter((c) => {
         const callDate = parseDbTimestamp(c.timestamp);
         if (!callDate) return false;
-        
+
         if (startLimit && callDate < startLimit) return false;
         if (endLimit && callDate > endLimit) return false;
         return true;
@@ -303,7 +335,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       calls = calls.filter((c) => {
         const callDate = parseDbTimestamp(c.timestamp);
         if (!callDate) return false;
-        
+
         if (startLimit && callDate < startLimit) return false;
         if (endLimit && callDate > endLimit) return false;
         return true;
@@ -369,7 +401,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       const status = (c.call_status || "").toLowerCase();
       return type === "incoming" && (status === "missed" || status === "missed call" || status.includes("missed"));
     });
-    
+
     missedCalls.forEach(mc => {
       const mcTime = parseDbTimestamp(mc.timestamp);
       if (!mcTime) return;
@@ -450,7 +482,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       "TOTAL INCOMING CALLS", "INCOMING TALKTIME", "INCOMING AVR. CALL TT",
       "TOTAL DIALED", "TOTAL SUCCESS DIALED", "OUTGOING TALKTIME", "OUTCOMING AVR. CALL TT"
     ];
-    
+
     const rows = filteredUsers
       .map((user) => ({
         user,
@@ -579,8 +611,8 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         <button
           onClick={() => setActiveTab("users")}
           className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${activeTab === "users"
-              ? "bg-slate-800 text-[#1F8FFF] shadow-sm"
-              : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
+            ? "bg-slate-800 text-[#1F8FFF] shadow-sm"
+            : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
             }`}
         >
           Active Users Directory ({filteredUsers.length})
@@ -588,8 +620,8 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         <button
           onClick={() => setActiveTab("registry")}
           className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${activeTab === "registry"
-              ? "bg-slate-800 text-[#1F8FFF] shadow-sm"
-              : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
+            ? "bg-slate-800 text-[#1F8FFF] shadow-sm"
+            : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
             }`}
         >
           Employee Registry ({filteredEmployees.length})
@@ -642,18 +674,46 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         {/* Date & Time Range Filters */}
         {activeTab === "users" && (
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Range Presets */}
+            <div className="flex bg-slate-950/60 rounded-lg p-0.5 border border-slate-800 shrink-0">
+              {[
+                { id: "today", label: "Today" },
+                { id: "1m", label: "1 Month" },
+                { id: "3m", label: "3 Months" },
+                { id: "overall", label: "Overall" }
+              ].map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => handleRegistryPreset(preset.id as any)}
+                  className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${registryPreset === preset.id
+                    ? "bg-primary text-text shadow-xs font-black"
+                    : "text-text-secondary hover:text-text"
+                    }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
             <div className="flex items-center gap-1.5 bg-slate-900/40 px-2 py-0.5 rounded-lg border border-slate-800">
               <span className="text-[10px] text-[#94A3B8] font-bold uppercase tracking-wider whitespace-nowrap">From:</span>
               <input
                 type="date"
                 value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  setRegistryPreset("");
+                }}
                 className="rounded border border-slate-800 bg-[#050816] px-1.5 py-0.5 text-xs font-semibold text-[#F8FAFC] outline-none transition focus:border-[#1F8FFF]"
               />
               <input
                 type="time"
                 value={fromTime}
-                onChange={(e) => setFromTime(e.target.value)}
+                onChange={(e) => {
+                  setFromTime(e.target.value);
+                  setRegistryPreset("");
+                }}
                 className="rounded border border-slate-800 bg-[#050816] px-1.5 py-0.5 text-xs font-semibold text-[#F8FAFC] outline-none transition focus:border-[#1F8FFF]"
               />
             </div>
@@ -662,13 +722,19 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
               <input
                 type="date"
                 value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  setRegistryPreset("");
+                }}
                 className="rounded border border-slate-800 bg-[#050816] px-1.5 py-0.5 text-xs font-semibold text-[#F8FAFC] outline-none transition focus:border-[#1F8FFF]"
               />
               <input
                 type="time"
                 value={toTime}
-                onChange={(e) => setToTime(e.target.value)}
+                onChange={(e) => {
+                  setToTime(e.target.value);
+                  setRegistryPreset("");
+                }}
                 className="rounded border border-slate-800 bg-[#050816] px-1.5 py-0.5 text-xs font-semibold text-[#F8FAFC] outline-none transition focus:border-[#1F8FFF]"
               />
             </div>
@@ -676,7 +742,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         )}
 
         {/* Clear Filters Button */}
-        {(searchQuery || roleFilter || fromDate || fromTime || toDate || toTime) && (
+        {(searchQuery || roleFilter || fromDate || fromTime || toDate || toTime || (registryPreset && registryPreset !== "overall")) && (
           <button
             onClick={() => {
               setSearchQuery("");
@@ -685,6 +751,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
               setFromTime("");
               setToDate("");
               setToTime("");
+              setRegistryPreset("overall");
             }}
             className="text-rose-400 hover:text-rose-300 text-[10px] font-bold transition-all whitespace-nowrap"
           >
@@ -874,8 +941,8 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                       <button
                         onClick={() => onToggleTrackingNeeded?.(emp.employee_id, emp.is_tracking_needed)}
                         className={`px-4 py-2 rounded-full text-xs font-bold border transition-all ${emp.is_tracking_needed
-                            ? "bg-gradient-to-r from-[#00E6B8]/10 to-[#1F8FFF]/10 text-[#00E6B8] border-[#00E6B8]/30 hover:opacity-90"
-                            : "bg-[#050816] text-[#94A3B8] border-slate-850 hover:bg-slate-800/40"
+                          ? "bg-gradient-to-r from-[#00E6B8]/10 to-[#1F8FFF]/10 text-[#00E6B8] border-[#00E6B8]/30 hover:opacity-90"
+                          : "bg-[#050816] text-[#94A3B8] border-slate-850 hover:bg-slate-800/40"
                           }`}
                       >
                         {emp.is_tracking_needed ? "Tracking Required" : "Tracking Disabled"}
@@ -969,7 +1036,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
             printWindow.document.write(`
               <html>
                 <head>
-                  <title>All Call Logs Report - ${userName}</title>
+                  <title>All Organization Logs Report - ${userName}</title>
                   <style>
                     body { font-family: system-ui, sans-serif; margin: 40px; color: #1e293b; }
                     h1 { font-size: 18px; font-weight: 800; color: #04693F; margin-bottom: 2px; }
@@ -980,7 +1047,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                   </style>
                 </head>
                 <body>
-                  <h1>ALL CALL LOGS REPORT</h1>
+                  <h1>Get Organization Data REPORT</h1>
                   <h2>NAME: ${userName} &nbsp;&bull;&nbsp; DEPT: ${userDept}</h2>
                   <table>
                     <thead>
@@ -1089,23 +1156,21 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
               <div className="flex border-b border-slate-800 bg-slate-900/40 p-1.5 gap-1.5 mx-6 mt-3">
                 <button
                   onClick={() => setModalTab("missed")}
-                  className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${
-                    modalTab === "missed"
-                      ? "bg-[#0E1528] text-[#1F8FFF] shadow-xs border border-slate-800"
-                      : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
-                  }`}
+                  className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${modalTab === "missed"
+                    ? "bg-[#0E1528] text-[#1F8FFF] shadow-xs border border-slate-800"
+                    : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
+                    }`}
                 >
                   Missed Call Report ({reportData.length})
                 </button>
                 <button
                   onClick={() => setModalTab("all")}
-                  className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${
-                    modalTab === "all"
-                      ? "bg-[#0E1528] text-[#1F8FFF] shadow-xs border border-slate-800"
-                      : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
-                  }`}
+                  className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition-all ${modalTab === "all"
+                    ? "bg-[#0E1528] text-[#1F8FFF] shadow-xs border border-slate-800"
+                    : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
+                    }`}
                 >
-                  All Call Logs ({allLogsData.length})
+                  All Organization Data ({allLogsData.length})
                 </button>
               </div>
 
@@ -1144,11 +1209,10 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                             <td className="px-4 py-3 text-center text-[#94A3B8]">{row.respondedTime}</td>
                             <td className="px-4 py-3 text-center">
                               {row.responseType !== "-" ? (
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  row.responseType === "INCOMING" 
-                                    ? "bg-[#00E6B8]/10 text-[#00E6B8] border border-[#00E6B8]/20" 
-                                    : "bg-[#1F8FFF]/10 text-[#1F8FFF] border border-[#1F8FFF]/20"
-                                }`}>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${row.responseType === "INCOMING"
+                                  ? "bg-[#00E6B8]/10 text-[#00E6B8] border border-[#00E6B8]/20"
+                                  : "bg-[#1F8FFF]/10 text-[#1F8FFF] border border-[#1F8FFF]/20"
+                                  }`}>
                                   {row.responseType}
                                 </span>
                               ) : (
@@ -1184,11 +1248,10 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                           <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
                             <td className="px-4 py-3 text-left text-sm font-bold text-[#F8FAFC]">{row.number}</td>
                             <td className="px-4 py-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                row.type === "INCOMING" 
-                                  ? "bg-[#00E6B8]/10 text-[#00E6B8] border border-[#00E6B8]/20" 
-                                  : "bg-[#1F8FFF]/10 text-[#1F8FFF] border border-[#1F8FFF]/20"
-                              }`}>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${row.type === "INCOMING"
+                                ? "bg-[#00E6B8]/10 text-[#00E6B8] border border-[#00E6B8]/20"
+                                : "bg-[#1F8FFF]/10 text-[#1F8FFF] border border-[#1F8FFF]/20"
+                                }`}>
                                 {row.type}
                               </span>
                             </td>
@@ -1196,13 +1259,12 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                             <td className="px-4 py-3 text-center text-[#94A3B8]">{row.time}</td>
                             <td className="px-4 py-3 text-center text-[#94A3B8]">{row.duration}</td>
                             <td className="px-4 py-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                row.status.toLowerCase().includes("missed") 
-                                  ? "bg-rose-500/10 text-rose-400 border border-rose-500/20" 
-                                  : row.status.toLowerCase().includes("answered") || row.status.toLowerCase().includes("success")
-                                    ? "bg-[#00E6B8]/10 text-[#00E6B8] border border-[#00E6B8]/20"
-                                    : "bg-slate-800 text-[#94A3B8] border border-slate-700"
-                              }`}>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${row.status.toLowerCase().includes("missed")
+                                ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                                : row.status.toLowerCase().includes("answered") || row.status.toLowerCase().includes("success")
+                                  ? "bg-[#00E6B8]/10 text-[#00E6B8] border border-[#00E6B8]/20"
+                                  : "bg-slate-800 text-[#94A3B8] border border-slate-700"
+                                }`}>
                                 {row.status}
                               </span>
                             </td>

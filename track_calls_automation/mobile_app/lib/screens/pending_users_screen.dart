@@ -83,44 +83,44 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              backgroundColor: Colors.white,
-              title: Text('Approve ${user['full_name']}', style: const TextStyle(color: Color(0xFF010B26), fontWeight: FontWeight.bold)),
+              backgroundColor: const Color(0xFF0E1528),
+              title: Text('Approve ${user['full_name']}', style: const TextStyle(color: Color(0xFFF8FAFC), fontWeight: FontWeight.bold)),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Role: ${user['role'].toString().toUpperCase()}', 
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF666666))
+                  Text('Role: ${user['role'].toString().toLowerCase() == 'warrior' ? 'EMPLOYEE' : user['role'].toString().toUpperCase()}', 
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF94A3B8))
                   ),
                   const SizedBox(height: 15),
                   if (user['role'] == 'warrior') ...[
-                    const Text('Assign to Group Leader:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF010B26))),
+                    const Text('Assign to Group Leader:', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF8FAFC))),
                     const SizedBox(height: 8),
                     _groupLeaders.isEmpty
                         ? const Text(
                             'No approved group leaders available. Please approve a group leader first.',
-                            style: TextStyle(color: Colors.redAccent, fontSize: 13),
+                            style: TextStyle(color: Color(0xFFFDA4AF), fontSize: 13),
                           )
                         : DropdownButtonFormField<String>(
                             value: selectedLeaderId,
-                            dropdownColor: Colors.white,
-                            style: const TextStyle(color: Color(0xFF010B26)),
+                            dropdownColor: const Color(0xFF0E1528),
+                            style: const TextStyle(color: Color(0xFFF8FAFC)),
                             decoration: InputDecoration(
                               filled: true,
-                              fillColor: const Color(0xFFF9F9F9),
+                              fillColor: const Color(0xFF050816),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
+                                borderSide: const BorderSide(color: Color(0xFF1E293B)),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFF04693F), width: 1.5),
+                                borderSide: const BorderSide(color: Color(0xFF1F8FFF), width: 1.5),
                               ),
                             ),
                             items: _groupLeaders.map<DropdownMenuItem<String>>((l) {
                               return DropdownMenuItem<String>(
                                 value: l['id'],
-                                child: Text(l['full_name']),
+                                child: Text(l['full_name'], style: const TextStyle(color: Color(0xFFF8FAFC))),
                               );
                             }).toList(),
                             onChanged: (val) {
@@ -130,14 +130,14 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
                             },
                           ),
                   ] else ...[
-                    const Text('No leader assignment is needed for this role.', style: TextStyle(color: Color(0xFF666666))),
+                    const Text('No leader assignment is needed for this role.', style: TextStyle(color: Color(0xFF94A3B8))),
                   ],
                 ],
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF666666))),
+                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
                 ),
                 ElevatedButton(
                   onPressed: (user['role'] == 'warrior' && selectedLeaderId == null)
@@ -147,9 +147,9 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
                           _handleApproval(user['id'], user['role'], selectedLeaderId);
                         },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF04693F),
+                    backgroundColor: const Color(0xFF1F8FFF),
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey[300],
+                    disabledBackgroundColor: const Color(0xFF1E293B),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   child: const Text('Approve'),
@@ -164,17 +164,11 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: const ShoptionAppBar(
-        title: 'Approvals',
-        subtitle: 'Pending Registrations',
-      ),
-      body: RefreshIndicator(
+    return RefreshIndicator(
         onRefresh: _fetchData,
-        color: const Color(0xFF04693F),
+        color: const Color(0xFF1F8FFF),
         child: _isLoading && _pendingUsers.isEmpty
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFF04693F)))
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF1F8FFF)))
             : _errorMessage != null
                 ? ListView(
                     padding: const EdgeInsets.all(24),
@@ -182,16 +176,17 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF2F2),
+                          color: const Color(0xFF881337).withOpacity(0.2),
                           borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFFDA4AF).withOpacity(0.3)),
                         ),
-                        child: Text(_errorMessage!, style: const TextStyle(color: Colors.redAccent)),
+                        child: Text(_errorMessage!, style: const TextStyle(color: Color(0xFFFDA4AF))),
                       ),
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: _fetchData,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF010B26),
+                          backgroundColor: const Color(0xFF1F8FFF),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
@@ -206,14 +201,14 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
                           const Center(
                             child: Column(
                               children: [
-                                Icon(Icons.check_circle_outline, size: 60, color: Color(0xFF04693F)),
+                                Icon(Icons.check_circle_outline, size: 60, color: Color(0xFF00E6B8)),
                                 SizedBox(height: 16),
                                 Text(
                                   'All Caught Up!',
-                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF010B26)),
+                                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFF8FAFC)),
                                 ),
                                 SizedBox(height: 8),
-                                Text('No pending registration requests.', style: TextStyle(color: Color(0xFF666666))),
+                                Text('No pending registration requests.', style: TextStyle(color: Color(0xFF94A3B8))),
                               ],
                             ),
                           ),
@@ -225,20 +220,20 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
                         itemBuilder: (context, index) {
                           final user = _pendingUsers[index];
                           return Card(
-                            color: const Color(0xFFF9F9F9),
+                            color: const Color(0xFF0E1528),
                             elevation: 0,
                             margin: const EdgeInsets.only(bottom: 12),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
-                              side: const BorderSide(color: Color(0xFFEEEEEE)),
+                              side: const BorderSide(color: Color(0xFF1E293B)),
                             ),
                             child: Padding(
                               padding: const EdgeInsets.all(16.0),
                               child: Row(
                                 children: [
                                   CircleAvatar(
-                                    backgroundColor: const Color(0xFFEEEEEE),
-                                    foregroundColor: const Color(0xFF010B26),
+                                    backgroundColor: const Color(0xFF1E293B),
+                                    foregroundColor: const Color(0xFF1F8FFF),
                                     child: Text(user['full_name'][0].toString().toUpperCase()),
                                   ),
                                   const SizedBox(width: 16),
@@ -248,21 +243,21 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
                                       children: [
                                         Text(
                                           user['full_name'],
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF010B26)),
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFFF8FAFC)),
                                         ),
                                         const SizedBox(height: 4),
-                                        Text(user['email'], style: const TextStyle(color: Color(0xFF666666), fontSize: 13)),
+                                        Text(user['email'], style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13)),
                                         const SizedBox(height: 8),
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFE6F3EC),
+                                            color: const Color(0xFF00E6B8).withOpacity(0.15),
                                             borderRadius: BorderRadius.circular(20),
                                           ),
                                           child: Text(
                                             user['role'].toString().toUpperCase(),
                                             style: const TextStyle(
-                                              color: Color(0xFF04693F),
+                                              color: Color(0xFF00E6B8),
                                               fontWeight: FontWeight.bold,
                                               fontSize: 10,
                                             ),
@@ -274,7 +269,7 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
                                   ElevatedButton(
                                     onPressed: () => _showApprovalDialog(user),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF010B26),
+                                      backgroundColor: const Color(0xFF1F8FFF),
                                       foregroundColor: Colors.white,
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(8),
@@ -288,7 +283,6 @@ class _PendingUsersScreenState extends State<PendingUsersScreen> {
                           );
                         },
                       ),
-      ),
-    );
+      );
   }
 }

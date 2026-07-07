@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import csv
 import io
 from datetime import datetime
@@ -48,12 +48,20 @@ def sync_call_logs(
         if emp_record:
             emp_id = emp_record.employee_id
 
+    # Bulk query existing call logs in one go to prevent N+1 queries
+    system_call_ids = [log_data.system_call_id for log_data in logs_in if log_data.system_call_id]
+    existing_logs = []
+    if system_call_ids:
+        existing_logs = db.query(CallLog).filter(CallLog.system_call_id.in_(system_call_ids)).all()
+    
+    # Map existing logs by system_call_id for O(1) lookups
+    existing_map = {log.system_call_id: log for log in existing_logs if log.system_call_id}
+
     created_logs = []
+    webhook_payloads = []  # Collect all new log payloads to batch into a single background task
+
     for log_data in logs_in:
-        # Check if user + system_call_id combination already exists to prevent duplicate syncs
-        exists = db.query(CallLog).filter(
-            CallLog.system_call_id == log_data.system_call_id
-        ).first()
+        exists = existing_map.get(log_data.system_call_id)
         call_type, call_status = _normalize_call_type(log_data.call_type, log_data.duration_seconds)
         
         if not exists:
@@ -65,15 +73,13 @@ def sync_call_logs(
                 duration_seconds=log_data.duration_seconds,
                 timestamp=log_data.timestamp,
                 system_call_id=log_data.system_call_id,
+                created_at=datetime.utcnow(),
                 system_id=current_user.system_id,
                 employee_id=emp_id,
                 org_id=current_user.organisation_id
             )
-            db.add(db_log)
             created_logs.append(db_log)
-            
-            # Enqueue webhook delivery for this newly created log
-            log_payload = {
+            webhook_payloads.append({
                 "phone_number": db_log.phone_number,
                 "call_type": db_log.call_type,
                 "call_status": db_log.call_status,
@@ -82,14 +88,7 @@ def sync_call_logs(
                 "system_call_id": db_log.system_call_id,
                 "employee_id": db_log.employee_id,
                 "system_id": db_log.system_id
-            }
-            background_tasks.add_task(
-                dispatch_webhook, 
-                db, 
-                current_user.organisation_id, 
-                "call.synced", 
-                log_payload
-            )
+            })
             
         elif exists.user_id is None:
             # If log exists but user_id is None, link it to the syncing user
@@ -99,11 +98,8 @@ def sync_call_logs(
             exists.org_id = current_user.organisation_id
             exists.call_type = call_type
             exists.call_status = call_status
-            db.add(exists)
             created_logs.append(exists)
-            
-            # Enqueue webhook delivery for this linked log
-            log_payload = {
+            webhook_payloads.append({
                 "phone_number": exists.phone_number,
                 "call_type": exists.call_type,
                 "call_status": exists.call_status,
@@ -112,32 +108,88 @@ def sync_call_logs(
                 "system_call_id": exists.system_call_id,
                 "employee_id": exists.employee_id,
                 "system_id": exists.system_id
-            }
-            background_tasks.add_task(
-                dispatch_webhook, 
-                db, 
-                current_user.organisation_id, 
-                "call.synced", 
-                log_payload
-            )
-            
+            })
+
     if created_logs:
-        db.commit()
-        for log in created_logs:
-            db.refresh(log)
-            
+        try:
+            # bulk_save_objects handles batch inserts and populates database defaults
+            # (like generated IDs and timestamps) using Postgres RETURNING clause in 1 roundtrip.
+            db.bulk_save_objects(created_logs, return_defaults=True)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"ERROR: Failed to bulk save call logs: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save synced call logs"
+            )
+
+    # Fire a SINGLE background task for the entire batch of new logs, BUT only if
+    # active subscriptions actually exist. This avoids scheduling background tasks
+    # and spawning DB connection sessions in the background when no webhooks are configured.
+    if webhook_payloads:
+        from app.webhooks_dispatcher import _get_active_subscriptions
+        # Reuse current_user's organisation_id to check for subscriptions using the active DB session
+        has_active_subs = False
+        if current_user.organisation_id:
+            try:
+                subs = _get_active_subscriptions(db, current_user.organisation_id)
+                has_active_subs = len(subs) > 0
+            except Exception as e:
+                print(f"ERROR: Failed to check active webhook subscriptions: {e}")
+        
+        if has_active_subs:
+            background_tasks.add_task(
+                dispatch_webhook,
+                current_user.organisation_id,
+                "call.synced",
+                webhook_payloads
+            )
+        else:
+            print(f"INFO: No active webhook subscriptions for org {current_user.organisation_id}. Webhook dispatch skipped.")
+
     print(f"INFO: Post calls successful. {len(created_logs)} calls synced to database for user {current_user.email}.")
     return created_logs
 
 @router.get("/", response_model=List[CallLogOut])
-def get_my_call_logs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Fetch all call logs belonging to the current logged-in user."""
-    print(f"INFO: GET /calls/ requested by user {current_user.email}")
-    return db.query(CallLog).filter(CallLog.user_id == current_user.id).order_by(CallLog.id.desc()).all()
-
+def get_my_call_logs(
+    limit: int = 100,
+    offset: int = 0,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """Fetch call logs belonging to the current logged-in user with pagination and optional date filters."""
+    print(f"INFO: GET /calls/ requested by user {current_user.email} (limit={limit}, offset={offset}, start={start_date}, end={end_date})")
+    
+    query = db.query(CallLog).filter(CallLog.user_id == current_user.id)
+    
+    from sqlalchemy import cast, DateTime as SQLDateTime
+    if start_date:
+        try:
+            start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
+            query = query.filter(cast(CallLog.timestamp, SQLDateTime) >= start_dt)
+        except Exception:
+            pass
+    if end_date:
+        try:
+            end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
+            query = query.filter(cast(CallLog.timestamp, SQLDateTime) <= end_dt)
+        except Exception:
+            pass
+            
+    return query.order_by(CallLog.timestamp.desc()).offset(offset).limit(limit).all()
 @router.get("/reports", response_model=LeaderReportResponse)
-def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    print(f"INFO: GET /calls/reports requested by user {current_user.email} (Role: {current_user.role})")
+def get_reports(
+    leader_id: Optional[str] = None,
+    warrior_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    print(f"INFO: GET /calls/reports requested by user {current_user.email} (Role: {current_user.role}) Filter: leader={leader_id}, warrior={warrior_id}, start={start_date}, end={end_date}")
     # Determine which warriors to include based on user role
     if current_user.role == "warrior":
         raise HTTPException(
@@ -150,11 +202,14 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
         warriors = db.query(User).filter(User.manager_id == current_user.id, User.role == "warrior").all()
         warriors = list(warriors) + [current_user]
         
-    elif current_user.role in ["admin", "super_admin"]:
-        # Admins and Super Admins get all warriors and group leaders in their organisation, plus themselves
+    elif current_user.role == "super_admin":
+        # Super Admins get all users in the organisation (all roles)
         org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
-        warriors = db.query(User).filter(User.role.in_(["warrior", "group_leader"]), org_filter).all()
-        warriors = list(warriors) + [current_user]
+        warriors = db.query(User).filter(org_filter).all()
+    elif current_user.role == "admin":
+        # Admins get all users in their organisation EXCEPT super_admin users
+        org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
+        warriors = db.query(User).filter(org_filter, User.role != "super_admin").all()
         
     else:
         raise HTTPException(
@@ -162,14 +217,38 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
             detail="Unknown user role"
         )
 
+    # Apply selected leader / warrior filters on the list of users
+    if warrior_id and warrior_id != "all":
+        warriors = [w for w in warriors if str(w.id) == warrior_id]
+    elif leader_id and leader_id != "all":
+        # Filter list to only users reporting to this leader, plus the leader themselves
+        warriors = [w for w in warriors if str(w.manager_id) == leader_id or str(w.id) == leader_id]
+
     warrior_reports = []
     overall_total_calls = 0
     overall_incoming_count = 0
     overall_outgoing_count = 0
     overall_total_seconds = 0
 
+    from sqlalchemy import cast, DateTime as SQLDateTime
     for warrior in warriors:
-        logs = db.query(CallLog).filter(CallLog.user_id == warrior.id).all()
+        query = db.query(CallLog).filter(CallLog.user_id == warrior.id)
+        
+        # Apply start and end date filters on the query
+        if start_date:
+            try:
+                start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
+                query = query.filter(cast(CallLog.timestamp, SQLDateTime) >= start_dt)
+            except Exception:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
+                query = query.filter(cast(CallLog.timestamp, SQLDateTime) <= end_dt)
+            except Exception:
+                pass
+                
+        logs = query.all()
         
         total_calls = len(logs)
         incoming_count = sum(1 for l in logs if (l.call_type or "").lower() in ["incoming", "missed", "rejected", "blocked"])
@@ -196,40 +275,20 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
 
         # Resolve dynamic tracking status
         is_tracking_enabled_dynamic = False
-        if warrior.is_tracking_enabled:
+        if warrior.is_tracking_active:
             should_deactivate = False
             if warrior.last_activity_timestamp:
                 diff = (datetime.utcnow() - warrior.last_activity_timestamp).total_seconds()
                 if diff < 120:
-                    is_tracking_enabled_dynamic = warrior.is_tracking_active
+                    is_tracking_enabled_dynamic = True
                 else:
                     should_deactivate = True
             else:
                 should_deactivate = True
 
             if should_deactivate:
-                if warrior.is_tracking_active:
-                    warrior.is_tracking_active = False
-                    db.add(warrior)
-                    db.commit()
-                    # Sync offline state to Firestore
-                    try:
-                        from app.firebase_service import update_tracking_status_in_firestore
-                        from app.models import OrgEmployee
-                        emp_id = ""
-                        if warrior.system_id:
-                            emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == warrior.system_id).first()
-                            if emp_rec:
-                                emp_id = emp_rec.employee_id
-                        update_tracking_status_in_firestore(
-                            emp_id=emp_id,
-                            organisation_id=str(warrior.organisation_id) if warrior.organisation_id else "",
-                            system_id=warrior.system_id or "",
-                            is_tracking_enabled=False,
-                            last_activity_timestamp=warrior.last_activity_timestamp or datetime.utcnow()
-                        )
-                    except Exception as ex:
-                        print(f"ERROR: Failed to update Firestore on offline timeout: {ex}")
+                warrior.is_tracking_active = False
+                db.commit()
 
         warrior_reports.append(
             WarriorReport(
@@ -262,31 +321,58 @@ def get_reports(db: Session = Depends(get_db), current_user: User = Depends(get_
         warriors=warrior_reports
     )
 
-def get_user_from_query_token(token: str, db: Session):
+from fastapi import Request
+
+def get_user_from_query_token(token: Optional[str], db: Session, request: Request = None):
+    # Fallback to Authorization header if token query param is missing
+    if not token and request:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token is missing")
+        
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
         user = db.query(User).filter(User.id == user_id).first()
-        if user is None or user.role == "warrior":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
         return user
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
+
+def get_recursive_subordinate_ids(user_id, db) -> list:
+    from uuid import UUID
+    uid = user_id if isinstance(user_id, UUID) else UUID(user_id)
+    descendants = [uid]
+    from app.models import User
+    direct_reports = db.query(User.id).filter(User.manager_id == uid).all()
+    for report in direct_reports:
+        descendants.extend(get_recursive_subordinate_ids(report[0], db))
+    return descendants
+
 @router.get("/reports/export/csv")
 def export_reports_csv(
-    token: str,
+    request: Request,
+    token: Optional[str] = None,
     leader_id: str = "all",
     warrior_id: str = "all",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    current_user = get_user_from_query_token(token, db)
-    print(f"INFO: Export reports to CSV requested by {current_user.email} (Leader ID: {leader_id}, Warrior ID: {warrior_id})")
+    current_user = get_user_from_query_token(token, db, request)
+    print(f"INFO: Export reports to CSV requested by {current_user.email} (Leader ID: {leader_id}, Warrior ID: {warrior_id}, start={start_date}, end={end_date})")
     
     org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
-    if current_user.role == "group_leader":
+    if current_user.role == "warrior":
+        query = db.query(User).filter(User.id == current_user.id)
+    elif current_user.role == "group_leader":
         from sqlalchemy import or_
         query = db.query(User).filter(
             org_filter,
@@ -295,30 +381,16 @@ def export_reports_csv(
                 User.id == current_user.id
             )
         )
-    elif current_user.role in ["admin", "super_admin"]:
-        from sqlalchemy import or_
-        query = db.query(User).filter(
-            org_filter,
-            or_(
-                User.role.in_(["warrior", "group_leader"]),
-                User.id == current_user.id
-            )
-        )
-        if leader_id and leader_id != "all":
-            leader = db.query(User).filter(User.id == leader_id).first()
-            if leader and leader.organisation_id == current_user.organisation_id:
-                query = query.filter(User.manager_id == leader_id)
-            else:
-                from sqlalchemy import text
-                query = query.filter(text("1=0"))
+    elif current_user.role == "super_admin" or current_user.role == "admin":
+        query = db.query(User).filter(org_filter)
+        if current_user.role == "admin":
+            query = query.filter(User.role != "super_admin")
             
-    if warrior_id and warrior_id != "all":
-        warrior = db.query(User).filter(User.id == warrior_id).first()
-        if warrior and warrior.organisation_id == current_user.organisation_id:
+        if warrior_id and warrior_id != "all":
             query = query.filter(User.id == warrior_id)
-        else:
-            from sqlalchemy import text
-            query = query.filter(text("1=0"))
+        elif leader_id and leader_id != "all":
+            descendant_ids = get_recursive_subordinate_ids(leader_id, db)
+            query = query.filter(User.id.in_(descendant_ids))
         
     warriors = query.all()
     
@@ -330,9 +402,24 @@ def export_reports_csv(
         "Phone Number", "Call Type", "Sub-Category", "Duration (seconds)", "Timestamp"
     ])
     
+    from sqlalchemy import cast, DateTime as SQLDateTime
     for warrior in warriors:
         manager_name = warrior.manager.full_name if warrior.manager else "Unassigned"
-        logs = db.query(CallLog).filter(CallLog.user_id == warrior.id).order_by(CallLog.timestamp.desc()).all()
+        
+        q = db.query(CallLog).filter(CallLog.user_id == warrior.id)
+        if start_date:
+            try:
+                start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
+                q = q.filter(cast(CallLog.timestamp, SQLDateTime) >= start_dt)
+            except Exception:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
+                q = q.filter(cast(CallLog.timestamp, SQLDateTime) <= end_dt)
+            except Exception:
+                pass
+        logs = q.order_by(CallLog.timestamp.desc()).all()
         
         if not logs:
             writer.writerow([
@@ -358,16 +445,21 @@ def export_reports_csv(
 
 @router.get("/reports/export/pdf", response_class=HTMLResponse)
 def export_reports_pdf(
-    token: str,
+    request: Request,
+    token: Optional[str] = None,
     leader_id: str = "all",
     warrior_id: str = "all",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    current_user = get_user_from_query_token(token, db)
-    print(f"INFO: Export reports to PDF requested by {current_user.email} (Leader ID: {leader_id}, Warrior ID: {warrior_id})")
+    current_user = get_user_from_query_token(token, db, request)
+    print(f"INFO: Export reports to PDF requested by {current_user.email} (Leader ID: {leader_id}, Warrior ID: {warrior_id}, start={start_date}, end={end_date})")
     
     org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
-    if current_user.role == "group_leader":
+    if current_user.role == "warrior":
+        query = db.query(User).filter(User.id == current_user.id)
+    elif current_user.role == "group_leader":
         from sqlalchemy import or_
         query = db.query(User).filter(
             org_filter,
@@ -376,30 +468,16 @@ def export_reports_pdf(
                 User.id == current_user.id
             )
         )
-    elif current_user.role in ["admin", "super_admin"]:
-        from sqlalchemy import or_
-        query = db.query(User).filter(
-            org_filter,
-            or_(
-                User.role.in_(["warrior", "group_leader"]),
-                User.id == current_user.id
-            )
-        )
-        if leader_id and leader_id != "all":
-            leader = db.query(User).filter(User.id == leader_id).first()
-            if leader and leader.organisation_id == current_user.organisation_id:
-                query = query.filter(User.manager_id == leader_id)
-            else:
-                from sqlalchemy import text
-                query = query.filter(text("1=0"))
+    elif current_user.role == "super_admin" or current_user.role == "admin":
+        query = db.query(User).filter(org_filter)
+        if current_user.role == "admin":
+            query = query.filter(User.role != "super_admin")
             
-    if warrior_id and warrior_id != "all":
-        warrior = db.query(User).filter(User.id == warrior_id).first()
-        if warrior and warrior.organisation_id == current_user.organisation_id:
+        if warrior_id and warrior_id != "all":
             query = query.filter(User.id == warrior_id)
-        else:
-            from sqlalchemy import text
-            query = query.filter(text("1=0"))
+        elif leader_id and leader_id != "all":
+            descendant_ids = get_recursive_subordinate_ids(leader_id, db)
+            query = query.filter(User.id.in_(descendant_ids))
         
     warriors = query.all()
     
@@ -415,8 +493,22 @@ def export_reports_pdf(
     warrior_rows = []
     detailed_logs = []
     
+    from sqlalchemy import cast, DateTime as SQLDateTime
     for warrior in warriors:
-        logs = db.query(CallLog).filter(CallLog.user_id == warrior.id).order_by(CallLog.timestamp.desc()).all()
+        q = db.query(CallLog).filter(CallLog.user_id == warrior.id)
+        if start_date:
+            try:
+                start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
+                q = q.filter(cast(CallLog.timestamp, SQLDateTime) >= start_dt)
+            except Exception:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
+                q = q.filter(cast(CallLog.timestamp, SQLDateTime) <= end_dt)
+            except Exception:
+                pass
+        logs = q.order_by(CallLog.timestamp.desc()).all()
         w_calls = len(logs)
         w_incoming = sum(1 for l in logs if (l.call_type or "").lower() in ["incoming", "missed", "rejected", "blocked"])
         w_incoming_attended = sum(1 for l in logs if (l.call_type or "").lower() == "incoming" and (l.call_status or "").lower() == "answered")
@@ -709,3 +801,115 @@ def export_reports_pdf(
     """
     
     return HTMLResponse(content=html_content, status_code=200)
+
+
+from sqlalchemy import func
+
+@router.get("/stats/me")
+def get_my_call_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returns aggregate stats and historical chart data for the current user.
+    """
+    # 1. Fetch total counts grouped by call_type (optimized single query)
+    type_counts = db.query(CallLog.call_type, func.count(CallLog.id)).filter(
+        CallLog.user_id == current_user.id
+    ).group_by(CallLog.call_type).all()
+    
+    incoming_count = 0
+    outgoing_count = 0
+    for c_type, count in type_counts:
+        if c_type and c_type.lower() in ["incoming", "missed", "rejected", "blocked"]:
+            incoming_count += count
+        elif c_type and c_type.lower() == "outgoing":
+            outgoing_count += count
+            
+    total_calls = incoming_count + outgoing_count
+    
+    total_duration = db.query(func.sum(CallLog.duration_seconds)).filter(
+        CallLog.user_id == current_user.id
+    ).scalar() or 0
+    
+    # 2. Fetch advanced statistics
+    avg_dur = db.query(func.avg(CallLog.duration_seconds)).filter(
+        CallLog.user_id == current_user.id,
+        CallLog.duration_seconds > 0
+    ).scalar() or 0
+    
+    answered_calls = db.query(CallLog).filter(
+        CallLog.user_id == current_user.id,
+        CallLog.duration_seconds > 0
+    ).count()
+    
+    success_rate = (answered_calls / total_calls * 100) if total_calls > 0 else 0.0
+
+    # 3. Peak Hour Query
+    from sqlalchemy import text
+    peak_hour_res = db.execute(text("""
+        SELECT EXTRACT(HOUR FROM CAST(timestamp AS timestamp)) as hr, COUNT(*) as cnt 
+        FROM call_logs 
+        WHERE user_id = :uid 
+        GROUP BY hr 
+        ORDER BY cnt DESC 
+        LIMIT 1;
+    """), {"uid": current_user.id}).fetchone()
+    
+    peak_hour_str = "N/A"
+    if peak_hour_res:
+        hr = int(peak_hour_res[0])
+        am_pm = "PM" if hr >= 12 else "AM"
+        display_hr = hr % 12
+        if display_hr == 0:
+            display_hr = 12
+        peak_hour_str = f"{display_hr}:00 {am_pm}"
+
+    # 4. Fetch daily call duration (last 7 days)
+    from datetime import timedelta, date
+    daily_stats = []
+    for i in range(6, -1, -1):
+        target_date = date.today() - timedelta(days=i)
+        # Get start and end of this date
+        start_dt = datetime.combine(target_date, datetime.min.time())
+        end_dt = datetime.combine(target_date, datetime.max.time())
+        
+        from sqlalchemy import cast, DateTime as SQLDateTime
+        day_duration = db.query(func.sum(CallLog.duration_seconds)).filter(
+            CallLog.user_id == current_user.id,
+            cast(CallLog.timestamp, SQLDateTime) >= start_dt,
+            cast(CallLog.timestamp, SQLDateTime) <= end_dt
+        ).scalar() or 0
+        
+        daily_stats.append({
+            "day": target_date.strftime("%a"),
+            "date": target_date.isoformat(),
+            "duration_seconds": int(day_duration)
+        })
+
+    return {
+        "incoming_count": incoming_count,
+        "outgoing_count": outgoing_count,
+        "total_calls": total_calls,
+        "total_duration_seconds": int(total_duration),
+        "avg_duration_seconds": round(float(avg_dur), 1),
+        "success_rate": round(float(success_rate), 1),
+        "peak_hour": peak_hour_str,
+        "daily_trends": daily_stats
+    }
+
+
+
+@router.get("/reports/export/excel")
+def export_reports_excel(
+    request: Request,
+    token: Optional[str] = None,
+    leader_id: str = "all",
+    warrior_id: str = "all",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    response = export_reports_csv(request, token, leader_id, warrior_id, start_date, end_date, db)
+    response.headers["Content-Disposition"] = "attachment; filename=team_reports.csv"
+    return response

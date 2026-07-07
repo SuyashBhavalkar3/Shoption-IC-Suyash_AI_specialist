@@ -58,7 +58,7 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFF050816),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
@@ -73,23 +73,23 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                 errorBuilder: (_, __, ___) => const Icon(
                   Icons.phone_callback_rounded,
                   size: 80,
-                  color: Color(0xFF04693F),
+                  color: Color(0xFF1F8FFF),
                 ),
               ),
               const SizedBox(height: 40),
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF9F9F9),
+                  color: const Color(0xFF0E1528),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFEEEEEE)),
+                  border: Border.all(color: const Color(0xFF1E293B)),
                 ),
                 child: const Column(
                   children: [
                     Icon(
                       Icons.hourglass_empty_rounded,
                       size: 48,
-                      color: Color(0xFF04693F),
+                      color: Color(0xFF8B5CF6),
                     ),
                     SizedBox(height: 16),
                     Text(
@@ -97,7 +97,7 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF010B26),
+                        color: Color(0xFFF8FAFC),
                       ),
                     ),
                     SizedBox(height: 10),
@@ -106,7 +106,7 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
-                        color: Color(0xFF666666),
+                        color: Color(0xFF94A3B8),
                         height: 1.5,
                       ),
                     ),
@@ -117,7 +117,7 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
               ElevatedButton(
                 onPressed: _checking ? null : () => _checkStatus(context),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF010B26),
+                  backgroundColor: const Color(0xFF1F8FFF),
                   foregroundColor: Colors.white,
                   minimumSize: const Size.fromHeight(54),
                   shape: RoundedRectangleBorder(
@@ -139,11 +139,11 @@ class _PendingApprovalScreenState extends State<PendingApprovalScreen> {
               const Spacer(),
               TextButton.icon(
                 onPressed: () => _logout(context),
-                icon: const Icon(Icons.logout, color: Color(0xFF04693F)),
+                icon: const Icon(Icons.logout, color: Color(0xFF1F8FFF)),
                 label: const Text(
                   'Logout',
                   style: TextStyle(
-                    color: Color(0xFF04693F),
+                    color: Color(0xFF1F8FFF),
                     fontWeight: FontWeight.bold,
                   ),
                 ),

@@ -34,12 +34,16 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     } else {
                         pendingPermissionResult = result
+                        val permissions = mutableListOf(
+                            Manifest.permission.READ_PHONE_STATE,
+                            Manifest.permission.READ_CALL_LOG
+                        )
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                         ActivityCompat.requestPermissions(
                             this,
-                            arrayOf(
-                                Manifest.permission.READ_PHONE_STATE,
-                                Manifest.permission.READ_CALL_LOG
-                            ),
+                            permissions.toTypedArray(),
                             REQUEST_CODE_REQUIRED_PERMISSIONS
                         )
                     }
@@ -89,8 +93,13 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun hasCallPermissions(): Boolean {
-        return hasPermission(Manifest.permission.READ_PHONE_STATE) &&
-               hasPermission(Manifest.permission.READ_CALL_LOG)
+        val basePermissions = hasPermission(Manifest.permission.READ_PHONE_STATE) &&
+                hasPermission(Manifest.permission.READ_CALL_LOG)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            basePermissions && hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            basePermissions
+        }
     }
 
     private fun hasPermission(permission: String): Boolean {

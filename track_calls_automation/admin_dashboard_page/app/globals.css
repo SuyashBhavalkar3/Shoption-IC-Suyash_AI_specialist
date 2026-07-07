@@ -2,22 +2,84 @@
 
 :root {
   --background: #050816;
-  --foreground: #F8FAFC;
   --card: #0E1528;
   --primary: #1F8FFF;
-  --ai: #00E6B8;
-  --accent: #8B5CF6;
-  --secondary-text: #94A3B8;
+  --ai-accent: #00E6B8;
+  --highlight: #8B5CF6;
+  --text: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --warning: #F43F5E;
+  --amber-custom: #FBBF24;
+
+  /* Custom helper variables */
+  --border-custom: rgba(148, 163, 184, 0.1);
+  --bg-subtle: rgba(14, 21, 40, 0.4);
+  --bg-hover: rgba(148, 163, 184, 0.1);
+  --card-shadow: none;
+  --chart-grid: rgba(148, 163, 184, 0.04);
+  --chart-label: #94A3B8;
+
+  /* Slate overrides for dark mode */
+  --slate-500: #64748B;
+  --slate-700: #334155;
+  --slate-750: #1E293B;
+  --slate-800: #1E293B;
+  --slate-850: #171E2E;
+  --slate-900: #0F172A;
+}
+
+html[data-theme="light"] {
+  --background: #F4F6FB;
+  --card: #FFFFFF;
+  --text: #0F172A;
+  --text-secondary: #64748B;
+  --ai-accent: #00B894;
+  --amber-custom: #D97706;
+
+  /* Custom helper variables */
+  --border-custom: #E2E8F0;
+  --bg-subtle: #F8FAFC;
+  --bg-hover: rgba(15, 23, 42, 0.05);
+  --card-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.08);
+  --chart-grid: rgba(15, 23, 42, 0.08);
+  --chart-label: #64748B;
+
+  /* Slate overrides for light mode */
+  --slate-500: #64748B;
+  --slate-700: #CBD5E1;
+  --slate-750: #E2E8F0;
+  --slate-800: #E2E8F0;
+  --slate-850: #F1F5F9;
+  --slate-900: #F8FAFC;
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-primary: var(--primary);
-  --color-ai: var(--ai);
-  --color-accent: var(--accent);
-  --color-secondary-text: var(--secondary-text);
+  --color-ai-accent: var(--ai-accent);
+  --color-highlight: var(--highlight);
+  --color-text: var(--text);
+  --color-text-secondary: var(--text-secondary);
+  --color-warning: var(--warning);
+  --color-amber-custom: var(--amber-custom);
+
+  /* Custom helper colors */
+  --color-border-custom: var(--border-custom);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-bg-hover: var(--bg-hover);
+  --color-card-shadow: var(--card-shadow);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-label: var(--chart-label);
+
+  /* Map custom slate overrides */
+  --color-slate-500: var(--slate-500);
+  --color-slate-700: var(--slate-700);
+  --color-slate-750: var(--slate-750);
+  --color-slate-800: var(--slate-800);
+  --color-slate-850: var(--slate-850);
+  --color-slate-900: var(--slate-900);
+
   --font-sans: "Inter", "Segoe UI", Arial, sans-serif;
   --font-mono: "SFMono-Regular", "Consolas", monospace;
 }
@@ -31,11 +93,39 @@ html {
   color-scheme: dark;
 }
 
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
 body {
   background: var(--background);
-  color: var(--foreground);
+  color: var(--text);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   min-height: 100vh;
+}
+
+/* Fluid transition animations for theming */
+body,
+main,
+div,
+header,
+aside,
+table,
+tr,
+td,
+th,
+button,
+p,
+span,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+select,
+input {
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
 ::selection {
@@ -43,21 +133,211 @@ body {
   color: #F8FAFC;
 }
 
-/* Custom scrollbars for a premium dark feel */
+/* Custom scrollbars for a premium feel */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(14, 21, 40, 0.5);
+  background: var(--bg-subtle);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.2);
+  background: var(--bg-hover);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.4);
+  background: var(--border-custom);
+}
+
+/* Theme class overrides for hardcoded dark colors */
+html[data-theme="light"] .bg-\[\#0E1528\],
+html[data-theme="light"] .bg-card {
+  background-color: var(--card) !important;
+  box-shadow: var(--card-shadow) !important;
+}
+
+html[data-theme="light"] .bg-\[\#050816\],
+html[data-theme="light"] .bg-background {
+  background-color: var(--background) !important;
+}
+
+html[data-theme="light"] .text-\[\#F8FAFC\],
+html[data-theme="light"] .text-text {
+  color: var(--text) !important;
+}
+
+html[data-theme="light"] .text-\[\#94A3B8\],
+html[data-theme="light"] .text-text-secondary {
+  color: var(--text-secondary) !important;
+}
+
+html[data-theme="light"] input.bg-\[\#050816\],
+html[data-theme="light"] select.bg-\[\#050816\] {
+  background-color: var(--card) !important;
+}
+
+html[data-theme="light"] [class*="shadow-[inset_0_-1px_0"] {
+  box-shadow: inset 0 -1px 0 var(--border-custom) !important;
+}
+
+html[data-theme="light"] .from-\[\#0E1528\],
+html[data-theme="light"] .from-card {
+  --tw-gradient-from: var(--card) var(--tw-gradient-from-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(255, 255, 255, 0)) !important;
+}
+
+html[data-theme="light"] .to-\[\#050816\],
+html[data-theme="light"] .to-background {
+  --tw-gradient-to: var(--background) var(--tw-gradient-to-position) !important;
+}
+
+/* Custom keyframes for slow spin */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 15s linear infinite;
+}
+
+/* Premium Card Borders and Shadows */
+.bg-card,
+html[data-theme="dark"] .bg-\[\#0E1528\],
+html[data-theme="light"] .bg-\[\#0E1528\],
+html[data-theme="dark"] .bg-card,
+html[data-theme="light"] .bg-card {
+  border: 1px solid var(--border-custom) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+  border-radius: 12px !important;
+}
+
+/* Light theme card shadow adjustments */
+html[data-theme="light"] .bg-card,
+html[data-theme="light"] .bg-\[\#0E1528\] {
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Remove stray top border stripes globally */
+html,
+body,
+body>div:first-of-type,
+main {
+  border-top: none !important;
+  border-top-width: 0px !important;
+}
+
+/* Hide floating debug artifacts and Next.js ISR toasts */
+#nextjs-portal-root-toast,
+#nextjs-toast-root,
+.nextjs-toast,
+[class*="debug-overlay"],
+[id*="debug-overlay"],
+[class*="issue-pill"] {
+  display: none !important;
+}
+
+/* 3D Metric Cards with Left Accent Stripes */
+.metric-card-3d {
+  position: relative;
+  overflow: visible;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 0.3s ease !important;
+}
+
+.metric-card-3d:hover {
+  transform: translateY(-6px) scale(1.015) !important;
+}
+
+/* Dark theme hover shadow (deep 3D glow & shadow) */
+html[data-theme="dark"] .metric-card-3d:hover,
+:root .metric-card-3d:hover {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  box-shadow: 0 16px 28px -6px rgba(0, 0, 0, 0.65),
+    0 6px 12px -4px rgba(31, 143, 255, 0.08) !important;
+}
+
+/* Light theme hover shadow */
+html[data-theme="light"] .metric-card-3d:hover {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  box-shadow: 0 16px 28px -6px rgba(15, 23, 42, 0.16),
+    0 6px 12px -4px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Left Accent Stripe Base */
+.metric-card-accent-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-top-left-radius: 11px;
+  border-bottom-left-radius: 11px;
+  z-index: 10;
+}
+
+/* Dynamic in-page metrics & values loading state */
+.is-refreshing .text-\[28px\],
+.is-refreshing .text-\[30px\],
+.is-refreshing .text-3xl {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.08) 25%, rgba(148, 163, 184, 0.18) 50%, rgba(148, 163, 184, 0.08) 75%) !important;
+  background-size: 200% 100% !important;
+  animation: shimmer-metric-value 1.2s infinite linear !important;
+  border-radius: 8px !important;
+  display: inline-block !important;
+  min-width: 72px !important;
+  min-height: 28px !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+}
+
+/* Dim and blur charts slightly to show they are reloading data */
+.is-refreshing .recharts-wrapper {
+  opacity: 0.35 !important;
+  filter: blur(0.5px) !important;
+  transition: opacity 0.3s ease, filter 0.3s ease !important;
+  pointer-events: none !important;
+}
+
+/* Table body, tree views, and logs list pulsing/loading state across all pages */
+.is-refreshing table tbody,
+.is-refreshing .workforce-tree-container,
+.is-refreshing .call-log-list-container,
+.is-refreshing .tree-node-wrapper,
+.is-refreshing ul,
+.is-refreshing ol {
+  animation: pulse-values 1.2s infinite ease-in-out !important;
+  opacity: 0.45 !important;
+  pointer-events: none !important;
+  filter: blur(0.3px) !important;
+  transition: opacity 0.3s ease, filter 0.3s ease !important;
+}
+
+@keyframes pulse-values {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+@keyframes shimmer-metric-value {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }

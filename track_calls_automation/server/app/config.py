@@ -35,3 +35,5 @@ except ValueError:
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", SMTP_USERNAME)
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", SMTP_FROM_EMAIL)
+
