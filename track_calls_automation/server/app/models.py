@@ -43,15 +43,16 @@ class User(Base):
     # manager_id is NULL until admin assigns the warrior to a group_leader
     manager_id   = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     # Approval flow: warrior registers → is_approved=False → admin approves + assigns → True
-    is_approved  = Column(Boolean, nullable=False, server_default=text("false"))
-    is_active    = Column(Boolean, nullable=False, server_default=text("true"))
-    is_tracking_active  = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    is_approved  = Column(Boolean, nullable=False, server_default=text("false"), index=True)
+    is_active    = Column(Boolean, nullable=False, server_default=text("true"), index=True)
+    is_tracking_active  = Column(Boolean, nullable=False, server_default=text("false"), default=False, index=True)
     created_at   = Column(DateTime, server_default=text("now()"), nullable=False)
     # system_id links this user to their org_employees record (set at registration if employee_id is provided)
     system_id    = Column(String(6), unique=True, nullable=True, index=True)
     organisation_id = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="SET NULL"), nullable=True)
     last_activity_timestamp = Column(DateTime, nullable=True)
     department   = Column(String, nullable=True)
+    is_on_call   = Column(Boolean, nullable=False, server_default=text("false"), default=False)
 
     # Self-referencing relationship
     manager      = relationship("User", remote_side=[id], backref="subordinates")
@@ -79,7 +80,7 @@ class CallLog(Base):
     call_type        = Column(String, nullable=False)
     call_status      = Column(String, nullable=False, server_default="Answered")
     duration_seconds = Column(Integer, nullable=False)
-    timestamp        = Column(String, nullable=False)
+    timestamp        = Column(String, nullable=False, index=True)
     system_call_id   = Column(String, nullable=False, index=True)
     created_at       = Column(DateTime, server_default=text("now()"), nullable=False)
     # system_id is copied from user.system_id at call-log creation time for cross-table access
@@ -114,7 +115,7 @@ class OrgEmployee(Base):
     employee_id = Column(String, nullable=False)
     email       = Column(String, nullable=True, index=True)
     department  = Column(String, nullable=True)
-    is_tracking_needed = Column(Boolean, nullable=False, server_default=text("true"), default=True)
+    is_tracking_needed = Column(Boolean, nullable=False, server_default=text("true"), default=True, index=True)
     org_id      = Column(UUID(as_uuid=True), ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False)
     created_at  = Column(DateTime, server_default=text("now()"), nullable=False)
 

@@ -1,6 +1,7 @@
 package com.shoption.calltracker
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -31,6 +32,7 @@ class MainActivity : FlutterActivity() {
                  */
                 "requestRequiredPermissions" -> {
                     if (hasCallPermissions()) {
+                        requestBatteryOptimizationExemption()
                         result.success(true)
                     } else {
                         pendingPermissionResult = result
@@ -64,6 +66,16 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "stopTracking" -> {
+                    val intent = getTrackingServiceIntent()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                    result.success(true)
+                }
+
+                "logoutStopService" -> {
                     stopService(Intent(this, CallTrackingService::class.java))
                     result.success(true)
                 }
@@ -73,7 +85,9 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "isTrackingActive" -> {
-                    result.success(CallTrackingService.isRunning)
+                    val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                    val active = flutterPrefs.getBoolean("flutter.tracking_toggled_active", false)
+                    result.success(active)
                 }
 
                 else -> result.notImplemented()
@@ -83,8 +97,27 @@ class MainActivity : FlutterActivity() {
 
 
 
+    private fun getTrackingServiceIntent(): Intent {
+        val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val token = flutterPrefs.getString("flutter.access_token", "") ?: ""
+        val empId = flutterPrefs.getString("flutter.user_emp_id", "") ?: ""
+        val orgId = flutterPrefs.getString("flutter.user_org_id", "") ?: ""
+        val systemId = flutterPrefs.getString("flutter.user_system_id", "") ?: ""
+        val baseUrl = flutterPrefs.getString("flutter.api_base_url", "") ?: ""
+        val active = flutterPrefs.getBoolean("flutter.tracking_toggled_active", false)
+
+        return Intent(this, CallTrackingService::class.java).apply {
+            putExtra("access_token", token)
+            putExtra("user_emp_id", empId)
+            putExtra("user_org_id", orgId)
+            putExtra("user_system_id", systemId)
+            putExtra("api_base_url", baseUrl)
+            putExtra("tracking_toggled_active", active)
+        }
+    }
+
     private fun startCallTrackingService() {
-        val intent = Intent(this, CallTrackingService::class.java)
+        val intent = getTrackingServiceIntent()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
@@ -115,9 +148,27 @@ class MainActivity : FlutterActivity() {
         if (requestCode != REQUEST_CODE_REQUIRED_PERMISSIONS) return
 
         val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-        // If permissions were just granted, we DO NOT auto-start the service to ensure explicit user consent.
+        if (allGranted) {
+            requestBatteryOptimizationExemption()
+        }
         pendingPermissionResult?.success(allGranted)
         pendingPermissionResult = null
+    }
+
+    private fun requestBatteryOptimizationExemption() {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                    val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = android.net.Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to request battery optimization exemption", e)
+        }
     }
 
     override fun onDestroy() {

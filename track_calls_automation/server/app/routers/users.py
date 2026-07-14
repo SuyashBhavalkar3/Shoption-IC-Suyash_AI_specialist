@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import List, AsyncGenerator
 from uuid import UUID
 from app.database import get_db
 from app.models import User
-from app.schemas import UserOut, ApproveWarrior, RoleUpdate, UserOutBasic, UserTrackStatusPayload, UserUpdateAdmin
+from app.schemas import UserOut, ApproveWarrior, RoleUpdate, UserOutBasic, UserTrackStatusPayload, UserUpdateAdmin, UserCallStatePayload
 from app.security import get_current_user, RoleChecker
 from datetime import datetime
 from sse_starlette.sse import EventSourceResponse
@@ -123,24 +123,6 @@ def get_my_team(
                 u.is_tracking_active = False
                 db.add(u)
                 db.commit()
-                # Sync offline state to Firestore
-                try:
-                    from app.firebase_service import update_tracking_status_in_firestore
-                    from app.models import OrgEmployee
-                    emp_id = ""
-                    if u.system_id:
-                        emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == u.system_id).first()
-                        if emp_rec:
-                            emp_id = emp_rec.employee_id
-                    update_tracking_status_in_firestore(
-                        emp_id=emp_id,
-                        organisation_id=str(u.organisation_id) if u.organisation_id else "",
-                        system_id=u.system_id or "",
-                        is_tracking_enabled=False,
-                        last_activity_timestamp=u.last_activity_timestamp or datetime.utcnow()
-                    )
-                except Exception as ex:
-                    print(f"ERROR: Failed to update Firestore on offline timeout: {ex}")
                 
     return users_list
 
@@ -392,8 +374,15 @@ async def post_track_status(
             parsed_dt = datetime.utcnow()
             
     # Update local PostgreSQL database
-    current_user.is_tracking_active = payload.is_tracking_enabled
     current_user.last_activity_timestamp = parsed_dt
+    if payload.is_on_call is not None:
+        current_user.is_on_call = payload.is_on_call
+
+    if current_user.is_on_call:
+        current_user.is_tracking_active = True
+    else:
+        current_user.is_tracking_active = payload.is_tracking_enabled
+
     db.commit()
     db.refresh(current_user)
     
@@ -409,6 +398,34 @@ async def post_track_status(
         "is_tracking_enabled": current_user.is_tracking_active,
         "is_tracking_active": current_user.is_tracking_active
     }
+
+
+@router.post("/track/call-state")
+async def post_track_call_state(
+    payload: UserCallStatePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Receives real-time phone call state updates (on-call vs off-call).
+    """
+    current_user.is_on_call = payload.is_on_call
+    current_user.last_activity_timestamp = datetime.utcnow()
+    if current_user.is_on_call:
+        current_user.is_tracking_active = True
+    db.commit()
+    db.refresh(current_user)
+    
+    from app.security import invalidate_user_cache
+    invalidate_user_cache(str(current_user.id))
+    
+    await broadcast_user_status(current_user, db)
+    
+    return {
+        "success": True,
+        "is_on_call": current_user.is_on_call
+    }
+
 
 
 @router.put("/{user_id}", response_model=UserOut)
@@ -595,6 +612,7 @@ async def broadcast_user_status(user: User, db: Session):
             "system_id": user.system_id or "",
             "is_tracking_active": user.is_tracking_active,
             "is_tracking_needed": v_needed,
+            "is_on_call": getattr(user, "is_on_call", False),
             "last_activity_timestamp": formatted_ts
         }
         
@@ -619,6 +637,8 @@ async def postgres_event_broadcaster():
     loop = asyncio.get_event_loop()
     
     while True:
+        conn = None
+        cursor = None
         try:
             print("INFO [SSE-BROADCASTER]: Establishing database connection listener...")
             # Run blocking connect in a thread pool executor to prevent startup block
@@ -646,81 +666,30 @@ async def postgres_event_broadcaster():
                         
         except Exception as e:
             print(f"ERROR [SSE-BROADCASTER]: Database listener failed, retrying in 5 seconds: {e}")
+            try:
+                if cursor:
+                    cursor.close()
+            except Exception:
+                pass
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
             await asyncio.sleep(5)
 
-async def event_generator(current_user: User) -> AsyncGenerator[dict, None]:
+async def event_generator(current_user: User, allowed_user_ids: set, initial_payloads: list) -> AsyncGenerator[dict, None]:
     # Subscribe an individual queue to the broadcaster
     queue = asyncio.Queue()
     active_listeners.append(queue)
     
-    # Pre-fetch subordinates once on connection setup to avoid db queries during streaming
-    from app.database import SessionLocal
-    db = SessionLocal()
-    allowed_user_ids = {str(current_user.id)}
-    
-    try:
-        if current_user.role == "group_leader":
-            # Find all users who have this manager
-            from app.models import User as DBUser
-            for u in db.query(DBUser).all():
-                if current_user in u.managers:
-                    allowed_user_ids.add(str(u.id))
-        elif current_user.role == "admin":
-            # Admins can see warriors and group leaders, and other admins who are managers
-            from app.models import User as DBUser
-            for u in db.query(DBUser).all():
-                if u.role in ("group_leader", "warrior"):
-                    allowed_user_ids.add(str(u.id))
-                elif u.role in ("admin", "super_admin"):
-                    is_mgr = db.query(DBUser).filter(DBUser.manager_id == u.id).first() is not None
-                    if is_mgr or u.id == current_user.id:
-                        allowed_user_ids.add(str(u.id))
-    except Exception as e:
-        print(f"ERROR [SSE-STREAM-INIT]: Failed to pre-fetch allowed list: {e}")
-    finally:
-        db.close()
+    # Yield bootstrapped initial states
+    for payload in initial_payloads:
+        yield {
+            "event": "message",
+            "data": json.dumps(payload)
+        }
         
-    # Bootstrap initial states on client connection
-    db_init = SessionLocal()
-    try:
-        from app.models import User as DBUser, OrgEmployee
-        for uid in allowed_user_ids:
-            u = db_init.query(DBUser).filter(DBUser.id == uid).first()
-            if u:
-                v_emp_id = ""
-                v_needed = True
-                if u.system_id:
-                    emp_rec = db_init.query(OrgEmployee).filter(OrgEmployee.system_id == u.system_id).first()
-                    if emp_rec:
-                        v_emp_id = emp_rec.employee_id
-                        v_needed = emp_rec.is_tracking_needed if emp_rec.is_tracking_needed is not None else True
-                
-                formatted_ts = ""
-                if u.last_activity_timestamp:
-                    from datetime import timedelta
-                    ist_dt = u.last_activity_timestamp + timedelta(hours=5, minutes=30)
-                    formatted_ts = ist_dt.strftime('%B %d, %Y at %I:%M:%S %p')
-                    
-                payload = {
-                    "user_id": str(u.id),
-                    "full_name": u.full_name,
-                    "email": u.email,
-                    "emp_id": v_emp_id,
-                    "org_id": str(u.organisation_id) if u.organisation_id else "",
-                    "system_id": u.system_id or "",
-                    "is_tracking_active": u.is_tracking_active,
-                    "is_tracking_needed": v_needed,
-                    "last_activity_timestamp": formatted_ts
-                }
-                yield {
-                    "event": "message",
-                    "data": json.dumps(payload)
-                }
-    except Exception as e:
-        print(f"ERROR [SSE-INIT-BOOTSTRAP]: {e}")
-    finally:
-        db_init.close()
-
     try:
         while True:
             # Yield periodic keep-alive pings or block waiting for broadcasted data
@@ -748,50 +717,16 @@ async def event_generator(current_user: User) -> AsyncGenerator[dict, None]:
 
 
 # Public unauthenticated stream for org app integration (matching by email)
-async def public_event_generator(email: str) -> AsyncGenerator[dict, None]:
+async def public_event_generator(email: str, initial_payload: dict = None) -> AsyncGenerator[dict, None]:
     queue = asyncio.Queue()
     active_listeners.append(queue)
     
-    # Immediately yield the current status of this user
-    from app.database import SessionLocal
-    from app.models import User, OrgEmployee
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.email.ilike(email)).first()
-        if user:
-            v_emp_id = ""
-            v_needed = True
-            if user.system_id:
-                emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == user.system_id).first()
-                if emp_rec:
-                    v_emp_id = emp_rec.employee_id
-                    v_needed = emp_rec.is_tracking_needed if emp_rec.is_tracking_needed is not None else True
-            
-            formatted_ts = ""
-            if user.last_activity_timestamp:
-                from datetime import timedelta
-                ist_dt = user.last_activity_timestamp + timedelta(hours=5, minutes=30)
-                formatted_ts = ist_dt.strftime('%B %d, %Y at %I:%M:%S %p')
-                
-            payload = {
-                "user_id": str(user.id),
-                "full_name": user.full_name,
-                "email": user.email,
-                "emp_id": v_emp_id,
-                "org_id": str(user.organisation_id) if user.organisation_id else "",
-                "system_id": user.system_id or "",
-                "is_tracking_active": user.is_tracking_active,
-                "is_tracking_needed": v_needed,
-                "last_activity_timestamp": formatted_ts
-            }
-            yield {
-                "event": "message",
-                "data": json.dumps(payload)
-            }
-    except Exception as e:
-        print(f"ERROR [SSE-PUBLIC-INIT]: {e}")
-    finally:
-        db.close()
+    # Yield the pre-fetched initial status if available
+    if initial_payload:
+        yield {
+            "event": "message",
+            "data": json.dumps(initial_payload)
+        }
     
     try:
         while True:
@@ -817,18 +752,134 @@ async def public_event_generator(email: str) -> AsyncGenerator[dict, None]:
 
 @router.get("/track/stream")
 async def track_status_stream(
-    current_user: User = Depends(get_current_user)
+    request: Request
 ):
     """
     Subscribes the client to real-time status updates via Server-Sent Events (SSE).
     Uses PostgreSQL LISTEN/NOTIFY triggers for low latency updates.
     """
+    # 1. Authenticate user manually without holding any dependency database sessions
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+    else:
+        token = request.query_params.get("token")
+        
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated"
+        )
+        
+    # Authenticate and retrieve user safely using a short-lived temporary db session
+    from jose import jwt, JWTError
+    from app.security import JWT_SECRET_KEY, JWT_ALGORITHM, _USER_CACHE
+    import time
+    
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+        
+    now = time.time()
+    cached_entry = _USER_CACHE.get(user_id)
+    current_user = None
+    if cached_entry:
+        cached_user, expiry = cached_entry
+        if now < expiry:
+            current_user = cached_user
+            
+    if not current_user:
+        from app.database import SessionLocal
+        with SessionLocal() as temp_db:
+            from app.models import User as DBUser, OrgEmployee
+            current_user = temp_db.query(DBUser).filter(DBUser.id == user_id).first()
+            if not current_user:
+                raise HTTPException(status_code=401, detail="User not found")
+            
+            # Pre-fetch employee ID for cache
+            current_user.cached_employee_id = None
+            if current_user.system_id:
+                emp_rec = temp_db.query(OrgEmployee).filter(OrgEmployee.system_id == current_user.system_id).first()
+                if emp_rec:
+                    current_user.cached_employee_id = emp_rec.employee_id
+            
+            temp_db.expunge(current_user)
+            _USER_CACHE[user_id] = (current_user, now + 300)
+            
     if current_user.role == "warrior":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Warriors do not have access to real-time tracking streams"
         )
-    return EventSourceResponse(event_generator(current_user))
+        
+    allowed_user_ids = {str(current_user.id)}
+    initial_payloads = []
+    
+    # 2. Fetch the hierarchy and initial data using a short-lived temporary db session
+    from app.database import SessionLocal
+    with SessionLocal() as db:
+        try:
+            if current_user.role == "group_leader":
+                # Find all users who have this manager
+                from app.models import User as DBUser
+                for u in db.query(DBUser).all():
+                    if current_user in u.managers:
+                        allowed_user_ids.add(str(u.id))
+            elif current_user.role == "admin":
+                # Admins can see warriors and group leaders, and other admins who are managers
+                from app.models import User as DBUser
+                for u in db.query(DBUser).all():
+                    if u.role in ("group_leader", "warrior"):
+                        allowed_user_ids.add(str(u.id))
+                    elif u.role in ("admin", "super_admin"):
+                        is_mgr = db.query(DBUser).filter(DBUser.manager_id == u.id).first() is not None
+                        if is_mgr or u.id == current_user.id:
+                            allowed_user_ids.add(str(u.id))
+        except Exception as e:
+            print(f"ERROR [SSE-STREAM-INIT]: Failed to pre-fetch allowed list: {e}")
+    
+        # Bootstrap initial states on client connection
+        try:
+            from app.models import User as DBUser, OrgEmployee
+            for uid in allowed_user_ids:
+                u = db.query(DBUser).filter(DBUser.id == uid).first()
+                if u:
+                    v_emp_id = ""
+                    v_needed = True
+                    if u.system_id:
+                        emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == u.system_id).first()
+                        if emp_rec:
+                            v_emp_id = emp_rec.employee_id
+                            v_needed = emp_rec.is_tracking_needed if emp_rec.is_tracking_needed is not None else True
+                    
+                    formatted_ts = ""
+                    if u.last_activity_timestamp:
+                        from datetime import timedelta
+                        ist_dt = u.last_activity_timestamp + timedelta(hours=5, minutes=30)
+                        formatted_ts = ist_dt.strftime('%B %d, %Y at %I:%M:%S %p')
+                        
+                    payload = {
+                        "user_id": str(u.id),
+                        "full_name": u.full_name,
+                        "email": u.email,
+                        "emp_id": v_emp_id,
+                        "org_id": str(u.organisation_id) if u.organisation_id else "",
+                        "system_id": u.system_id or "",
+                        "is_tracking_active": u.is_tracking_active,
+                        "is_tracking_needed": v_needed,
+                        "is_on_call": getattr(u, "is_on_call", False),
+                        "last_activity_timestamp": formatted_ts
+                    }
+                    initial_payloads.append(payload)
+        except Exception as e:
+            print(f"ERROR [SSE-INIT-BOOTSTRAP]: {e}")
+            
+    return EventSourceResponse(event_generator(current_user, allowed_user_ids, initial_payloads))
 
 
 @router.get("/track/stream/public")
@@ -839,7 +890,43 @@ async def track_status_stream_public(email: str):
     """
     if not email:
         raise HTTPException(status_code=400, detail="Email query parameter is required")
-    return EventSourceResponse(public_event_generator(email))
+        
+    initial_payload = None
+    from app.database import SessionLocal
+    with SessionLocal() as db:
+        try:
+            user = db.query(User).filter(User.email.ilike(email)).first()
+            if user:
+                v_emp_id = ""
+                v_needed = True
+                if user.system_id:
+                    from app.models import OrgEmployee
+                    emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == user.system_id).first()
+                    if emp_rec:
+                        v_emp_id = emp_rec.employee_id
+                        v_needed = emp_rec.is_tracking_needed if emp_rec.is_tracking_needed is not None else True
+                
+                formatted_ts = ""
+                if user.last_activity_timestamp:
+                    from datetime import timedelta
+                    ist_dt = user.last_activity_timestamp + timedelta(hours=5, minutes=30)
+                    formatted_ts = ist_dt.strftime('%B %d, %Y at %I:%M:%S %p')
+                    
+                initial_payload = {
+                    "user_id": str(user.id),
+                    "full_name": user.full_name,
+                    "email": user.email,
+                    "emp_id": v_emp_id,
+                    "org_id": str(user.organisation_id) if user.organisation_id else "",
+                    "system_id": user.system_id or "",
+                    "is_tracking_active": user.is_tracking_active,
+                    "is_tracking_needed": v_needed,
+                    "last_activity_timestamp": formatted_ts
+                }
+        except Exception as e:
+            print(f"ERROR [SSE-PUBLIC-INIT]: {e}")
+        
+    return EventSourceResponse(public_event_generator(email, initial_payload))
 
 
 # ── Background Worker to Auto-Deactivate Idle Users (> 2 Minutes) ────────────────────
@@ -850,7 +937,7 @@ async def auto_deactivate_idle_users_loop():
     Toggles users from active tracking to inactive if no pings have been received for 120 seconds.
     """
     while True:
-        await asyncio.sleep(5)
+        await asyncio.sleep(30)
         from app.database import SessionLocal
         db = SessionLocal()
         try:
@@ -870,6 +957,9 @@ async def auto_deactivate_idle_users_loop():
                         
                     diff_seconds = (now - db_ts).total_seconds()
                     if diff_seconds >= 90:
+                        if getattr(u, "is_on_call", False):
+                            # Skip deactivation if they are currently on a call
+                            continue
                         print(f"INFO [AUTO-DEACTIVATE]: User {u.email} is idle ({int(diff_seconds)}s). Disabling active tracking.")
                         u.is_tracking_active = False
                         db.add(u)
@@ -895,11 +985,11 @@ async def auto_deactivate_idle_users_loop():
 
 async def stream_all_users_status_periodically_loop():
     """
-    Runs in the background every 10 seconds.
+    Runs in the background every 120 seconds.
     Streams the status of all approved users to all SSE listeners in real-time.
     """
     while True:
-        await asyncio.sleep(10)
+        await asyncio.sleep(120)
         from app.database import SessionLocal
         db = SessionLocal()
         try:
@@ -929,6 +1019,7 @@ async def stream_all_users_status_periodically_loop():
                     "system_id": u.system_id or "",
                     "is_tracking_active": u.is_tracking_active,
                     "is_tracking_needed": v_needed,
+                    "is_on_call": getattr(u, "is_on_call", False),
                     "last_activity_timestamp": formatted_ts
                 }
                 await broadcast_user_status(u, db)
@@ -948,7 +1039,7 @@ async def startup_event():
     _broadcaster_started = True
     # 1. Start the singleton Postgres LISTEN broadcaster task
     asyncio.create_task(postgres_event_broadcaster())
-    # 2. Start background deactivation loop task safely
+    # 2. Start background tracker deactivation loop task safely
     asyncio.create_task(auto_deactivate_idle_users_loop())
     # 3. Start periodic status streaming loop task safely
     asyncio.create_task(stream_all_users_status_periodically_loop())

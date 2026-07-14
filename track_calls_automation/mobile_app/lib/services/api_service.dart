@@ -80,33 +80,53 @@ class ApiService {
 
   // Helper HTTP methods that handle 401 Unauthorized globally
   static Future<http.Response> _get(Uri url) async {
-    final response = await http.get(url, headers: await _headers());
+    debugPrint('[API GET] Request URL: $url');
+    final headers = await _headers();
+    final response = await http.get(url, headers: headers);
+    debugPrint('[API GET] Response Status: ${response.statusCode}');
+    debugPrint('[API GET] Response Body: ${response.body}');
     await _handleUnauthorized(response.statusCode);
     return response;
   }
 
   static Future<http.Response> _post(Uri url, {Object? body}) async {
+    debugPrint('[API POST] Request URL: $url');
+    final headers = await _headers();
+    final encodedBody = body != null ? jsonEncode(body) : null;
+    debugPrint('[API POST] Request Body: $encodedBody');
     final response = await http.post(
       url, 
-      headers: await _headers(), 
-      body: body != null ? jsonEncode(body) : null,
+      headers: headers, 
+      body: encodedBody,
     );
+    debugPrint('[API POST] Response Status: ${response.statusCode}');
+    debugPrint('[API POST] Response Body: ${response.body}');
     await _handleUnauthorized(response.statusCode);
     return response;
   }
 
   static Future<http.Response> _put(Uri url, {Object? body}) async {
+    debugPrint('[API PUT] Request URL: $url');
+    final headers = await _headers();
+    final encodedBody = body != null ? jsonEncode(body) : null;
+    debugPrint('[API PUT] Request Body: $encodedBody');
     final response = await http.put(
       url, 
-      headers: await _headers(), 
-      body: body != null ? jsonEncode(body) : null,
+      headers: headers, 
+      body: encodedBody,
     );
+    debugPrint('[API PUT] Response Status: ${response.statusCode}');
+    debugPrint('[API PUT] Response Body: ${response.body}');
     await _handleUnauthorized(response.statusCode);
     return response;
   }
 
   static Future<http.Response> _delete(Uri url) async {
-    final response = await http.delete(url, headers: await _headers());
+    debugPrint('[API DELETE] Request URL: $url');
+    final headers = await _headers();
+    final response = await http.delete(url, headers: headers);
+    debugPrint('[API DELETE] Response Status: ${response.statusCode}');
+    debugPrint('[API DELETE] Response Body: ${response.body}');
     await _handleUnauthorized(response.statusCode);
     return response;
   }

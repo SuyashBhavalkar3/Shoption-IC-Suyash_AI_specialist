@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.routers import auth, users, calls, org_employees, web_auth, webhooks, demo
-from app import firebase_service
 
 # Create database tables automatically if not already present
 # (In production with existing tables, SQLAlchemy skips creating existing tables safely)

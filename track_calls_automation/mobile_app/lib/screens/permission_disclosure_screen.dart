@@ -103,6 +103,12 @@ class _PermissionDisclosureScreenState extends State<PermissionDisclosureScreen>
                       description:
                           'Keeps call detection alive in the background with a persistent notification, even when the application is closed.',
                     ),
+                    _buildDisclosureItem(
+                      icon: Icons.battery_saver_rounded,
+                      title: 'Ignore Battery Optimizations',
+                      description:
+                          'Allows the background service to run without interruptions or network restrictions when the screen is closed.',
+                    ),
                     const SizedBox(height: 12),
                     const Text(
                       'Privacy & Sharing Notice',

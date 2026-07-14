@@ -56,3 +56,7 @@ db_url.txt
 *.csv
 google_service_credentials.json
 tests/
+
+# Ignore screenshots
+screenshots/
+video/

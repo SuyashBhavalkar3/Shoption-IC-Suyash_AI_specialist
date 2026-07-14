@@ -14,46 +14,85 @@ from app.database import SessionLocal
 # ensures webhooks never starve the main request handlers of DB connections.
 _webhook_semaphore = asyncio.Semaphore(5)
 
-def _get_active_subscriptions(db: Session, org_id):
+def _get_active_subscriptions(arg1, arg2=None):
     """
     Synchronous DB helper to fetch active webhook subscriptions.
-    Returns plain dictionaries to avoid DetachedInstanceError across threads.
+    Supports polymorphic argument order:
+      - _get_active_subscriptions(org_id)
+      - _get_active_subscriptions(db, org_id)
+      - _get_active_subscriptions(org_id, db)
     """
-    web_users = db.query(WebUser).filter(WebUser.organisation_id == org_id).all()
-    active_subs = []
-    for web_user in web_users:
-        sub = db.query(WebhookSubscription).filter(
-            WebhookSubscription.web_user_id == web_user.id,
-            WebhookSubscription.is_active == True
-        ).first()
-        if sub:
-            active_subs.append({
-                "id": sub.id,
-                "target_url": sub.target_url,
-                "secret_token": sub.secret_token
-            })
-    return active_subs
+    from sqlalchemy.orm import Session
+    if isinstance(arg1, Session):
+        db = arg1
+        org_id = arg2
+    elif isinstance(arg2, Session):
+        db = arg2
+        org_id = arg1
+    else:
+        db = None
+        org_id = arg1
 
-def _log_webhook_attempts(db: Session, logs):
+    local_db = db or SessionLocal()
+    try:
+        web_users = local_db.query(WebUser).filter(WebUser.organisation_id == org_id).all()
+        active_subs = []
+        for web_user in web_users:
+            sub = local_db.query(WebhookSubscription).filter(
+                WebhookSubscription.web_user_id == web_user.id,
+                WebhookSubscription.is_active == True
+            ).first()
+            if sub:
+                active_subs.append({
+                    "id": sub.id,
+                    "target_url": sub.target_url,
+                    "secret_token": sub.secret_token
+                })
+        return active_subs
+    finally:
+        if not db:
+            local_db.close()
+
+def _log_webhook_attempts(arg1, arg2=None):
     """
     Synchronous DB helper to save webhook log attempts.
+    Supports polymorphic argument order:
+      - _log_webhook_attempts(logs)
+      - _log_webhook_attempts(db, logs)
+      - _log_webhook_attempts(logs, db)
     """
-    for log in logs:
-        log_entry = WebhookLog(
-            subscription_id=log["subscription_id"],
-            event_type=log["event_type"],
-            payload=log["payload"],
-            response_status=log["response_status"],
-            response_body=log["response_body"],
-            attempt_number=1,
-            status=log["status"]
-        )
-        db.add(log_entry)
+    from sqlalchemy.orm import Session
+    if isinstance(arg1, Session):
+        db = arg1
+        logs = arg2
+    elif isinstance(arg2, Session):
+        db = arg2
+        logs = arg1
+    else:
+        db = None
+        logs = arg1
+
+    local_db = db or SessionLocal()
     try:
-        db.commit()
-    except Exception as e:
-        print(f"ERROR: Failed to save webhook dispatch logs: {e}")
-        db.rollback()
+        for log in logs:
+            log_entry = WebhookLog(
+                subscription_id=log["subscription_id"],
+                event_type=log["event_type"],
+                payload=log["payload"],
+                response_status=log["response_status"],
+                response_body=log["response_body"],
+                attempt_number=1,
+                status=log["status"]
+            )
+            local_db.add(log_entry)
+        try:
+            local_db.commit()
+        except Exception as e:
+            print(f"ERROR: Failed to save webhook dispatch logs: {e}")
+            local_db.rollback()
+    finally:
+        if not db:
+            local_db.close()
 
 async def dispatch_webhook(org_id, event_type: str, payload):
     """
@@ -63,7 +102,7 @@ async def dispatch_webhook(org_id, event_type: str, payload):
     When called from POST /calls/, a list is always passed so all new logs
     from a single request are delivered in one background task, not N tasks.
 
-    A global semaphore (_webhook_semaphore) limits concurrent executions to 3
+    A global semaphore (_webhook_semaphore) limits concurrent executions to 5
     to prevent background tasks from exhausting the DB connection pool.
     """
     if not org_id:
@@ -78,11 +117,10 @@ async def dispatch_webhook(org_id, event_type: str, payload):
     # during the entire 3-second HTTP call and then hit Phase 3 simultaneously.
     subs = []
     async with _webhook_semaphore:
-        db = SessionLocal()
         try:
-            subs = await run_in_threadpool(_get_active_subscriptions, db, org_id)
-        finally:
-            db.close()
+            subs = await run_in_threadpool(_get_active_subscriptions, org_id)
+        except Exception as e:
+            print(f"ERROR: Failed to retrieve active subscriptions: {e}")
 
     if not subs:
         return
@@ -147,11 +185,10 @@ async def dispatch_webhook(org_id, event_type: str, payload):
     # Semaphore is re-acquired only for this short DB write (~100ms), then released.
     if logs_to_save:
         async with _webhook_semaphore:
-            db = SessionLocal()
             try:
-                await run_in_threadpool(_log_webhook_attempts, db, logs_to_save)
-            finally:
-                db.close()
+                await run_in_threadpool(_log_webhook_attempts, logs_to_save)
+            except Exception as e:
+                print(f"ERROR: Failed to save webhook dispatch logs: {e}")
 
 
 

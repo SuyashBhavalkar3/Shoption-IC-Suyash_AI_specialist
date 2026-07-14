@@ -242,6 +242,19 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
         }
       },
     );
+
+    // One-time migration to reset sync status for any call logs that failed to sync previously due to the server ID collision bug
+    final prefs = await SharedPreferences.getInstance();
+    final resynced = prefs.getBool('resync_v1_done') ?? false;
+    if (!resynced) {
+      try {
+        await database!.rawUpdate('UPDATE call_logs SET is_synced = 0');
+        await prefs.setBool('resync_v1_done', true);
+        debugPrint('🔄 One-time sync reset: Set all local call logs to unsynced for recovery.');
+      } catch (e) {
+        debugPrint('Failed to run one-time sync reset: $e');
+      }
+    }
   }
 
   Future<void> _loadCallLogs() async {
@@ -575,6 +588,14 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
       );
 
       if (unsynced.isNotEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Syncing ${unsynced.length} new calls to server...'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
         try {
           // Prepare the payload as a list of log maps for the bulk syncCalls endpoint
           final payload = unsynced.map((log) => {
@@ -598,14 +619,33 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
               );
             }
           });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Successfully synced ${unsynced.length} calls!'),
+                backgroundColor: const Color(0xFF10B981),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
         } catch (e) {
           debugPrint('Failed to sync batch: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Sync failed: $e'),
+                backgroundColor: const Color(0xFFEF4444),
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
         }
       }
     } catch (e) {
       debugPrint('Sync error: $e');
     } finally {
       await _loadCallLogs();
+      await _loadAzureStats();
       setState(() {
         isSyncing = false;
       });
@@ -1183,7 +1223,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                _azureStats != null
+                                _azureStats != null && _dateFilterPreset == 'all'
                                     ? _formatDuration(_azureStats!['total_duration_seconds'] as int? ?? 0)
                                     : _formatDuration(totalDurationSeconds),
                                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFFF8FAFC)),
@@ -1202,9 +1242,9 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _azureStats != null
+                              _azureStats != null && _dateFilterPreset == 'all'
                                   ? '${_azureStats!['total_calls'] ?? 0}'
-                                  : '${callLogs.length}',
+                                  : '${visibleLogs.length}',
                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF10B981)),
                             ),
                           ],
@@ -1240,18 +1280,18 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              _azureStats != null
+                              _azureStats != null && _dateFilterPreset == 'all'
                                   ? 'Total: ${_azureStats!['incoming_count']}'
                                   : 'Attended: $attendedIncoming',
                               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF94A3B8)),
                             ),
                             const SizedBox(height: 4),
-                            if (_azureStats == null)
+                            if (_azureStats == null || _dateFilterPreset != 'all')
                               Text('Missed: $missedIncoming', style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)))
                             else
                               const Text('Synced to Cloud', style: TextStyle(fontSize: 11, color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
                             const SizedBox(height: 6),
-                            if (_azureStats == null)
+                            if (_azureStats == null || _dateFilterPreset != 'all')
                               Text('Duration: ${_formatDuration(totalIncomingSeconds)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
                           ],
                         ),
@@ -1281,18 +1321,18 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              _azureStats != null
+                              _azureStats != null && _dateFilterPreset == 'all'
                                   ? 'Total: ${_azureStats!['outgoing_count']}'
                                   : 'Connected: $connectedOutgoing',
                               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF94A3B8)),
                             ),
                             const SizedBox(height: 4),
-                            if (_azureStats == null)
+                            if (_azureStats == null || _dateFilterPreset != 'all')
                               Text('Dialed: $dialedOutgoing', style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)))
                             else
                               const Text('Synced to Cloud', style: TextStyle(fontSize: 11, color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
                             const SizedBox(height: 6),
-                            if (_azureStats == null)
+                            if (_azureStats == null || _dateFilterPreset != 'all')
                               Text('Duration: ${_formatDuration(totalOutgoingSeconds)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
                           ],
                         ),

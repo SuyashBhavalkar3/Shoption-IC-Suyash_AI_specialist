@@ -23,6 +23,16 @@ class CallDatabase(context: Context) :
         const val COL_SYSTEM_CALL_ID = "system_call_id"
         const val COL_IS_SYNCED = "is_synced"
         const val COL_USER_ID = "user_id"
+
+        private var instance: CallDatabase? = null
+
+        @Synchronized
+        fun getInstance(context: Context): CallDatabase {
+            if (instance == null) {
+                instance = CallDatabase(context.applicationContext)
+            }
+            return instance!!
+        }
     }
 
     override fun onCreate(db: SQLiteDatabase?) {

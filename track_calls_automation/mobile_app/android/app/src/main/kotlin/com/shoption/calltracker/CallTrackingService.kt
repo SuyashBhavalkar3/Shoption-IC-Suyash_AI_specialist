@@ -3,22 +3,30 @@ package com.shoption.calltracker
 import android.app.Service
 import android.content.pm.ServiceInfo
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
+import android.os.Looper
 import android.app.NotificationManager
 import android.app.NotificationChannel
 import android.app.PendingIntent
 import android.content.Context
 import android.database.ContentObserver
 import android.provider.CallLog
+import android.os.PowerManager
 import android.app.AlarmManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import android.telephony.TelephonyManager
+import android.telephony.PhoneStateListener
 
 /**
  * Foreground service for enterprise call tracking.
  * Started and stopped explicitly by the user.
+ *
+ * ARCHITECTURE NOTE: Uses Handler.postDelayed on the main looper for the
+ * heartbeat loop instead of java.util.Timer. A Timer thread can die silently
+ * if any uncaught Throwable escapes; a Handler on the main looper survives
+ * as long as the process is alive.
  */
 class CallTrackingService : Service() {
     private val tag = "CallTrackingService"
@@ -29,12 +37,23 @@ class CallTrackingService : Service() {
         private const val CHANNEL_ID = "call_tracking_channel"
         private const val PREFS_NAME = "call_tracker_prefs"
         private const val KEY_START_TIME = "tracking_start_time"
+        private const val HEARTBEAT_INTERVAL_MS = 10000L
+
+        var accessToken: String? = null
+        var empId: String = ""
+        var orgId: String = ""
+        var systemId: String = ""
+        var baseUrl: String = ""
+        var isTrackingEnabled: Boolean = false
+        var isCurrentlyOnCall: Boolean = false
     }
 
-    private var callReceiver: CallReceiver? = null
-    private var receiverRegistered = false
+    private var phoneStateListener: PhoneStateListener? = null
     private var callLogObserver: ContentObserver? = null
-    private var heartbeatTimer: java.util.Timer? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    private var heartbeatThread: Thread? = null
+    private var heartbeatRunning = false
 
     override fun onCreate() {
         super.onCreate()
@@ -49,12 +68,34 @@ class CallTrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent != null) {
+            intent.getStringExtra("access_token")?.let { if (it.isNotEmpty()) accessToken = it }
+            intent.getStringExtra("user_emp_id")?.let { if (it.isNotEmpty()) empId = it }
+            intent.getStringExtra("user_org_id")?.let { if (it.isNotEmpty()) orgId = it }
+            intent.getStringExtra("user_system_id")?.let { if (it.isNotEmpty()) systemId = it }
+            intent.getStringExtra("api_base_url")?.let { if (it.isNotEmpty()) baseUrl = it }
+            if (intent.hasExtra("tracking_toggled_active")) {
+                isTrackingEnabled = intent.getBooleanExtra("tracking_toggled_active", false)
+            }
+        }
+
+        if (accessToken.isNullOrEmpty() || systemId.isEmpty()) {
+            val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            accessToken = flutterPrefs.getString("flutter.access_token", null)
+            empId = flutterPrefs.getString("flutter.user_emp_id", "") ?: ""
+            orgId = flutterPrefs.getString("flutter.user_org_id", "") ?: ""
+            systemId = flutterPrefs.getString("flutter.user_system_id", "") ?: ""
+            baseUrl = flutterPrefs.getString("flutter.api_base_url", "") ?: ""
+            isTrackingEnabled = flutterPrefs.getBoolean("flutter.tracking_toggled_active", false)
+        }
+
         try {
             startForegroundTracking()
-        } catch (e: Exception) {
-            Log.e(tag, "Service start failed", e)
-            stopSelf()
-            return START_STICKY
+            ensureListenersRegistered(isTrackingEnabled)
+            Log.d(tag, "Service state updated: isTrackingEnabled=$isTrackingEnabled, systemId=$systemId")
+        } catch (t: Throwable) {
+            Log.e(tag, "Service start failed", t)
+            // Don't stopSelf — let START_STICKY retry
         }
         return START_STICKY
     }
@@ -83,6 +124,85 @@ class CallTrackingService : Service() {
         super.onTaskRemoved(rootIntent)
     }
 
+    private fun sendCallStateUpdate(context: Context, isOnCall: Boolean) {
+        val token = accessToken
+        val url = baseUrl
+
+        if (token.isNullOrEmpty() || url.isEmpty()) {
+            Log.d(tag, "Skipping call state update: token or baseUrl is missing")
+            return
+        }
+
+        safeThread("call-state-update") {
+            val endpoint = java.net.URL("$url/users/track/call-state")
+            val conn = endpoint.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json; utf-8")
+            conn.setRequestProperty("Accept", "application/json")
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.doOutput = true
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+
+            val jsonInputString = "{\"is_on_call\": $isOnCall}"
+
+            conn.outputStream.use { os ->
+                val input = jsonInputString.toByteArray(charset("utf-8"))
+                os.write(input, 0, input.size)
+            }
+
+            val responseCode = conn.responseCode
+            Log.d(tag, "Call State Update Response Code: $responseCode")
+            conn.disconnect()
+        }
+    }
+
+    private fun ensureListenersRegistered(enabled: Boolean) {
+        if (enabled) {
+            if (phoneStateListener == null) {
+                phoneStateListener = object : PhoneStateListener() {
+                    @Deprecated("Deprecated in Java")
+                    override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                        try {
+                            super.onCallStateChanged(state, phoneNumber)
+                            Log.d(tag, "PhoneStateListener onCallStateChanged state=$state")
+                            when (state) {
+                                TelephonyManager.CALL_STATE_RINGING,
+                                TelephonyManager.CALL_STATE_OFFHOOK -> {
+                                    isCurrentlyOnCall = true
+                                    sendCallStateUpdate(this@CallTrackingService, true)
+                                }
+                                TelephonyManager.CALL_STATE_IDLE -> {
+                                    isCurrentlyOnCall = false
+                                    sendCallStateUpdate(this@CallTrackingService, false)
+                                    CallLogSync.syncLatest(this@CallTrackingService)
+                                }
+                            }
+                        } catch (t: Throwable) {
+                            Log.e(tag, "PhoneStateListener callback crashed (swallowed)", t)
+                        }
+                    }
+                }
+                val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+                telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
+                Log.d(tag, "PhoneStateListener registered dynamically")
+            }
+            registerCallLogObserver()
+        } else {
+            if (phoneStateListener != null) {
+                try {
+                    val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+                    telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
+                } catch (e: Exception) {
+                    Log.w(tag, "Failed to unregister PhoneStateListener: ${e.message}")
+                }
+                phoneStateListener = null
+                Log.d(tag, "PhoneStateListener unregistered dynamically")
+            }
+            unregisterCallLogObserver()
+        }
+    }
+
     private fun startForegroundTracking() {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -94,25 +214,23 @@ class CallTrackingService : Service() {
         isRunning = true
         Log.d(tag, "Call tracking service running")
 
-        if (!receiverRegistered) {
-            callReceiver = CallReceiver()
-            val filter = IntentFilter().apply {
-                addAction(android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (wakeLock == null) {
+                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LeadLens::CallTrackingWakeLock")
+                wakeLock?.acquire(24 * 60 * 60 * 1000L) // maximum 24 hours lock duration safety limit
+                Log.d(tag, "Partial CPU WakeLock acquired")
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(callReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                @Suppress("UnspecifiedRegisterReceiverFlag")
-                registerReceiver(callReceiver, filter)
-            }
-            receiverRegistered = true
-            Log.d(tag, "CallReceiver registered")
+        } catch (e: Exception) {
+            Log.w(tag, "Could not acquire WakeLock", e)
         }
 
-        registerCallLogObserver()
-        // Do an immediate sync so any calls since last run are captured.
-        CallLogSync.syncLatest(this)
-        Log.d(tag, "Initial sync triggered on service start")
+        ensureListenersRegistered(isTrackingEnabled)
+
+        if (isTrackingEnabled) {
+            CallLogSync.syncLatest(this)
+            Log.d(tag, "Initial sync triggered on service start")
+        }
         startHeartbeatLoop()
     }
 
@@ -146,9 +264,13 @@ class CallTrackingService : Service() {
         if (callLogObserver != null) return
         callLogObserver = object : ContentObserver(Handler(mainLooper)) {
             override fun onChange(selfChange: Boolean) {
-                super.onChange(selfChange)
-                Log.d(tag, "CallLog ContentObserver triggered")
-                CallLogSync.syncLatest(this@CallTrackingService)
+                try {
+                    super.onChange(selfChange)
+                    Log.d(tag, "CallLog ContentObserver triggered")
+                    CallLogSync.syncLatest(this@CallTrackingService)
+                } catch (t: Throwable) {
+                    Log.e(tag, "ContentObserver.onChange crashed (swallowed)", t)
+                }
             }
         }
         contentResolver.registerContentObserver(
@@ -168,84 +290,137 @@ class CallTrackingService : Service() {
         isRunning = false
         stopHeartbeatLoop()
         try {
-            if (receiverRegistered) {
-                unregisterReceiver(callReceiver)
-                receiverRegistered = false
+            if (phoneStateListener != null) {
+                val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+                telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
+                phoneStateListener = null
+                Log.d(tag, "PhoneStateListener unregistered in onDestroy")
             }
         } catch (e: Exception) {
-            Log.w(tag, "Error unregistering receiver", e)
+            Log.w(tag, "Error unregistering PhoneStateListener in onDestroy", e)
         }
         unregisterCallLogObserver()
+        
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+                wakeLock = null
+                Log.d(tag, "WakeLock released")
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Error releasing WakeLock", e)
+        }
+
         Log.d(tag, "CallTrackingService destroyed")
         super.onDestroy()
     }
 
     private fun startHeartbeatLoop() {
-        if (heartbeatTimer != null) return
-        heartbeatTimer = java.util.Timer()
-        heartbeatTimer?.scheduleAtFixedRate(object : java.util.TimerTask() {
-            override fun run() {
-                if (isRunning) {
+        if (heartbeatThread != null) return
+        heartbeatRunning = true
+        heartbeatThread = Thread {
+            while (isRunning && heartbeatRunning) {
+                try {
                     sendHeartbeatPing()
+                } catch (t: Throwable) {
+                    Log.e(tag, "Error in heartbeat loop thread", t)
+                }
+                try {
+                    Thread.sleep(HEARTBEAT_INTERVAL_MS)
+                } catch (e: InterruptedException) {
+                    break
                 }
             }
-        }, 0L, 10000L) // every 10 seconds
-        Log.d(tag, "Native heartbeat loop started")
+        }.apply {
+            name = "CallTracker-HeartbeatThread"
+            uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { t, e ->
+                Log.e(tag, "UNCAUGHT in heartbeat thread ${t.name}: ${e.message}", e)
+            }
+            start()
+        }
+        Log.d(tag, "Native heartbeat loop started (Thread-based)")
     }
 
     private fun stopHeartbeatLoop() {
-        heartbeatTimer?.cancel()
-        heartbeatTimer = null
+        heartbeatRunning = false
+        heartbeatThread?.interrupt()
+        heartbeatThread = null
         Log.d(tag, "Native heartbeat loop stopped")
     }
 
     private fun sendHeartbeatPing() {
-        val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val token = flutterPrefs.getString("flutter.access_token", null)
-        val empId = flutterPrefs.getString("flutter.user_emp_id", "") ?: ""
-        val orgId = flutterPrefs.getString("flutter.user_org_id", "") ?: ""
-        val systemId = flutterPrefs.getString("flutter.user_system_id", "") ?: ""
-        val baseUrl = flutterPrefs.getString("flutter.api_base_url", "https://shoption-calltracker-api-cjdjatchb5bzb9dp.centralindia-01.azurewebsites.net")
-            ?: "https://shoption-calltracker-api-cjdjatchb5bzb9dp.centralindia-01.azurewebsites.net"
+        try {
+            ensureListenersRegistered(isTrackingEnabled)
+        } catch (t: Throwable) {
+            Log.w(tag, "ensureListenersRegistered failed: ${t.message}")
+        }
 
-        if (token.isNullOrEmpty() || systemId.isNullOrEmpty()) {
-            Log.d(tag, "Skipping native heartbeat ping: token or systemId is missing")
+        if (isTrackingEnabled) {
+            try {
+                CallLogSync.syncLatest(this)
+            } catch (t: Throwable) {
+                Log.w(tag, "CallLogSync.syncLatest failed: ${t.message}")
+            }
+        }
+
+        val token = accessToken
+        if (token.isNullOrEmpty() || systemId.isEmpty() || baseUrl.isEmpty()) {
+            Log.d(tag, "Skipping native heartbeat ping: token=$token systemId=$systemId baseUrl=$baseUrl")
             return
         }
 
-        Thread {
-            try {
-                val url = java.net.URL("$baseUrl/users/track/status")
-                val conn = url.openConnection() as java.net.HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json; utf-8")
-                conn.setRequestProperty("Accept", "application/json")
-                conn.setRequestProperty("Authorization", "Bearer $token")
-                conn.doOutput = true
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
+        safeThread("heartbeat-ping") {
+            val url = java.net.URL("$baseUrl/users/track/status")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json; utf-8")
+            conn.setRequestProperty("Accept", "application/json")
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            conn.doOutput = true
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
 
-                val jsonInputString = """
-                    {
-                        "emp_id": "$empId",
-                        "organisation_id": "$orgId",
-                        "system_id": "$systemId",
-                        "is_tracking_enabled": true,
-                        "last_activity_timestamp": "${System.currentTimeMillis()}"
-                    }
-                """.trimIndent()
+            val isOnCall = isCurrentlyOnCall
 
-                conn.outputStream.use { os ->
-                    val input = jsonInputString.toByteArray(charset("utf-8"))
-                    os.write(input, 0, input.size)
+            val jsonInputString = """
+                {
+                    "emp_id": "$empId",
+                    "organisation_id": "$orgId",
+                    "system_id": "$systemId",
+                    "is_tracking_enabled": $isTrackingEnabled,
+                    "is_on_call": $isOnCall,
+                    "last_activity_timestamp": "${System.currentTimeMillis()}"
                 }
+            """.trimIndent()
 
-                val responseCode = conn.responseCode
-                Log.d(tag, "Native Heartbeat Ping Response Code: $responseCode")
-                conn.disconnect()
-            } catch (e: Exception) {
-                Log.e(tag, "Error sending native heartbeat ping", e)
+            conn.outputStream.use { os ->
+                val input = jsonInputString.toByteArray(charset("utf-8"))
+                os.write(input, 0, input.size)
             }
-        }.start()
+
+            val responseCode = conn.responseCode
+            Log.d(tag, "Native Heartbeat Ping Response Code: $responseCode")
+            conn.disconnect()
+        }
+    }
+
+    /**
+     * Spawns a background thread with a built-in UncaughtExceptionHandler
+     * so that if anything goes wrong, the process is NOT killed.
+     * Standard Thread { }.start() will kill the process on uncaught exceptions.
+     */
+    private fun safeThread(name: String, block: () -> Unit) {
+        val thread = Thread {
+            try {
+                block()
+            } catch (t: Throwable) {
+                Log.e(tag, "safeThread[$name] caught: ${t.message}", t)
+            }
+        }
+        thread.name = "CallTracker-$name"
+        thread.uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { t, e ->
+            Log.e(tag, "UNCAUGHT in thread ${t.name}: ${e.message}", e)
+        }
+        thread.start()
     }
 }

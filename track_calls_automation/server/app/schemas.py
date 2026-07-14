@@ -279,6 +279,10 @@ class UserTrackStatusPayload(BaseModel):
     last_activity_timestamp: str
     is_tracking_enabled: bool
     system_id: str
+    is_on_call: Optional[bool] = None
+
+class UserCallStatePayload(BaseModel):
+    is_on_call: bool
 
 class UserUpdateAdmin(BaseModel):
     full_name: Optional[str] = None

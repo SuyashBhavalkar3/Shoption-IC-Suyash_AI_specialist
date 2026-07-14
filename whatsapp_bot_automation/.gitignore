@@ -21,3 +21,5 @@ __pycache__/
 .env.*.local
 *.env
 *.pdf
+ERP_private_key/
+*.pem

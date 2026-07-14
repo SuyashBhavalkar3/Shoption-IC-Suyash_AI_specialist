@@ -48,7 +48,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Use cached data if API fails
     }
 
-    String version = '1.0.5';
+    String version = 'rel-1.0.3';
 
     if (!mounted) return;
     setState(() {

@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import HTMLResponse, StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone as py_timezone, timedelta as py_timedelta
 from jose import jwt, JWTError
 from app.config import JWT_SECRET_KEY, JWT_ALGORITHM
 from app.database import get_db
@@ -32,6 +33,15 @@ def _normalize_call_type(raw_call_type: str, duration_seconds: int) -> tuple[str
 
     return direction, "Answered" if duration_seconds > 0 else "Dialed"
 
+
+def _format_created_at_to_ist_str(created_at: Optional[datetime]) -> str:
+    dt = created_at or datetime.utcnow()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=py_timezone.utc)
+    ist_tz = py_timezone(py_timedelta(hours=5, minutes=30))
+    ist_dt = dt.astimezone(ist_tz)
+    return ist_dt.strftime('%d%m%Y%H%M%S%f')[:-4]
+
 @router.post("/", response_model=List[CallLogOut], status_code=status.HTTP_201_CREATED)
 def sync_call_logs(
     logs_in: List[CallLogCreate], 
@@ -52,7 +62,10 @@ def sync_call_logs(
     system_call_ids = [log_data.system_call_id for log_data in logs_in if log_data.system_call_id]
     existing_logs = []
     if system_call_ids:
-        existing_logs = db.query(CallLog).filter(CallLog.system_call_id.in_(system_call_ids)).all()
+        existing_logs = db.query(CallLog).filter(
+            CallLog.system_call_id.in_(system_call_ids),
+            CallLog.user_id == current_user.id
+        ).all()
     
     # Map existing logs by system_call_id for O(1) lookups
     existing_map = {log.system_call_id: log for log in existing_logs if log.system_call_id}
@@ -85,7 +98,7 @@ def sync_call_logs(
                 "call_status": db_log.call_status,
                 "duration_seconds": db_log.duration_seconds,
                 "timestamp": db_log.timestamp,
-                "system_call_id": db_log.system_call_id,
+                "system_call_id": f"{db_log.user_id}_{_format_created_at_to_ist_str(db_log.created_at)}",
                 "employee_id": db_log.employee_id,
                 "system_id": db_log.system_id
             })
@@ -105,7 +118,7 @@ def sync_call_logs(
                 "call_status": exists.call_status,
                 "duration_seconds": exists.duration_seconds,
                 "timestamp": exists.timestamp,
-                "system_call_id": exists.system_call_id,
+                "system_call_id": f"{exists.user_id}_{_format_created_at_to_ist_str(exists.created_at)}",
                 "employee_id": exists.employee_id,
                 "system_id": exists.system_id
             })
@@ -165,17 +178,16 @@ def get_my_call_logs(
     
     query = db.query(CallLog).filter(CallLog.user_id == current_user.id)
     
-    from sqlalchemy import cast, DateTime as SQLDateTime
     if start_date:
         try:
             start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
-            query = query.filter(cast(CallLog.timestamp, SQLDateTime) >= start_dt)
+            query = query.filter(func.parse_my_timestamp(CallLog.timestamp) >= start_dt)
         except Exception:
             pass
     if end_date:
         try:
             end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
-            query = query.filter(cast(CallLog.timestamp, SQLDateTime) <= end_dt)
+            query = query.filter(func.parse_my_timestamp(CallLog.timestamp) <= end_dt)
         except Exception:
             pass
             
@@ -229,8 +241,6 @@ def get_reports(
     overall_incoming_count = 0
     overall_outgoing_count = 0
     overall_total_seconds = 0
-
-    from sqlalchemy import cast, DateTime as SQLDateTime
     for warrior in warriors:
         query = db.query(CallLog).filter(CallLog.user_id == warrior.id)
         
@@ -238,13 +248,13 @@ def get_reports(
         if start_date:
             try:
                 start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
-                query = query.filter(cast(CallLog.timestamp, SQLDateTime) >= start_dt)
+                query = query.filter(func.parse_my_timestamp(CallLog.timestamp) >= start_dt)
             except Exception:
                 pass
         if end_date:
             try:
                 end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
-                query = query.filter(cast(CallLog.timestamp, SQLDateTime) <= end_dt)
+                query = query.filter(func.parse_my_timestamp(CallLog.timestamp) <= end_dt)
             except Exception:
                 pass
                 
@@ -402,7 +412,6 @@ def export_reports_csv(
         "Phone Number", "Call Type", "Sub-Category", "Duration (seconds)", "Timestamp"
     ])
     
-    from sqlalchemy import cast, DateTime as SQLDateTime
     for warrior in warriors:
         manager_name = warrior.manager.full_name if warrior.manager else "Unassigned"
         
@@ -410,13 +419,13 @@ def export_reports_csv(
         if start_date:
             try:
                 start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
-                q = q.filter(cast(CallLog.timestamp, SQLDateTime) >= start_dt)
+                q = q.filter(func.parse_my_timestamp(CallLog.timestamp) >= start_dt)
             except Exception:
                 pass
         if end_date:
             try:
                 end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
-                q = q.filter(cast(CallLog.timestamp, SQLDateTime) <= end_dt)
+                q = q.filter(func.parse_my_timestamp(CallLog.timestamp) <= end_dt)
             except Exception:
                 pass
         logs = q.order_by(CallLog.timestamp.desc()).all()
@@ -493,19 +502,18 @@ def export_reports_pdf(
     warrior_rows = []
     detailed_logs = []
     
-    from sqlalchemy import cast, DateTime as SQLDateTime
     for warrior in warriors:
         q = db.query(CallLog).filter(CallLog.user_id == warrior.id)
         if start_date:
             try:
                 start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
-                q = q.filter(cast(CallLog.timestamp, SQLDateTime) >= start_dt)
+                q = q.filter(func.parse_my_timestamp(CallLog.timestamp) >= start_dt)
             except Exception:
                 pass
         if end_date:
             try:
                 end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
-                q = q.filter(cast(CallLog.timestamp, SQLDateTime) <= end_dt)
+                q = q.filter(func.parse_my_timestamp(CallLog.timestamp) <= end_dt)
             except Exception:
                 pass
         logs = q.order_by(CallLog.timestamp.desc()).all()
@@ -873,12 +881,10 @@ def get_my_call_stats(
         # Get start and end of this date
         start_dt = datetime.combine(target_date, datetime.min.time())
         end_dt = datetime.combine(target_date, datetime.max.time())
-        
-        from sqlalchemy import cast, DateTime as SQLDateTime
         day_duration = db.query(func.sum(CallLog.duration_seconds)).filter(
             CallLog.user_id == current_user.id,
-            cast(CallLog.timestamp, SQLDateTime) >= start_dt,
-            cast(CallLog.timestamp, SQLDateTime) <= end_dt
+            func.parse_my_timestamp(CallLog.timestamp) >= start_dt,
+            func.parse_my_timestamp(CallLog.timestamp) <= end_dt
         ).scalar() or 0
         
         daily_stats.append({

@@ -53,9 +53,7 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
   }
 
   void _onRouteChanged() {
-    if (mounted) {
-      setState(() {});
-    }
+    _loadUserEmail();
   }
 
   Future<void> _loadUserEmail() async {
@@ -142,6 +140,25 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
   }
 
 
+  bool _isRemoteVersionGreater(String remote, String local) {
+    String cleanRemote = remote.replaceAll(RegExp(r'[^0-9.]'), '');
+    String cleanLocal = local.replaceAll(RegExp(r'[^0-9.]'), '');
+    
+    if (cleanRemote.isEmpty || cleanLocal.isEmpty) return false;
+    
+    List<String> remoteParts = cleanRemote.split('.');
+    List<String> localParts = cleanLocal.split('.');
+    
+    int maxLength = remoteParts.length > localParts.length ? remoteParts.length : localParts.length;
+    for (int i = 0; i < maxLength; i++) {
+      int rPart = i < remoteParts.length ? (int.tryParse(remoteParts[i]) ?? 0) : 0;
+      int lPart = i < localParts.length ? (int.tryParse(localParts[i]) ?? 0) : 0;
+      if (rPart > lPart) return true;
+      if (rPart < lPart) return false;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final versionAsync = ref.watch(versionCheckProvider);
@@ -153,14 +170,27 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
       return widget.child;
     }
 
+    final String remoteVersionFromRemoteConfig = versionAsync.when(
+      data: (val) => val,
+      loading: () => "",
+      error: (_, __) => "",
+    );
+
     final String remoteVersionFromFirestore = _maintenanceData?["lead_lens_min_version"]?["stringValue"]?.toString() ??
                                               _maintenanceData?["lead_lens_android_version"]?["stringValue"]?.toString() ?? "";
 
-    final bool needsUpdate = versionAsync.when(
-      data: (val) => val || (remoteVersionFromFirestore.isNotEmpty && remoteVersionFromFirestore != _currentVersion),
-      loading: () => remoteVersionFromFirestore.isNotEmpty && remoteVersionFromFirestore != _currentVersion,
-      error: (_, __) => remoteVersionFromFirestore.isNotEmpty && remoteVersionFromFirestore != _currentVersion,
-    );
+    final String remoteVersion = remoteVersionFromRemoteConfig.isNotEmpty 
+        ? remoteVersionFromRemoteConfig 
+        : remoteVersionFromFirestore;
+
+    final bool forceUpdate = _maintenanceData?["force_update"]?["booleanValue"] ?? false;
+
+    bool needsUpdate = false;
+    if (remoteVersion.isNotEmpty && _currentVersion.isNotEmpty) {
+      if (_isRemoteVersionGreater(remoteVersion, _currentVersion)) {
+        needsUpdate = forceUpdate;
+      }
+    }
 
     if (_maintenanceData == null) {
       if (!_isAdmin && needsUpdate) {
@@ -169,6 +199,13 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
       return widget.child;
     }
 
+    final List<dynamic> exceptionalUsersRaw = _maintenanceData?["exceptional_users"]?["arrayValue"]?["values"] ?? [];
+    final List<String> exceptionalUsers = exceptionalUsersRaw
+        .map((val) => val["stringValue"]?.toString() ?? "")
+        .where((str) => str.isNotEmpty)
+        .toList();
+    final bool isUserExceptional = _userEmail != null && exceptionalUsers.contains(_userEmail);
+
     // Check maintenance mode specifically for lead_lens_android (checking both key variants due to potential tab character)
     final bool isMaintenance = Platform.isAndroid
         ? ((_maintenanceData?["lead_lens_android"]?["booleanValue"] ?? false) ||
@@ -176,13 +213,13 @@ class _AppWrapperState extends ConsumerState<AppWrapper> {
         : false;
     final String message = _maintenanceData?['message']?['stringValue']?.toString() ?? "Under Maintenance";
 
-    debugPrint('🛡️ isMaintenance=$isMaintenance, needsUpdate=$needsUpdate, _isAdmin=$_isAdmin, current=$_currentVersion, remoteFirestore=$remoteVersionFromFirestore');
+    debugPrint('🛡️ isMaintenance=$isMaintenance, isExceptional=$isUserExceptional, needsUpdate=$needsUpdate, _isAdmin=$_isAdmin, current=$_currentVersion, remoteFirestore=$remoteVersionFromFirestore, forceUpdate=$forceUpdate');
 
     if (!_isAdmin) {
       if (needsUpdate) {
         return _buildUpdateScreen();
       }
-      if (isMaintenance) {
+      if (isMaintenance && !isUserExceptional) {
         return _buildMaintenanceWidget(message);
       }
     }

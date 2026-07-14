@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-final versionCheckProvider = StreamProvider<bool>((ref) async* {
+final versionCheckProvider = StreamProvider<String>((ref) async* {
   final scopes = ['https://www.googleapis.com/auth/firebase.remoteconfig'];
 
   Future<String> fetchRemoteConfigValue(String key) async {
@@ -37,23 +37,20 @@ final versionCheckProvider = StreamProvider<bool>((ref) async* {
     return "";
   }
 
-  Future<bool> isUpdateNeeded() async {
-    PackageInfo packageInfo = await PackageInfo.fromPlatform();
-    String currentVersion = packageInfo.version;
+  Future<String> getRemoteVersion() async {
     String remoteKey = "lead_lens_android";
     String remoteVersion = await fetchRemoteConfigValue(remoteKey);
-    debugPrint('ℹ️ Remote Config REST check: currentVersion=$currentVersion, remoteVersion=$remoteVersion');
-    return remoteVersion.isNotEmpty && remoteVersion != currentVersion;
+    return remoteVersion;
   }
 
-  yield await isUpdateNeeded();
+  yield await getRemoteVersion();
 
   // Poll every 10 seconds to get updates in real-time
-  final controller = StreamController<bool>();
+  final controller = StreamController<String>();
   final timer = Timer.periodic(const Duration(seconds: 10), (_) async {
-    final needsUpdate = await isUpdateNeeded();
+    final remoteVersion = await getRemoteVersion();
     if (!controller.isClosed) {
-      controller.add(needsUpdate);
+      controller.add(remoteVersion);
     }
   });
 

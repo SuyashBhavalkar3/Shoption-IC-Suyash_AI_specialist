@@ -21,6 +21,8 @@ class UnifiedShellScreen extends StatefulWidget {
 }
 
 class _UnifiedShellScreenState extends State<UnifiedShellScreen> {
+  static const platform = MethodChannel('com.shoption.calltracker/tracking');
+  
   String _userName = '';
   String _userRole = '';
   String _userEmail = '';
@@ -34,6 +36,7 @@ class _UnifiedShellScreenState extends State<UnifiedShellScreen> {
   bool isTrackingActive = false;
   bool permissionsGranted = false;
   bool _isToggling = false;
+  bool _isSyncing = false;
   Timer? _statusPingTimer;
 
   // Azure cloud stats
@@ -43,8 +46,15 @@ class _UnifiedShellScreenState extends State<UnifiedShellScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _loadUserData().then((_) {
+      _syncCallLogs();
+      try {
+        const platform = MethodChannel('com.shoption.calltracker/tracking');
+        platform.invokeMethod('ensureTracking');
+      } catch (_) {}
+    });
     _checkTrackingStatus();
+    _setupMethodChannelListener();
   }
 
   @override
@@ -52,9 +62,138 @@ class _UnifiedShellScreenState extends State<UnifiedShellScreen> {
     super.dispose();
   }
 
+  void _setupMethodChannelListener() {
+    platform.setMethodCallHandler((call) async {
+      if (call.method == 'onNewCallLogged') {
+        debugPrint('🔔 Native call logged! Syncing logs for admin/user...');
+        await _syncCallLogs();
+      }
+    });
+  }
+
+  Future<void> _syncCallLogs() async {
+    if (_isSyncing) return;
+    setState(() {
+      _isSyncing = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final currentUid = prefs.getString('user_id') ?? '';
+      if (currentUid.isEmpty) return;
+
+      final databasePath = await sqfliteDatabasePath();
+      final path = '$databasePath/call_tracker.db';
+      final database = await openDatabase(path, version: 4);
+
+      // Find all unsynced logs for active user
+      final List<Map<String, dynamic>> unsynced = await database.query(
+        'call_logs',
+        where: 'is_synced = 0 AND user_id = ?',
+        whereArgs: [currentUid],
+      );
+
+      if (unsynced.isNotEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Syncing ${unsynced.length} new calls to server...'),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        try {
+          final payload = unsynced.map((log) => {
+            'phone_number': log['phone_number'] ?? 'Unknown',
+            'call_type': log['call_type'] ?? 'Unknown',
+            'duration_seconds': (log['duration_seconds'] as num? ?? 0).toInt(),
+            'timestamp': log['timestamp'] ?? 'Unknown',
+            'system_call_id': log['system_call_id'] ?? '',
+          }).toList();
+
+          await ApiService.syncCalls(payload);
+
+          // Mark all as synced locally
+          await database.transaction((txn) async {
+            for (final log in unsynced) {
+              await txn.update(
+                'call_logs',
+                {'is_synced': 1},
+                where: 'id = ?',
+                whereArgs: [log['id']],
+              );
+            }
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Successfully synced ${unsynced.length} calls!'),
+                backgroundColor: const Color(0xFF10B981),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint('Failed to sync batch: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Sync failed: $e'),
+                backgroundColor: const Color(0xFFEF4444),
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        }
+      }
+      await database.close();
+    } catch (e) {
+      debugPrint('Sync error: $e');
+    } finally {
+      setState(() {
+        _isSyncing = false;
+      });
+      // Load local sqflite database stats again to update UI counters
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedUid = prefs.getString('user_id') ?? '';
+        final databasePath = await sqfliteDatabasePath();
+        final path = '$databasePath/call_tracker.db';
+        final database = await openDatabase(path, version: 4);
+        final List<Map<String, dynamic>> maps = await database.query(
+          'call_logs',
+          where: 'user_id = ?',
+          whereArgs: [cachedUid],
+        );
+        int incoming = 0;
+        int outgoing = 0;
+        int dur = 0;
+        for (final log in maps) {
+          final type = (log['call_type'] ?? '').toString().toLowerCase();
+          final duration = (log['duration_seconds'] as num? ?? 0).toInt();
+          if (type == 'outgoing') {
+            outgoing++;
+            dur += duration;
+          } else {
+            incoming++;
+            if (type == 'incoming') {
+              dur += duration;
+            }
+          }
+        }
+        setState(() {
+          _incomingCount = incoming;
+          _outgoingCount = outgoing;
+          _totalDuration = dur;
+        });
+        await database.close();
+      } catch (_) {}
+      await _loadAzureStats();
+    }
+  }
+
   Future<void> _checkTrackingStatus() async {
     try {
-      const platform = MethodChannel('com.shoption.calltracker/tracking');
       final prefs = await SharedPreferences.getInstance();
       final consentAccepted = prefs.getBool('consent_accepted') ?? false;
       final bool active = await platform.invokeMethod('isTrackingActive');
@@ -131,6 +270,19 @@ class _UnifiedShellScreenState extends State<UnifiedShellScreen> {
           }
         },
       );
+
+      // One-time migration to reset sync status for any call logs that failed to sync previously due to the server ID collision bug
+      final resynced = prefs.getBool('resync_v1_done') ?? false;
+      if (!resynced) {
+        try {
+          await database.rawUpdate('UPDATE call_logs SET is_synced = 0');
+          await prefs.setBool('resync_v1_done', true);
+          debugPrint('🔄 One-time sync reset: Set all local call logs to unsynced for recovery.');
+        } catch (e) {
+          debugPrint('Failed to run one-time sync reset: $e');
+        }
+      }
+
       final List<Map<String, dynamic>> maps = await database.query(
         'call_logs',
         where: 'user_id = ?',
@@ -238,7 +390,7 @@ class _UnifiedShellScreenState extends State<UnifiedShellScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('tracking_toggled_active', false);
         const platform = MethodChannel('com.shoption.calltracker/tracking');
-        await platform.invokeMethod('stopTracking');
+        await platform.invokeMethod('logoutStopService');
         try {
           await ApiService.updateMyTrackingActive(false);
         } catch (_) {}
@@ -1036,7 +1188,17 @@ class _UnifiedShellScreenState extends State<UnifiedShellScreen> {
         break;
       case 'dashboard':
       default:
-        content = SingleChildScrollView(child: _buildWelcomeContent());
+        content = RefreshIndicator(
+          color: const Color(0xFF1F8FFF),
+          backgroundColor: const Color(0xFF1E293B),
+          onRefresh: () async {
+            await _syncCallLogs();
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: _buildWelcomeContent(),
+          ),
+        );
         screenTitle = 'LeadLens Console';
         screenSubtitle = 'Management Dashboard';
         break;
