@@ -9,6 +9,7 @@ type CallRecord = {
   call_status: string;
   duration_seconds: number;
   created_at: string;
+  timestamp?: string | null;
 };
 
 type PaginationMeta = {
@@ -145,7 +146,47 @@ export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) 
     fetchLogs();
   }, [page, limit, range, search, sortBy, sortOrder, refreshTrigger]);
 
-  // Helper formatting functions
+  // Helper parsing & formatting functions
+  const parseDbTimestamp = (tsStr: string): Date | null => {
+    if (!tsStr) return null;
+
+    if (tsStr.includes("T") || tsStr.includes("Z")) {
+      const d = new Date(tsStr);
+      if (!isNaN(d.getTime())) return d;
+    }
+
+    const parts = tsStr.trim().split(/\s+/);
+    if (parts.length < 2) {
+      const d = new Date(tsStr);
+      if (!isNaN(d.getTime())) return d;
+      return null;
+    }
+    const datePart = parts[0];
+    const timePart = parts[1];
+
+    const dateParts = datePart.split("-");
+    if (dateParts.length < 3) return null;
+    const day = parseInt(dateParts[0], 10);
+    const monthStr = dateParts[1];
+    const year = parseInt(dateParts[2], 10);
+
+    const timeParts = timePart.split(":");
+    if (timeParts.length < 2) return null;
+    const hours = parseInt(timeParts[0], 10);
+    const minutes = parseInt(timeParts[1], 10);
+    const seconds = timeParts[2] ? parseInt(timeParts[2], 10) : 0;
+
+    const months: Record<string, number> = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+    };
+    const month = months[monthStr.toLowerCase()] !== undefined ? months[monthStr.toLowerCase()] : parseInt(monthStr, 10) - 1;
+
+    const d = new Date(year, month, day, hours, minutes, seconds);
+    if (isNaN(d.getTime())) return null;
+    return d;
+  };
+
   const formatDateTime = (dateVal: Date | string) => {
     if (!dateVal) return "-";
     const d = new Date(dateVal);
@@ -523,7 +564,7 @@ export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) 
                     statusBadgeClass = "bg-slate-500/10 text-text-secondary border-slate-500/20";
                   }
 
-                  const startDate = new Date(row.created_at);
+                  const startDate = (row.timestamp ? parseDbTimestamp(row.timestamp) : null) || new Date(row.created_at);
                   const endDate = new Date(startDate.getTime() + (row.duration_seconds || 0) * 1000);
 
                   return (
@@ -567,7 +608,7 @@ export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) 
 
                       {/* Start Time */}
                       <td className="px-5 py-3.5 text-text-secondary/90 font-medium text-left text-xs whitespace-nowrap">
-                        {formatDateTime(row.created_at)}
+                        {formatDateTime(startDate)}
                       </td>
 
                       {/* End Time */}

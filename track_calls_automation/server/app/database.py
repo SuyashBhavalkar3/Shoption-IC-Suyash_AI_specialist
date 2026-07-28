@@ -8,12 +8,13 @@ load_dotenv()
 
 db_url = os.getenv("DATABASE_URL")
 
-# In production, psycopg2 connection pool will be used
+# Optimized production connection pool configuration
 engine = create_engine(
     db_url,
-    pool_size=5,
-    max_overflow=2,
+    pool_size=15,
+    max_overflow=5,
     pool_timeout=30,
+    pool_recycle=600,
     pool_pre_ping=True
 )
 
@@ -26,4 +27,5 @@ def get_db():
     try:
         yield db
     finally:
+        db.rollback()
         db.close()

@@ -28,6 +28,46 @@ function formatDateTime(dateVal: Date | string) {
   return `${day} ${month} ${year}, ${hoursStr}:${minutes} ${ampm}`;
 }
 
+function parseDbTimestamp(tsStr: string): Date | null {
+  if (!tsStr) return null;
+
+  if (tsStr.includes("T") || tsStr.includes("Z")) {
+    const d = new Date(tsStr);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const parts = tsStr.trim().split(/\s+/);
+  if (parts.length < 2) {
+    const d = new Date(tsStr);
+    if (!isNaN(d.getTime())) return d;
+    return null;
+  }
+  const datePart = parts[0];
+  const timePart = parts[1];
+
+  const dateParts = datePart.split("-");
+  if (dateParts.length < 3) return null;
+  const day = parseInt(dateParts[0], 10);
+  const monthStr = dateParts[1];
+  const year = parseInt(dateParts[2], 10);
+
+  const timeParts = timePart.split(":");
+  if (timeParts.length < 2) return null;
+  const hours = parseInt(timeParts[0], 10);
+  const minutes = parseInt(timeParts[1], 10);
+  const seconds = timeParts[2] ? parseInt(timeParts[2], 10) : 0;
+
+  const months: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+  };
+  const month = months[monthStr.toLowerCase()] !== undefined ? months[monthStr.toLowerCase()] : parseInt(monthStr, 10) - 1;
+
+  const d = new Date(year, month, day, hours, minutes, seconds);
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
 function formatDuration(seconds: number) {
   if (typeof seconds !== "number" || isNaN(seconds)) return "00:00";
   const hrs = Math.floor(seconds / 3600);
@@ -93,16 +133,19 @@ export async function GET(request: Request) {
       whereClauses.push(`cl.org_id = $${params.length}`);
     }
 
+    const parsedDateExpr = `(CASE WHEN cl.timestamp LIKE '%-%-%' AND cl.timestamp NOT LIKE '%T%' AND cl.timestamp NOT LIKE '%Z%' THEN to_date(cl.timestamp, 'DD-Mon-YYYY') ELSE CAST(cl.timestamp AS date) END)`;
+    const parsedTimestampExpr = `(CASE WHEN cl.timestamp LIKE '%-%-%' AND cl.timestamp NOT LIKE '%T%' AND cl.timestamp NOT LIKE '%Z%' THEN to_timestamp(cl.timestamp, 'DD-Mon-YYYY HH24:MI') ELSE CAST(cl.timestamp AS timestamp) END)`;
+
     if (range === "today") {
-      whereClauses.push("cl.created_at >= CURRENT_DATE");
+      whereClauses.push(`${parsedDateExpr} >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date`);
     } else if (range === "7days") {
-      whereClauses.push("cl.created_at >= NOW() - INTERVAL '7 days'");
+      whereClauses.push(`${parsedDateExpr} >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '7 days'`);
     } else if (range === "month") {
-      whereClauses.push("cl.created_at >= NOW() - INTERVAL '30 days'");
+      whereClauses.push(`${parsedDateExpr} >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '30 days'`);
     } else if (range === "6months") {
-      whereClauses.push("cl.created_at >= NOW() - INTERVAL '6 months'");
+      whereClauses.push(`${parsedDateExpr} >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '6 months'`);
     } else if (range === "1year") {
-      whereClauses.push("cl.created_at >= NOW() - INTERVAL '1 year'");
+      whereClauses.push(`${parsedDateExpr} >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '1 year'`);
     }
 
     if (search) {
@@ -115,11 +158,11 @@ export async function GET(request: Request) {
     // Excel export gets full data; PDF export is limited to 10,000 records
     const limitClause = format === "excel" ? "" : "LIMIT 10000";
     const dataQuery = `
-      SELECT cl.id, cl.user_id, u.full_name AS agent_name, cl.phone_number, cl.call_type, cl.call_status, cl.duration_seconds, cl.created_at
+      SELECT cl.id, cl.user_id, u.full_name AS agent_name, cl.phone_number, cl.call_type, cl.call_status, cl.duration_seconds, cl.created_at, cl.timestamp
       FROM call_logs cl
       LEFT JOIN users u ON cl.user_id = u.id
       ${whereStr}
-      ORDER BY cl.created_at DESC
+      ORDER BY ${parsedTimestampExpr} DESC
       ${limitClause}
     `;
 
@@ -155,7 +198,7 @@ export async function GET(request: Request) {
       };
 
       for (const row of rows) {
-        const startDate = new Date(row.created_at);
+        const startDate = (row.timestamp ? parseDbTimestamp(row.timestamp) : null) || new Date(row.created_at);
         const endDate = new Date(startDate.getTime() + (row.duration_seconds || 0) * 1000);
 
         worksheet.addRow({
@@ -163,7 +206,7 @@ export async function GET(request: Request) {
           phone_number: row.phone_number || "",
           call_type: row.call_type || "",
           call_status: row.call_status || "",
-          created_at: formatDateTime(row.created_at),
+          created_at: formatDateTime(startDate),
           end_time: formatDateTime(endDate),
           duration_seconds: row.duration_seconds ?? 0,
           duration_formatted: formatDuration(row.duration_seconds ?? 0),
@@ -278,6 +321,8 @@ export async function GET(request: Request) {
             doc.rect(30, y, 535, 16).fill("#F8FAFC");
           }
           
+          const startDate = (row.timestamp ? parseDbTimestamp(row.timestamp) : null) || new Date(row.created_at);
+
           // Reset text color to dark slate
           doc.fillColor("#0F172A").fontSize(7.5);
           doc.text(String(index), 35, y + 4);
@@ -287,7 +332,7 @@ export async function GET(request: Request) {
           // Direction and Status text values
           doc.fillColor("#0F172A").text(row.call_type || "", 255, y + 4);
           doc.text(row.call_status || "", 325, y + 4);
-          doc.text(formatDateTime(row.created_at), 395, y + 4);
+          doc.text(formatDateTime(startDate), 395, y + 4);
           doc.text(formatDuration(row.duration_seconds ?? 0), 515, y + 4);
 
           y += 16;

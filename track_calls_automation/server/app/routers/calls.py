@@ -241,6 +241,7 @@ def get_reports(
     overall_incoming_count = 0
     overall_outgoing_count = 0
     overall_total_seconds = 0
+
     for warrior in warriors:
         query = db.query(CallLog).filter(CallLog.user_id == warrior.id)
         
@@ -258,7 +259,8 @@ def get_reports(
             except Exception:
                 pass
                 
-        logs = query.all()
+        # Fetch all call logs
+        logs = query.order_by(CallLog.timestamp.desc(), CallLog.id.desc()).all()
         
         total_calls = len(logs)
         incoming_count = sum(1 for l in logs if (l.call_type or "").lower() in ["incoming", "missed", "rejected", "blocked"])
@@ -304,6 +306,7 @@ def get_reports(
             WarriorReport(
                 warrior_id=warrior.id,
                 full_name=warrior.full_name,
+                department=warrior.department,
                 is_tracking_enabled=is_tracking_enabled_dynamic,
                 total_calls=total_calls,
                 incoming_calls_count=incoming_count,
@@ -919,3 +922,132 @@ def export_reports_excel(
     response = export_reports_csv(request, token, leader_id, warrior_id, start_date, end_date, db)
     response.headers["Content-Disposition"] = "attachment; filename=team_reports.csv"
     return response
+
+
+@router.get("/team-logs")
+def get_team_logs(
+    page: int = 1,
+    limit: int = 50,
+    search: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    print(f"INFO: GET /calls/team-logs requested by user {current_user.email} (Role: {current_user.role})")
+    
+    # 1. Access check: strictly restricted to super admins
+    if current_user.role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Only super admins can access team logs"
+        )
+
+    # 2. Build the query joining User
+    from app.models import CallLog, User
+    from sqlalchemy import or_, func
+    
+    query = db.query(CallLog).join(User, CallLog.user_id == User.id)
+
+    # 3. Filter by organisation to isolate tenants
+    org_filter = User.organisation_id == current_user.organisation_id if current_user.organisation_id is not None else User.organisation_id.is_(None)
+    query = query.filter(org_filter)
+
+    # 4. Apply search filter
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                User.full_name.ilike(search_pattern),
+                CallLog.phone_number.ilike(search_pattern),
+                CallLog.call_status.ilike(search_pattern),
+                CallLog.call_type.ilike(search_pattern)
+            )
+        )
+
+    # 5. Apply start_date and end_date filters
+    if start_date:
+        try:
+            start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
+            query = query.filter(func.parse_my_timestamp(CallLog.timestamp) >= start_dt)
+        except Exception:
+            pass
+    if end_date:
+        try:
+            end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
+            query = query.filter(func.parse_my_timestamp(CallLog.timestamp) <= end_dt)
+        except Exception:
+            pass
+
+    # 6. Get total count for pagination metadata
+    total_count = query.count()
+
+    # 7. Execute paginated query (ordered by latest call log first)
+    offset = max(0, (page - 1) * limit)
+    logs = query.order_by(func.parse_my_timestamp(CallLog.timestamp).desc(), CallLog.id.desc()).offset(offset).limit(limit).all()
+
+    # Helper function to parse timestamp to datetime and calculate start/end time
+    def get_start_end_time(timestamp_str: str, duration_sec: int):
+        from datetime import datetime, timedelta
+        try:
+            parsed_dt = None
+            if "-" in timestamp_str and not "T" in timestamp_str:
+                parts = timestamp_str.strip().split()
+                if len(parts) >= 2:
+                    date_part, time_part = parts[0], parts[1]
+                    date_parts = date_part.split("-")
+                    time_parts = time_part.split(":")
+                    if len(date_parts) == 3 and len(time_parts) >= 2:
+                        day = int(date_parts[0])
+                        month_str = date_parts[1].lower()
+                        year = int(date_parts[2])
+                        hour = int(time_parts[0])
+                        minute = int(time_parts[1])
+                        
+                        months_map = {
+                            "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+                            "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12
+                        }
+                        month = months_map.get(month_str[:3])
+                        if month:
+                            parsed_dt = datetime(year, month, day, hour, minute)
+            if not parsed_dt:
+                clean_ts = timestamp_str.replace("Z", "").split(".")[0]
+                if "T" in clean_ts:
+                    parsed_dt = datetime.strptime(clean_ts, "%Y-%m-%dT%H:%M:%S")
+                else:
+                    parsed_dt = datetime.strptime(clean_ts, "%Y-%m-%d %H:%M:%S")
+            
+            start_time_str = parsed_dt.strftime("%d-%b-%Y %I:%M %p")
+            end_dt = parsed_dt + timedelta(seconds=duration_sec)
+            end_time_str = end_dt.strftime("%d-%b-%Y %I:%M %p")
+            
+            return start_time_str, end_time_str
+        except Exception:
+            return timestamp_str, timestamp_str
+
+    result_data = []
+    for l in logs:
+        start_time, end_time = get_start_end_time(l.timestamp, l.duration_seconds)
+        
+        result_data.append({
+            "id": l.id,
+            "caller_name": l.user.full_name if l.user else "Unknown",
+            "contact_number": l.phone_number,
+            "direction": l.call_type,
+            "status": l.call_status,
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration": l.duration_seconds
+        })
+
+    import math
+    return {
+        "data": result_data,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total": total_count,
+            "totalPages": math.ceil(total_count / limit) if limit > 0 else 0
+        }
+    }

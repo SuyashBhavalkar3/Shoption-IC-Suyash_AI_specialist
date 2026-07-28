@@ -211,8 +211,8 @@ html[data-theme="light"] .to-background {
 
 /* Premium Card Borders and Shadows */
 .bg-card,
-html[data-theme="dark"] .bg-\[\#0E1528\],
-html[data-theme="light"] .bg-\[\#0E1528\],
+html[data-theme="dark"] .bg-\[\#0E1528\]:not(th):not(td),
+html[data-theme="light"] .bg-\[\#0E1528\]:not(th):not(td),
 html[data-theme="dark"] .bg-card,
 html[data-theme="light"] .bg-card {
   border: 1px solid var(--border-custom) !important;
@@ -222,7 +222,7 @@ html[data-theme="light"] .bg-card {
 
 /* Light theme card shadow adjustments */
 html[data-theme="light"] .bg-card,
-html[data-theme="light"] .bg-\[\#0E1528\] {
+html[data-theme="light"] .bg-\[\#0E1528\]:not(th):not(td) {
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06) !important;
 }
 
@@ -325,9 +325,12 @@ html[data-theme="light"] .metric-card-3d:hover {
 }
 
 @keyframes pulse-values {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.45;
   }
+
   50% {
     opacity: 0.75;
   }
@@ -337,6 +340,7 @@ html[data-theme="light"] .metric-card-3d:hover {
   0% {
     background-position: -200% 0;
   }
+
   100% {
     background-position: 200% 0;
   }

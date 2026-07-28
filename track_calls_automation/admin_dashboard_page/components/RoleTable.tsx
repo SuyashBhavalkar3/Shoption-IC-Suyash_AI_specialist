@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { UserRecord, EmployeeRecord, ReportResponse } from "./types";
 
 type RoleTableProps = {
@@ -12,8 +12,19 @@ type RoleTableProps = {
 
 function parseDbTimestamp(tsStr: string): Date | null {
   if (!tsStr) return null;
+
+  // Try standard ISO parsing first
+  if (tsStr.includes("T") || tsStr.includes("Z")) {
+    const d = new Date(tsStr);
+    if (!isNaN(d.getTime())) return d;
+  }
+
   const parts = tsStr.trim().split(/\s+/);
-  if (parts.length < 2) return null;
+  if (parts.length < 2) {
+    const d = new Date(tsStr);
+    if (!isNaN(d.getTime())) return d;
+    return null;
+  }
   const datePart = parts[0]; // e.g. "24-Jun-2026"
   const timePart = parts[1]; // e.g. "11:05"
 
@@ -48,7 +59,9 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
   const [toTime, setToTime] = useState("");
   const [selectedReportUser, setSelectedReportUser] = useState<UserRecord | null>(null);
   const [modalTab, setModalTab] = useState<"missed" | "all">("missed");
-  const [registryPreset, setRegistryPreset] = useState<"today" | "1m" | "3m" | "overall" | "">("overall");
+  const [registryPreset, setRegistryPreset] = useState<"today" | "1m" | "3m" | "overall" | "">("today");
+  const [sortBy, setSortBy] = useState<"totalCalls" | "totalTalktime">("totalCalls");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const formatDateToYYYYMMDD = (d: Date) => {
     const year = d.getFullYear();
@@ -75,11 +88,15 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         start.setMonth(end.getMonth() - 3);
       }
       setFromDate(formatDateToYYYYMMDD(start));
-      setFromTime("00:00");
+      setFromTime(preset === "today" ? "09:30" : "00:00");
       setToDate(formatDateToYYYYMMDD(end));
-      setToTime("23:59");
+      setToTime(preset === "today" ? "19:30" : "23:59");
     }
   };
+
+  useEffect(() => {
+    handleRegistryPreset("today");
+  }, []);
 
   const getMissedCallReportDetails = (user: UserRecord) => {
     const warriorData = report?.warriors?.find((w) => w.warrior_id === user.id);
@@ -153,7 +170,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
           .filter(c => {
             if (c.phone_number !== mc.phone_number) return false;
             const cTime = parseDbTimestamp(c.timestamp);
-            return cTime && cTime > mcTime && c.duration_seconds > 0;
+            return cTime && cTime >= mcTime && c.duration_seconds > 0;
           })
           .sort((a, b) => {
             const timeA = parseDbTimestamp(a.timestamp);
@@ -307,6 +324,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         outgoingSuccessReceived: 0,
         outgoingTalktime: "00:00",
         outgoingAvgTT: "00:00",
+        totalDurationSeconds: 0,
       };
     }
 
@@ -427,7 +445,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
     const outgoingAvgTT = formatToMMSS(outgoingSuccessReceived > 0 ? outgoingTotalSeconds / outgoingSuccessReceived : 0);
 
     return {
-      totalCalls: calls.length,
+      totalCalls: incomingCalls + totalOutgoingCalls + missed,
       totalSuccessCalls,
       missed,
       missedNotResponded,
@@ -440,73 +458,185 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       outgoingSuccessReceived,
       outgoingTalktime,
       outgoingAvgTT,
+      totalDurationSeconds,
+      incomingTotalSeconds,
+      outgoingTotalSeconds,
+      incomingSuccessAnswered,
     };
   };
 
-  // Filter users by search query and role filter
+  const handleSort = (field: "totalCalls" | "totalTalktime") => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(field);
+      setSortOrder("desc");
+    }
+  };
+
+  const sortUsersWithMetrics = (userList: { user: UserRecord; metrics: ReturnType<typeof getUserCallMetrics> }[]) => {
+    return [...userList].sort((a, b) => {
+      let valA = 0;
+      let valB = 0;
+      if (sortBy === "totalTalktime") {
+        valA = a.metrics.totalDurationSeconds;
+        valB = b.metrics.totalDurationSeconds;
+      } else {
+        valA = a.metrics.totalCalls;
+        valB = b.metrics.totalCalls;
+      }
+      return sortOrder === "desc" ? valB - valA : valA - valB;
+    });
+  };
+
+  // Split search query by commas or newlines to support multi-term searches (e.g. pasted from Excel)
+  const searchQueries = searchQuery
+    .split(/[,\r\n]/)
+    .map((q) => q.trim().toLowerCase())
+    .filter(Boolean);
+
+  // Filter users by search queries and role filter
   const filteredUsers = users.filter((u) => {
     if (roleFilter && u.role !== roleFilter) {
       return false;
     }
-    const query = searchQuery.toLowerCase().trim();
+    if (searchQueries.length === 0) return true;
+
     const dept = u.department || "Unassigned";
     const roleNormalized = (u.role || "").replace(/_/g, " ").toLowerCase();
     const roleOriginal = (u.role || "").toLowerCase();
-    return (
-      (u.full_name || "").toLowerCase().includes(query) ||
-      (u.email || "").toLowerCase().includes(query) ||
-      roleOriginal.includes(query) ||
-      roleNormalized.includes(query) ||
-      (u.system_id || "").toLowerCase().includes(query) ||
-      dept.toLowerCase().includes(query)
+    const fullName = (u.full_name || "").toLowerCase();
+    const email = (u.email || "").toLowerCase();
+    const systemId = (u.system_id || "").toLowerCase();
+    const deptLower = dept.toLowerCase();
+
+    return searchQueries.some((q) =>
+      fullName.includes(q) ||
+      email.includes(q) ||
+      roleOriginal.includes(q) ||
+      roleNormalized.includes(q) ||
+      systemId.includes(q) ||
+      deptLower.includes(q)
     );
   });
 
-  // Filter employees by search query
+  const usersWithMetrics = useMemo(() => {
+    return filteredUsers.map((user) => ({
+      user,
+      metrics: getUserCallMetrics(user.id),
+    }));
+  }, [filteredUsers, report, fromDate, fromTime, toDate, toTime]);
+
+  const sortedUsersWithMetrics = useMemo(() => {
+    return sortUsersWithMetrics(usersWithMetrics);
+  }, [usersWithMetrics, sortBy, sortOrder]);
+
+  const summaryMetrics = useMemo(() => {
+    let totalCalls = 0;
+    let totalSuccessCalls = 0;
+    let missed = 0;
+    let missedNotResponded = 0;
+    let totalDurationSeconds = 0;
+    let incomingCalls = 0;
+    let incomingTotalSeconds = 0;
+    let incomingSuccessAnswered = 0;
+    let dialed = 0;
+    let outgoingSuccessReceived = 0;
+    let outgoingTotalSeconds = 0;
+
+    usersWithMetrics.forEach(({ metrics }) => {
+      totalCalls += metrics.totalCalls;
+      totalSuccessCalls += metrics.totalSuccessCalls;
+      missed += metrics.missed;
+      missedNotResponded += metrics.missedNotResponded;
+      totalDurationSeconds += metrics.totalDurationSeconds;
+      incomingCalls += metrics.incomingCalls;
+      incomingTotalSeconds += metrics.incomingTotalSeconds || 0;
+      incomingSuccessAnswered += metrics.incomingSuccessAnswered || 0;
+      dialed += metrics.dialed;
+      outgoingSuccessReceived += metrics.outgoingSuccessReceived;
+      outgoingTotalSeconds += metrics.outgoingTotalSeconds || 0;
+    });
+
+    return {
+      totalCalls,
+      totalSuccessCalls,
+      missed,
+      missedNotResponded,
+      totalTalktime: formatToHHMM(totalDurationSeconds),
+      avgCalltime: formatToMMSS(totalSuccessCalls > 0 ? totalDurationSeconds / totalSuccessCalls : 0),
+      incomingCalls,
+      incomingTalktime: formatToHHMM(incomingTotalSeconds),
+      incomingAvgTT: formatToMMSS(incomingSuccessAnswered > 0 ? incomingTotalSeconds / incomingSuccessAnswered : 0),
+      dialed,
+      outgoingSuccessReceived,
+      outgoingTalktime: formatToHHMM(outgoingTotalSeconds),
+      outgoingAvgTT: formatToMMSS(outgoingSuccessReceived > 0 ? outgoingTotalSeconds / outgoingSuccessReceived : 0),
+    };
+  }, [usersWithMetrics]);
+
+  // Filter employees by search queries
   const filteredEmployees = employees.filter((emp) => {
-    const query = searchQuery.toLowerCase();
+    if (searchQueries.length === 0) return true;
+
     const dept = emp.department || "Unassigned";
-    return (
-      (emp.employee_id || "").toLowerCase().includes(query) ||
-      (emp.email || "").toLowerCase().includes(query) ||
-      (emp.system_id || "").toLowerCase().includes(query) ||
-      dept.toLowerCase().includes(query)
+    const empId = (emp.employee_id || "").toLowerCase();
+    const email = (emp.email || "").toLowerCase();
+    const systemId = (emp.system_id || "").toLowerCase();
+    const deptLower = dept.toLowerCase();
+
+    return searchQueries.some((q) =>
+      empId.includes(q) ||
+      email.includes(q) ||
+      systemId.includes(q) ||
+      deptLower.includes(q)
     );
   });
 
   const handleExportCSV = () => {
     const headers = [
-      "NAME", "EMAIL ID", "ROLE / DEPT",
+      "NAME", "ROLE / DEPT",
       "TOTAL CALLS", "TOTAL SUCCESS CALLS", "TOTAL MISSED CALLS", "TOTAL MISSED NOT RESPONDED",
       "TOTAL TALKTIME (HH:MM)", "AVERAGE CALL TIME (MM:SS)",
       "TOTAL INCOMING CALLS", "INCOMING TALKTIME", "INCOMING AVR. CALL TT",
       "TOTAL DIALED", "TOTAL SUCCESS DIALED", "OUTGOING TALKTIME", "OUTCOMING AVR. CALL TT"
     ];
 
-    const rows = filteredUsers
-      .map((user) => ({
-        user,
-        metrics: getUserCallMetrics(user.id),
-      }))
-      .sort((a, b) => b.metrics.totalCalls - a.metrics.totalCalls)
-      .map(({ user, metrics }) => [
-        user.full_name,
-        user.email,
-        `${user.role.replace("_", " ").toUpperCase()} / ${user.department || "Unassigned"}`,
-        metrics.totalCalls,
-        metrics.totalSuccessCalls,
-        metrics.missed,
-        metrics.missedNotResponded,
-        metrics.totalTalktime,
-        metrics.avgCalltime,
-        metrics.incomingCalls,
-        metrics.incomingTalktime,
-        metrics.incomingAvgTT,
-        metrics.dialed,
-        metrics.outgoingSuccessReceived,
-        metrics.outgoingTalktime,
-        metrics.outgoingAvgTT
-      ]);
+    const rows = sortedUsersWithMetrics.map(({ user, metrics }) => [
+      user.full_name,
+      `${user.role.replace("_", " ").toUpperCase()} / ${user.department || "Unassigned"}`,
+      metrics.totalCalls,
+      metrics.totalSuccessCalls,
+      metrics.missed,
+      metrics.missedNotResponded,
+      metrics.totalTalktime,
+      metrics.avgCalltime,
+      metrics.incomingCalls,
+      metrics.incomingTalktime,
+      metrics.incomingAvgTT,
+      metrics.dialed,
+      metrics.outgoingSuccessReceived,
+      metrics.outgoingTalktime,
+      metrics.outgoingAvgTT
+    ]);
+
+    rows.push([
+      "Total Summary",
+      "",
+      summaryMetrics.totalCalls,
+      summaryMetrics.totalSuccessCalls,
+      summaryMetrics.missed,
+      summaryMetrics.missedNotResponded,
+      summaryMetrics.totalTalktime,
+      summaryMetrics.avgCalltime,
+      summaryMetrics.incomingCalls,
+      summaryMetrics.incomingTalktime,
+      summaryMetrics.incomingAvgTT,
+      summaryMetrics.dialed,
+      summaryMetrics.outgoingSuccessReceived,
+      summaryMetrics.outgoingTalktime,
+      summaryMetrics.outgoingAvgTT
+    ]);
 
     const csvContent = [headers, ...rows].map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -523,16 +653,9 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
-    const tableRows = filteredUsers
-      .map((user) => ({
-        user,
-        metrics: getUserCallMetrics(user.id),
-      }))
-      .sort((a, b) => b.metrics.totalCalls - a.metrics.totalCalls)
-      .map(({ user, metrics }) => `
+    let tableRows = sortedUsersWithMetrics.map(({ user, metrics }) => `
         <tr>
           <td><b>${user.full_name}</b></td>
-          <td>${user.email}</td>
           <td style="color: #04693F; font-weight: bold;">${user.role.replace("_", " ").toUpperCase()} / ${user.department || "Unassigned"}</td>
           <td>${metrics.totalCalls}</td>
           <td>${metrics.totalSuccessCalls}</td>
@@ -549,6 +672,26 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
           <td>${metrics.outgoingAvgTT}</td>
         </tr>
       `).join("");
+
+    tableRows += `
+      <tr style="background-color: #f8fafc; font-weight: bold; border-top: 2px solid #04693F;">
+        <td><b>Total Summary</b></td>
+        <td></td>
+        <td>${summaryMetrics.totalCalls}</td>
+        <td>${summaryMetrics.totalSuccessCalls}</td>
+        <td>${summaryMetrics.missed}</td>
+        <td>${summaryMetrics.missedNotResponded}</td>
+        <td>${summaryMetrics.totalTalktime}</td>
+        <td>${summaryMetrics.avgCalltime}</td>
+        <td>${summaryMetrics.incomingCalls}</td>
+        <td>${summaryMetrics.incomingTalktime}</td>
+        <td>${summaryMetrics.incomingAvgTT}</td>
+        <td>${summaryMetrics.dialed}</td>
+        <td>${summaryMetrics.outgoingSuccessReceived}</td>
+        <td>${summaryMetrics.outgoingTalktime}</td>
+        <td>${summaryMetrics.outgoingAvgTT}</td>
+      </tr>
+    `;
 
     printWindow.document.write(`
       <html>
@@ -571,7 +714,6 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
             <thead>
               <tr>
                 <th>NAME</th>
-                <th>EMAIL ID</th>
                 <th>ROLE / DEPT</th>
                 <th>TOTAL CALLS</th>
                 <th>TOTAL SUCCESS CALLS</th>
@@ -639,6 +781,18 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
               placeholder={activeTab === "users" ? "Search active users by name, email, role..." : "Search registered..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onPaste={(e) => {
+                const pastedText = e.clipboardData.getData("text");
+                if (pastedText.includes("\n") || pastedText.includes("\r")) {
+                  e.preventDefault();
+                  const clean = pastedText
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .join(", ");
+                  setSearchQuery(clean);
+                }
+              }}
               className="w-full rounded-full border border-slate-800 bg-[#050816] px-3 py-1.5 pl-8 text-xs outline-none transition focus:border-[#1F8FFF] focus:ring-1 focus:ring-[#1F8FFF]/10 font-semibold text-[#F8FAFC] placeholder-[#94A3B8]/50"
             />
             {/* Search Icon */}
@@ -742,16 +896,12 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         )}
 
         {/* Clear Filters Button */}
-        {(searchQuery || roleFilter || fromDate || fromTime || toDate || toTime || (registryPreset && registryPreset !== "overall")) && (
+        {(searchQuery || roleFilter || registryPreset !== "today") && (
           <button
             onClick={() => {
               setSearchQuery("");
               setRoleFilter("");
-              setFromDate("");
-              setFromTime("");
-              setToDate("");
-              setToTime("");
-              setRegistryPreset("overall");
+              handleRegistryPreset("today");
             }}
             className="text-rose-400 hover:text-rose-300 text-[10px] font-bold transition-all whitespace-nowrap"
           >
@@ -784,64 +934,86 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
           <table className="min-w-full divide-y divide-slate-800 text-left text-xs font-semibold border-collapse">
             <thead className="text-[#94A3B8] uppercase tracking-wider font-bold">
               <tr>
-                <th className="px-4 py-3 sticky top-0 left-0 z-30 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] border-r border-slate-800 text-left min-w-[140px]">
-                  <div className="leading-tight text-[10px] font-bold text-[#F8FAFC]">NAME</div>
+                <th className="px-3 py-3 sticky top-0 left-0 z-30 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] border-r border-slate-800 text-center min-w-[50px]">
+                  <div className="leading-tight text-[10px] font-bold text-[#F8FAFC]">#</div>
                 </th>
-                <th className="px-3 py-3 text-left sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[10px] font-bold leading-tight min-w-[150px]">
-                  <div>EMAIL ID</div>
+                <th className="px-4 py-3 sticky top-0 left-[50px] z-30 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] border-r border-slate-800 text-left min-w-[140px]">
+                  <div className="leading-tight text-[10px] font-bold text-[#F8FAFC]">NAME</div>
                 </th>
                 <th className="px-3 py-3 text-left sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[10px] font-bold leading-tight min-w-[150px]">
                   <div>ROLE / DEPT</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[90px]">
-                  <div>TOTAL</div>
-                  <div>CALLS</div>
+                <th
+                  onClick={() => handleSort("totalCalls")}
+                  className={`px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[90px] border-l-2 border-slate-500 border-r border-slate-800/40 cursor-pointer select-none transition-all hover:bg-slate-800/60 ${sortBy === "totalCalls" ? "text-[#1F8FFF]" : "text-[#94A3B8]"
+                    }`}
+                >
+                  <div className="flex flex-col items-center justify-center gap-0.5">
+                    <div className="flex items-center gap-1 justify-center w-full">
+                      <span>TOTAL</span>
+                      {sortBy === "totalCalls" && (
+                        <span className="text-[#1F8FFF] text-[10px]">{sortOrder === "desc" ? "▼" : "▲"}</span>
+                      )}
+                    </div>
+                    <div>CALLS</div>
+                  </div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px] border-r border-slate-800/40">
                   <div>TOTAL SUCCESS</div>
                   <div>CALLS</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[110px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[110px] border-r border-slate-800/40">
                   <div>TOTAL MISSED</div>
                   <div>CALLS</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[145px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[145px] border-r border-slate-800/40">
                   <div>TOTAL MISSED</div>
                   <div>NOT RESPONDED</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
-                  <div>TOTAL TALKTIME</div>
-                  <div>(HH:MM)</div>
+                <th
+                  onClick={() => handleSort("totalTalktime")}
+                  className={`px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px] border-r border-slate-800/40 cursor-pointer select-none transition-all hover:bg-slate-800/60 ${sortBy === "totalTalktime" ? "text-[#1F8FFF]" : "text-[#94A3B8]"
+                    }`}
+                >
+                  <div className="flex flex-col items-center justify-center gap-0.5">
+                    <div className="flex items-center gap-1 justify-center w-full">
+                      <span>TOTAL TALKTIME</span>
+                      {sortBy === "totalTalktime" && (
+                        <span className="text-[#1F8FFF] text-[10px]">{sortOrder === "desc" ? "▼" : "▲"}</span>
+                      )}
+                    </div>
+                    <div>(HH:MM)</div>
+                  </div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[110px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[110px] border-r-2 border-slate-500">
                   <div>AVERAGE CALL</div>
                   <div>TIME (MM:SS)</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[130px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[130px] border-l-2 border-slate-500 border-r border-slate-800/40">
                   <div>TOTAL INCOMING</div>
                   <div>CALLS</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[100px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[100px] border-r border-slate-800/40">
                   <div>INCOMING</div>
                   <div>TALKTIME</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px] border-r-2 border-slate-500">
                   <div>INCOMING</div>
                   <div>AVR. CALL TT</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[90px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[90px] border-l-2 border-slate-500 border-r border-slate-800/40">
                   <div>TOTAL</div>
                   <div>DIALED</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px] border-r border-slate-800/40">
                   <div>TOTAL SUCCESS</div>
                   <div>DIALED</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[100px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[100px] border-r border-slate-800/40">
                   <div>OUTGOING</div>
                   <div>TALKTIME</div>
                 </th>
-                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px]">
+                <th className="px-3 py-3 text-center sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-[9px] font-bold leading-tight min-w-[125px] border-r-2 border-slate-500">
                   <div>OUTCOMING</div>
                   <div>AVR. CALL TT</div>
                 </th>
@@ -851,44 +1023,63 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 bg-[#0E1528]">
-              {filteredUsers.length === 0 ? (
+              {sortedUsersWithMetrics.length === 0 ? (
                 <tr>
                   <td colSpan={17} className="px-6 py-10 text-center text-[#94A3B8]/60 font-medium">
                     No active users match the current hierarchy or search filters.
                   </td>
                 </tr>
               ) : (
-                filteredUsers
-                  .map((user) => ({
-                    user,
-                    metrics: getUserCallMetrics(user.id),
-                  }))
-                  .sort((a, b) => b.metrics.totalCalls - a.metrics.totalCalls)
-                  .map(({ user, metrics }) => {
+                <>
+                  {sortedUsersWithMetrics.map(({ user, metrics }, idx) => {
+                    const isTodayPreset = registryPreset === "today";
+                    const isSearching = searchQueries.length > 0;
+                    // Less than 4 hours (14400 seconds)
+                    const isBelowTarget = metrics.totalDurationSeconds < 14400;
+                    const showBlink = isTodayPreset && isSearching && isBelowTarget;
+
                     return (
                       <tr key={user.id} className="hover:bg-slate-800/30 transition-colors group">
-                        <td className="px-4 py-2 sticky left-0 z-20 bg-[#0E1528] group-hover:bg-slate-800/40 transition-colors border-r border-slate-800 font-bold text-[#F8FAFC] text-xs truncate max-w-[150px]" title={user.full_name}>
-                          {user.full_name}
+                        <td className="px-3 py-2 sticky left-0 z-20 bg-[#0E1528] group-hover:bg-slate-800/40 transition-colors border-r border-slate-800 text-center font-bold text-[#94A3B8] text-xs w-[50px] min-w-[50px]">
+                          {idx + 1}
                         </td>
-                        <td className="px-3 py-2 text-left text-xs font-semibold text-[#94A3B8] truncate max-w-[180px]" title={user.email}>
-                          {user.email}
+                        <td className="px-4 py-2 sticky left-[50px] z-20 bg-[#0E1528] group-hover:bg-slate-800/40 transition-colors border-r border-slate-800 font-bold text-[#F8FAFC] text-xs truncate max-w-[150px]" title={user.full_name}>
+                          <div className="flex items-center justify-between gap-1.5 w-full">
+                            <span className="truncate flex-1">{user.full_name}</span>
+                            {showBlink && (
+                              <span className="relative flex h-2 w-2 shrink-0" title="Talktime less than 4 hours today!">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-2 text-left text-xs font-bold text-[#1F8FFF] whitespace-nowrap">
                           {user.role.replace("_", " ").toUpperCase()} / {user.department || "Unassigned"}
                         </td>
-                        <td className="px-4 py-2 text-center text-sm font-bold text-[#F8FAFC]">{metrics.totalCalls}</td>
-                        <td className="px-4 py-2 text-center text-sm font-bold text-[#00E6B8]">{metrics.totalSuccessCalls}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.missed}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.missedNotResponded}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8] font-medium">{metrics.totalTalktime}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8] font-medium">{metrics.avgCalltime}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.incomingCalls}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.incomingTalktime}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.incomingAvgTT}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.dialed}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.outgoingSuccessReceived}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8] font-medium">{metrics.outgoingTalktime}</td>
-                        <td className="px-4 py-2 text-center text-[#94A3B8]">{metrics.outgoingAvgTT}</td>
+                        <td className="px-4 py-2 text-center text-sm font-bold text-[#F8FAFC] border-l-2 border-slate-500 border-r border-slate-800/40">{metrics.totalCalls}</td>
+                        <td className="px-4 py-2 text-center text-sm font-bold text-[#00E6B8] border-r border-slate-800/40">{metrics.totalSuccessCalls}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] border-r border-slate-800/40">{metrics.missed}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] border-r border-slate-800/40">{metrics.missedNotResponded}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] font-medium border-r border-slate-800/40">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className={showBlink ? "text-rose-400 font-black animate-pulse" : ""}>{metrics.totalTalktime}</span>
+                            {showBlink && (
+                              <span className="relative flex h-2 w-2 shrink-0" title="Talktime less than 4 hours today!">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] font-medium border-r-2 border-slate-500">{metrics.avgCalltime}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] border-l-2 border-slate-500 border-r border-slate-800/40">{metrics.incomingCalls}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] border-r border-slate-800/40">{metrics.incomingTalktime}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] font-medium border-r-2 border-slate-500">{metrics.incomingAvgTT}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] border-l-2 border-slate-500 border-r border-slate-800/40">{metrics.dialed}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] border-r border-slate-800/40">{metrics.outgoingSuccessReceived}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] border-r border-slate-800/40">{metrics.outgoingTalktime}</td>
+                        <td className="px-4 py-2 text-center text-[#94A3B8] font-medium border-r-2 border-slate-500">{metrics.outgoingAvgTT}</td>
                         <td className="px-3 py-2 text-center">
                           <button
                             onClick={() => setSelectedReportUser(user)}
@@ -899,7 +1090,29 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                         </td>
                       </tr>
                     );
-                  })
+                  })}
+                  <tr className="bg-slate-900/60 font-bold border-t-2 border-slate-700 hover:bg-slate-800/20 transition-colors">
+                    <td className="px-3 py-3 text-center text-[#94A3B8] text-xs border-r border-slate-800 font-extrabold">-</td>
+                    <td className="px-4 py-3 text-left text-xs font-black text-white border-r border-slate-800 uppercase tracking-wider sticky left-[50px] z-20 bg-[#0E1528] group-hover:bg-slate-800/40 transition-colors">
+                      Total Summary
+                    </td>
+                    <td className="px-3 py-3 text-left text-xs text-[#94A3B8] font-extrabold">-</td>
+                    <td className="px-4 py-3 text-center text-sm font-black text-[#F8FAFC] border-l-2 border-slate-500 border-r border-slate-800/40 bg-slate-900/40">{summaryMetrics.totalCalls}</td>
+                    <td className="px-4 py-3 text-center text-sm font-black text-[#00E6B8] border-r border-slate-800/40 bg-slate-900/40">{summaryMetrics.totalSuccessCalls}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] border-r border-slate-800/40">{summaryMetrics.missed}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] border-r border-slate-800/40">{summaryMetrics.missedNotResponded}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] font-bold border-r border-slate-800/40">{summaryMetrics.totalTalktime}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] font-bold border-r-2 border-slate-500">{summaryMetrics.avgCalltime}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] border-l-2 border-slate-500 border-r border-slate-800/40">{summaryMetrics.incomingCalls}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] border-r border-slate-800/40">{summaryMetrics.incomingTalktime}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] font-bold border-r-2 border-slate-500">{summaryMetrics.incomingAvgTT}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] border-l-2 border-slate-500 border-r border-slate-800/40">{summaryMetrics.dialed}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] border-r border-slate-800/40">{summaryMetrics.outgoingSuccessReceived}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] border-r border-slate-800/40">{summaryMetrics.outgoingTalktime}</td>
+                    <td className="px-4 py-3 text-center text-[#94A3B8] font-bold border-r-2 border-slate-500">{summaryMetrics.outgoingAvgTT}</td>
+                    <td className="px-3 py-3 text-center text-xs text-[#94A3B8] font-extrabold">-</td>
+                  </tr>
+                </>
               )}
             </tbody>
           </table>
@@ -907,6 +1120,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
           <table className="min-w-full divide-y divide-slate-800 text-left text-sm border-collapse">
             <thead className="text-[#94A3B8] uppercase tracking-wider text-xs font-semibold">
               <tr>
+                <th className="px-6 py-4 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)] text-center w-[60px] border-r border-slate-800 font-bold">#</th>
                 <th className="px-6 py-4 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">Employee ID / Email</th>
                 <th className="px-6 py-4 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">System ID</th>
                 <th className="px-6 py-4 sticky top-0 z-10 bg-[#0E1528] shadow-[inset_0_-1px_0_rgba(255,255,255,0.05)]">Department</th>
@@ -917,13 +1131,14 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
             <tbody className="divide-y divide-slate-800 bg-[#0E1528]">
               {filteredEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-[#94A3B8]/60 font-medium">
+                  <td colSpan={6} className="px-6 py-10 text-center text-[#94A3B8]/60 font-medium">
                     No registered employees match the search filter.
                   </td>
                 </tr>
               ) : (
-                filteredEmployees.map((emp) => (
+                filteredEmployees.map((emp, idx) => (
                   <tr key={emp.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="px-6 py-4 text-center text-xs font-bold text-[#94A3B8] border-r border-slate-800">{idx + 1}</td>
                     <td className="px-6 py-4">
                       <div className="font-semibold text-[#F8FAFC]">{emp.employee_id}</div>
                       <div className="text-xs text-[#94A3B8] font-medium">{emp.email ?? "No email provided"}</div>
@@ -1170,7 +1385,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
                     : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-slate-800/50"
                     }`}
                 >
-                  All Organization Data ({allLogsData.length})
+                  Total Call Report ({allLogsData.length})
                 </button>
               </div>
 

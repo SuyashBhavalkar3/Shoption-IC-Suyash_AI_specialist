@@ -1,9 +1,10 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { DashboardState, UserRecord, EmployeeRecord, ReportResponse } from "./types";
 import Sidebar from "./Sidebar";
 import MetricCard from "./MetricCard";
 import RoleTable from "./RoleTable";
 import CallLogsPage from "./CallLogsPage";
+import CallingTeamPage from "./CallingTeamPage";
 import {
   BarChart,
   Bar,
@@ -24,8 +25,19 @@ import {
 
 function parseDbTimestamp(tsStr: string): Date | null {
   if (!tsStr) return null;
+
+  // Try standard ISO parsing first
+  if (tsStr.includes("T") || tsStr.includes("Z")) {
+    const d = new Date(tsStr);
+    if (!isNaN(d.getTime())) return d;
+  }
+
   const parts = tsStr.trim().split(/\s+/);
-  if (parts.length < 2) return null;
+  if (parts.length < 2) {
+    const d = new Date(tsStr);
+    if (!isNaN(d.getTime())) return d;
+    return null;
+  }
   const datePart = parts[0];
   const timePart = parts[1];
 
@@ -415,7 +427,7 @@ function computeTotals(
   }
 
   // Metric counters
-  let totalCallsDone = parsedCalls.length;
+  let totalCallsDone = 0;
   let totalSuccessCalls = 0;
   let totalTalkSeconds = 0;
 
@@ -508,6 +520,9 @@ function computeTotals(
 
   // Total Missed Calls = Total incoming calls - Total success incoming calls
   const totalMissed = Math.max(0, incomingCalls - incomingSuccessCalls);
+
+  // Total calls = incoming + outgoing + totalMissed
+  totalCallsDone = incomingCalls + outgoingCalls + totalMissed;
 
   // Calculate missed call response details:
   let totalResponseSeconds = 0;
@@ -675,7 +690,7 @@ export default function DashboardScreen({
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get("view");
-      if (viewParam && ["dashboard", "users", "workforce", "user-management", "call-logs"].includes(viewParam)) {
+      if (viewParam && ["dashboard", "users", "workforce", "user-management", "call-logs", "calling-team"].includes(viewParam)) {
         setSelectedView(viewParam);
       }
     }
@@ -718,21 +733,21 @@ export default function DashboardScreen({
     return `${h}:${m}`;
   };
 
-  // Helper to get current shift bounds (9:30 AM based)
+  // Helper to get current shift bounds (9:30 AM to 7:30 PM based)
   const getShiftRange = (now: Date = new Date()) => {
     const todayNineThirty = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 30, 0, 0);
     if (now >= todayNineThirty) {
       const start = todayNineThirty;
-      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 30, 0, 0);
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 19, 30, 0, 0);
       return { start, end };
     } else {
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 9, 30, 0, 0);
-      const end = todayNineThirty;
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 19, 30, 0, 0);
       return { start, end };
     }
   };
 
-  // Default initialization: Today shift range (9:30 AM to tomorrow 9:30 AM)
+  // Default initialization: Today shift range (9:30 AM to today 7:30 PM)
   const initialShift = getShiftRange(new Date());
 
   // Date/Time Filters State
@@ -780,7 +795,7 @@ export default function DashboardScreen({
     document.documentElement.setAttribute("data-theme", nextTheme);
   };
 
-  // Auto-update shift on crossing end filter datetime (e.g. crossing 9:30 AM)
+  // Auto-update shift on crossing tomorrow's 9:30 AM shift start time
   useEffect(() => {
     if (selectedRangePreset !== "today") return;
 
@@ -790,11 +805,14 @@ export default function DashboardScreen({
       if (parts.length === 3) {
         const [year, month, day] = parts;
         const timeParts = filterEndTime.split(":");
-        const hours = timeParts[0] ? parseInt(timeParts[0]) : 9;
+        const hours = timeParts[0] ? parseInt(timeParts[0]) : 19;
         const minutes = timeParts[1] ? parseInt(timeParts[1]) : 30;
         const currentShiftEnd = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), hours, minutes);
 
-        if (now >= currentShiftEnd) {
+        // Next shift start is tomorrow at 9:30 AM (which is 14 hours after today's 7:30 PM shift end)
+        const nextShiftStart = new Date(currentShiftEnd.getTime() + 14 * 60 * 60 * 1000);
+
+        if (now >= nextShiftStart) {
           const newShift = getShiftRange(now);
           setFilterStartDate(formatDate(newShift.start));
           setFilterStartTime(formatTime(newShift.start));
@@ -941,6 +959,27 @@ export default function DashboardScreen({
   const [individualSearchQuery, setIndividualSearchQuery] = useState<string>("");
   const [isIndividualSearchOpen, setIsIndividualSearchOpen] = useState<boolean>(false);
 
+  // Top Performers Department/Role Filter States
+  const [selectedDeptOrRole, setSelectedDeptOrRole] = useState<string>("");
+  const [deptOrRoleSearchQuery, setDeptOrRoleSearchQuery] = useState<string>("");
+  const [isDeptOrRoleSearchOpen, setIsDeptOrRoleSearchOpen] = useState<boolean>(false);
+  const deptOrRoleDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        deptOrRoleDropdownRef.current &&
+        !deptOrRoleDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsDeptOrRoleSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   // User Management State
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -993,28 +1032,42 @@ export default function DashboardScreen({
     (dashboard.report?.warriors ?? []).forEach((w) => {
       const u = dashboard.users.find(usr => usr.id === w.warrior_id);
       if (u) {
-        let totalCalls = 0;
         let successCalls = 0;
         let totalTalkTime = 0;
+
+        let incomingCalls = 0;
+        let outgoingCalls = 0;
+        let incomingSuccess = 0;
 
         (w.calls || []).forEach((c: any) => {
           const type = (c.call_type || "").toLowerCase();
           const status = (c.call_status || "").toLowerCase();
           const duration = c.duration_seconds || 0;
 
-          const isIncoming = type === "incoming";
+          const isIncoming = ["incoming", "missed", "rejected", "blocked"].includes(type);
           const isOutgoing = type === "outgoing";
           const isDropped = (status === "dropped" || status === "rejected" || status === "failed") || (duration >= 0 && duration <= 10);
-          const isMissed = isIncoming && (status === "missed" || status === "missed call" || status.includes("missed") || status === "rejected" || status === "failed" || duration === 0);
+          const isMissed = isIncoming && (status === "missed" || status === "missed call" || status.includes("missed") || type === "missed" || type === "rejected" || status === "rejected" || status === "failed" || duration === 0);
           const isDialed = isOutgoing && (status === "missed" || status === "missed call" || status.includes("missed") || status === "dialed" || status.includes("dialed") || status === "dropped" || status === "rejected" || status === "failed" || duration === 0 || isDropped);
           const isSuccess = (duration > 10) || (!isDialed && !isMissed && !isDropped && duration > 0);
 
-          totalCalls++;
+          if (isIncoming) {
+            incomingCalls++;
+            if (isSuccess) {
+              incomingSuccess++;
+            }
+          } else if (isOutgoing) {
+            outgoingCalls++;
+          }
+
           totalTalkTime += duration;
           if (isSuccess) {
             successCalls++;
           }
         });
+
+        const totalMissed = Math.max(0, incomingCalls - incomingSuccess);
+        const totalCalls = incomingCalls + outgoingCalls + totalMissed;
 
         stats[u.id] = { totalCalls, successCalls, totalTalkTime };
       }
@@ -1668,6 +1721,80 @@ export default function DashboardScreen({
       })
       .map((w, idx) => ({ ...w, rank: idx + 1 }));
   }, [filteredReportWarriors, dashboard.users, startFilterDateTime, endFilterDateTime]);
+
+  const deptAndRoleOptions = useMemo(() => {
+    const options: { id: string; label: string; type: "dept" | "role" }[] = [];
+
+    // Extract unique departments from users list
+    const depts = new Set<string>();
+    dashboard.users.forEach((u) => {
+      depts.add(u.department ? u.department.trim() : "Unassigned");
+    });
+
+    // Extract unique roles from users list
+    const roles = new Set<string>();
+    dashboard.users.forEach((u) => {
+      if (u.role) {
+        roles.add(u.role);
+      }
+    });
+
+    depts.forEach((d) => {
+      options.push({ id: `dept:${d}`, label: `Department: ${d}`, type: "dept" });
+    });
+    roles.forEach((r) => {
+      const formattedRole = r.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      options.push({ id: `role:${r}`, label: `Role: ${formattedRole}`, type: "role" });
+    });
+
+    return options;
+  }, [dashboard.users]);
+
+  const filteredDeptOrRoleOptions = useMemo(() => {
+    const q = deptOrRoleSearchQuery.toLowerCase().trim();
+    if (!q) return deptAndRoleOptions;
+    return deptAndRoleOptions.filter((opt) => opt.label.toLowerCase().includes(q));
+  }, [deptAndRoleOptions, deptOrRoleSearchQuery]);
+
+  const selectedDeptOrRoleTotalCalls = useMemo(() => {
+    if (!selectedDeptOrRole) return 0;
+    const [type, value] = selectedDeptOrRole.split(":");
+    return filteredReportWarriors.reduce((sum, w) => {
+      const u = dashboard.users.find((usr) => usr.id === w.warrior_id);
+      let match = false;
+      if (type === "dept") {
+        const uDept = u?.department || "Unassigned";
+        match = uDept.toLowerCase() === value.toLowerCase();
+      } else if (type === "role") {
+        const uRole = u?.role || "warrior";
+        match = uRole === value;
+      }
+      if (match) {
+        const wTotals = computeTotals([w], dashboard.users, dashboard.employees, startFilterDateTime, endFilterDateTime);
+        return sum + wTotals.totalCallsDone;
+      }
+      return sum;
+    }, 0);
+  }, [filteredReportWarriors, selectedDeptOrRole, dashboard.users, dashboard.employees, startFilterDateTime, endFilterDateTime]);
+
+  const filteredTopPerformers = useMemo(() => {
+    if (!selectedDeptOrRole) return topPerformers;
+    const [type, value] = selectedDeptOrRole.split(":");
+
+    const list = topPerformers.filter((agent) => {
+      const u = dashboard.users.find((usr) => usr.id === agent.id);
+      if (type === "dept") {
+        const uDept = u?.department || "Unassigned";
+        return uDept.toLowerCase() === value.toLowerCase();
+      } else if (type === "role") {
+        const uRole = u?.role || "warrior";
+        return uRole === value;
+      }
+      return true;
+    });
+
+    return list.map((w, idx) => ({ ...w, rank: idx + 1 }));
+  }, [topPerformers, selectedDeptOrRole, dashboard.users]);
 
   const warriorHourlyData = useMemo(() => {
     if (!filteredWarriorId) return [];
@@ -2431,69 +2558,95 @@ export default function DashboardScreen({
       {/* Main Workspace */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Unified Header & Filter Bar */}
-        <header className="min-h-16 bg-card border-b border-slate-800/40 px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-0 z-20 shadow-md relative">
+        <header className="min-h-16 md:h-20 bg-card border-b border-slate-800/50 px-6 py-3 md:py-0 flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-0 z-20 shadow-md relative">
           {/* Subtle Refreshing progress bar at the very top of header */}
           {isRefreshing && (
             <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-primary via-ai-accent to-highlight animate-pulse" />
           )}
-          {/* Title & View Info */}
-          <div className="flex items-center gap-3 shrink-0 text-left">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-1.5 -ml-1.5 rounded-xl text-text-secondary hover:bg-slate-800 hover:text-text transition-all flex items-center justify-center cursor-pointer lg:hidden"
-              aria-label="Open Menu"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <div className="flex flex-col text-left">
-              <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5 leading-none">
-                <span className="w-1.5 h-3 bg-primary rounded-xs inline-block" />
-                LeadLens Console
-              </span>
-              <h1 className="text-[22px] font-bold text-text capitalize mt-0.5">
-                {selectedView === "dashboard"
-                  ? "Dashboard Overview"
-                  : selectedView === "users"
-                    ? "Performance Metrics"
-                    : selectedView === "workforce"
-                      ? "Workforce Hierarchy & Registry"
-                      : selectedView === "call-logs"
-                        ? "Get Organization Data"
-                        : "User Management Console"}
-              </h1>
-            </div>
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-950 bg-emerald-950/20 px-2 py-0.5 text-[10px] font-bold text-ai-accent ml-2 shrink-0">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-              </span>
-              Live Sync
-            </span>
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-[#050816] hover:bg-slate-800 hover:border-slate-700 px-3 py-1 text-[10px] font-bold text-text-secondary hover:text-text transition-all cursor-pointer shadow-sm select-none shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Refresh dashboard data in-place"
-            >
-              <svg
-                className={`w-3.5 h-3.5 text-primary transition-transform duration-500 ${
-                  isRefreshing ? "animate-spin" : "hover:rotate-180"
-                }`}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                viewBox="0 0 24 24"
+          {/* Title & View Info & Global Actions */}
+          <div className="flex flex-wrap items-center gap-3.5 shrink-0 text-left">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-1.5 -ml-1.5 rounded-xl text-text-secondary hover:bg-slate-800 hover:text-text transition-all flex items-center justify-center cursor-pointer lg:hidden"
+                aria-label="Open Menu"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                />
-              </svg>
-              {isRefreshing ? "Refreshing..." : "Refresh"}
-            </button>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <div className="flex flex-col text-left">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-primary flex items-center gap-1.5 leading-none">
+                  <span className="w-1 h-2.5 bg-primary rounded-full inline-block" />
+                  LeadLens Console
+                </span>
+                <h1 className="text-xl md:text-[22px] font-extrabold text-text tracking-tight capitalize mt-0.5">
+                  {selectedView === "dashboard"
+                    ? "Dashboard Overview"
+                    : selectedView === "users"
+                      ? "Performance Metrics"
+                      : selectedView === "workforce"
+                        ? "Workforce Hierarchy & Registry"
+                        : selectedView === "call-logs"
+                          ? "Get Organization Data"
+                          : "User Management Console"}
+                </h1>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 select-none">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-950/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-400 shrink-0">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                </span>
+                Live
+              </span>
+
+
+              {/* Global control buttons group */}
+              <div className="flex items-center bg-slate-950/20 dark:bg-slate-950/20 p-0.5 rounded-xl border border-slate-800/40 gap-0.5">
+                {/* Refresh/Sync Button */}
+                <button
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-text-secondary hover:text-text hover:bg-slate-800/50 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Sync dashboard data in-place"
+                >
+                  <svg
+                    className={`w-4 h-4 text-primary transition-transform duration-500 ${isRefreshing ? "animate-spin" : "hover:rotate-180"}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                    />
+                  </svg>
+                </button>
+
+                {/* Theme Toggle Button Switcher */}
+                <button
+                  onClick={toggleTheme}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer focus:outline-none transition-all hover:bg-slate-800/50 text-text-secondary hover:text-text shrink-0"
+                  aria-label="Toggle Theme"
+                  title={theme === "light" ? "Switch to Dark Mode" : "Switch to Light Mode"}
+                >
+                  {theme === "light" ? (
+                    <svg className="w-4.5 h-4.5 text-amber-500" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m0 13.5V21M4.978 4.978l1.591 1.591m10.862 10.862l1.591 1.591M3 12h2.25m13.5 0H21m-16.022 7.022l1.591-1.591m10.862-10.862l1.591-1.591M12 7.5a4.5 4.5 0 100 9 4.5 4.5 0 000-9z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4.5 h-4.5 text-indigo-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Unified Filters */}
@@ -2502,7 +2655,7 @@ export default function DashboardScreen({
             {selectedView === "dashboard" && (
               <>
                 {/* Quick Presets Segmented Control */}
-                <div className="flex bg-background rounded-full p-1 border border-slate-800/20 dark:border-slate-800/40 shrink-0">
+                <div className="flex bg-slate-950/20 dark:bg-slate-950/20 rounded-xl p-0.5 border border-slate-800/40 shrink-0">
                   {[
                     { id: "today", label: "Today" },
                     { id: "last_week", label: "7 Days" },
@@ -2512,9 +2665,9 @@ export default function DashboardScreen({
                     <button
                       key={preset.id}
                       onClick={() => handlePresetChange(preset.id)}
-                      className={`px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer select-none ${selectedRangePreset === preset.id
-                        ? "bg-primary text-white shadow-sm"
-                        : "text-text-secondary hover:text-primary hover:bg-primary/10"
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none border-0 bg-transparent ${selectedRangePreset === preset.id
+                        ? "bg-primary text-white shadow-sm font-bold"
+                        : "text-text-secondary hover:text-text"
                         }`}
                     >
                       {preset.label}
@@ -2532,7 +2685,7 @@ export default function DashboardScreen({
                         setFilterStartDate(e.target.value);
                         setSelectedRangePreset("");
                       }}
-                      className="rounded-xl border border-slate-800 bg-background px-2.5 py-1 text-xs outline-none hover:border-slate-700 focus:border-primary font-semibold text-text w-[115px] cursor-pointer"
+                      className="rounded-xl border border-slate-800/60 bg-slate-950/10 hover:bg-slate-950/20 px-2.5 py-1.5 text-xs outline-none focus:border-primary/50 font-semibold text-text w-[120px] cursor-pointer transition-all"
                     />
                     <input
                       type="time"
@@ -2541,9 +2694,9 @@ export default function DashboardScreen({
                         setFilterStartTime(e.target.value);
                         setSelectedRangePreset("");
                       }}
-                      className="rounded-xl border border-slate-800 bg-background px-2 py-1 text-xs outline-none hover:border-slate-700 focus:border-primary font-semibold text-text w-[75px] cursor-pointer"
+                      className="rounded-xl border border-slate-800/60 bg-slate-950/10 hover:bg-slate-950/20 px-2 py-1.5 text-xs outline-none focus:border-primary/50 font-semibold text-text w-[80px] cursor-pointer transition-all"
                     />
-                    <span className="text-text-secondary text-[10px] font-bold uppercase">to</span>
+                    <span className="text-text-secondary text-[10px] font-bold uppercase mx-0.5">to</span>
                     <input
                       type="date"
                       value={filterEndDate}
@@ -2551,7 +2704,7 @@ export default function DashboardScreen({
                         setFilterEndDate(e.target.value);
                         setSelectedRangePreset("");
                       }}
-                      className="rounded-xl border border-slate-800 bg-background px-2 py-1 text-xs outline-none hover:border-slate-700 focus:border-primary font-semibold text-text w-[115px] cursor-pointer"
+                      className="rounded-xl border border-slate-800/60 bg-slate-950/10 hover:bg-slate-950/20 px-2.5 py-1.5 text-xs outline-none focus:border-primary/50 font-semibold text-text w-[120px] cursor-pointer transition-all"
                     />
                     <input
                       type="time"
@@ -2560,7 +2713,7 @@ export default function DashboardScreen({
                         setFilterEndTime(e.target.value);
                         setSelectedRangePreset("");
                       }}
-                      className="rounded-xl border border-slate-800 bg-background px-2 py-1 text-xs outline-none hover:border-slate-700 focus:border-primary font-semibold text-text w-[75px] cursor-pointer"
+                      className="rounded-xl border border-slate-800/60 bg-slate-950/10 hover:bg-slate-950/20 px-2 py-1.5 text-xs outline-none focus:border-primary/50 font-semibold text-text w-[80px] cursor-pointer transition-all"
                     />
                   </div>
                 )}
@@ -2569,7 +2722,7 @@ export default function DashboardScreen({
                 {searchableSubordinates.length > 0 && (
                   <div className="relative w-44 shrink-0">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-text-secondary">
-                      <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <svg className="w-3.5 h-3.5 text-text-secondary/60" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                       </svg>
                     </span>
@@ -2586,7 +2739,7 @@ export default function DashboardScreen({
                         }
                         setIsSubordinateSearchOpen(true);
                       }}
-                      className="w-full rounded-xl border border-slate-800 bg-background pl-8 pr-6 py-1 text-xs outline-none transition focus:border-primary font-semibold text-text placeholder:text-text-secondary/40"
+                      className="w-full rounded-xl border border-slate-800/60 bg-slate-950/10 hover:bg-slate-950/20 pl-8 pr-8 py-1.5 text-xs outline-none transition-all focus:border-primary/50 font-semibold text-text placeholder:text-text-secondary/40 focus:bg-[#050816]"
                     />
                     {selectedSubordinateId && (
                       <button
@@ -2595,7 +2748,7 @@ export default function DashboardScreen({
                           setSubordinateSearchQuery("");
                           setIsSubordinateSearchOpen(false);
                         }}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text text-sm cursor-pointer bg-transparent border-0 outline-none font-bold"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text text-sm cursor-pointer bg-transparent border-0 outline-none font-bold"
                       >
                         ×
                       </button>
@@ -2629,7 +2782,7 @@ export default function DashboardScreen({
                   <select
                     value={filteredAdminId}
                     onChange={(e) => handleFilteredAdminChange(e.target.value)}
-                    className="rounded-xl border border-slate-800 bg-background px-2 py-1 text-xs outline-none hover:border-slate-700 focus:border-primary font-semibold text-text max-w-[110px] cursor-pointer"
+                    className="rounded-xl border border-slate-800/60 bg-slate-950/10 hover:bg-slate-950/20 px-3 py-1.5 pr-8 text-xs outline-none focus:border-primary/50 font-semibold text-text max-w-[120px] cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20d%3D%22M19%209l-7%207-7-7%22%20%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-[right_0.6rem_center] bg-no-repeat transition-all"
                   >
                     <option value="">All Admins</option>
                     {filteredAdminsList.map(u => <option key={u.id} value={u.id}>{u.full_name.split(' ')[0]}</option>)}
@@ -2638,7 +2791,7 @@ export default function DashboardScreen({
                   <select
                     value={filteredLeaderId}
                     onChange={(e) => handleFilteredLeaderChange(e.target.value)}
-                    className="rounded-xl border border-slate-800 bg-background px-2 py-1 text-xs outline-none hover:border-slate-700 focus:border-primary font-semibold text-text max-w-[110px] cursor-pointer"
+                    className="rounded-xl border border-slate-800/60 bg-slate-950/10 hover:bg-slate-950/20 px-3 py-1.5 pr-8 text-xs outline-none focus:border-primary/50 font-semibold text-text max-w-[120px] cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20d%3D%22M19%209l-7%207-7-7%22%20%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-[right_0.6rem_center] bg-no-repeat transition-all"
                   >
                     <option value="">All Leaders</option>
                     {filteredLeadersList.map(u => <option key={u.id} value={u.id}>{u.full_name.split(' ')[0]}</option>)}
@@ -2647,7 +2800,7 @@ export default function DashboardScreen({
                   <select
                     value={filteredWarriorId}
                     onChange={(e) => setFilteredWarriorId(e.target.value)}
-                    className="rounded-xl border border-slate-800 bg-background px-2 py-1 text-xs outline-none hover:border-slate-700 focus:border-primary font-semibold text-text max-w-[110px] cursor-pointer"
+                    className="rounded-xl border border-slate-800/60 bg-slate-950/10 hover:bg-slate-950/20 px-3 py-1.5 pr-8 text-xs outline-none focus:border-primary/50 font-semibold text-text max-w-[120px] cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke%3D%22%2394A3B8%22%20stroke-width%3D%222%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20d%3D%22M19%209l-7%207-7-7%22%20%2F%3E%3C%2Fsvg%3E')] bg-[length:0.8rem_0.8rem] bg-[right_0.6rem_center] bg-no-repeat transition-all"
                   >
                     <option value="">All Warriors</option>
                     {filteredWarriorsList.map(u => <option key={u.id} value={u.id}>{u.full_name.split(' ')[0]}</option>)}
@@ -2668,7 +2821,7 @@ export default function DashboardScreen({
                       setSubordinateSearchQuery("");
                       handleFilteredAdminChange("");
                     }}
-                    className="p-1 px-2.5 rounded-xl border border-warning/20 text-warning hover:bg-warning/10 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shrink-0"
+                    className="px-3 py-1.5 rounded-xl border border-warning/20 bg-warning/5 text-warning hover:bg-warning/15 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 shrink-0"
                     title="Reset Filters"
                   >
                     Clear
@@ -2676,37 +2829,12 @@ export default function DashboardScreen({
                 )}
               </>
             )}
-
-            {/* Theme Toggle Button Switcher */}
-            <button
-              onClick={toggleTheme}
-              className="relative w-14 h-7 rounded-full border border-slate-700/30 flex items-center justify-between px-1.5 cursor-pointer focus:outline-none transition-all hover:scale-105 duration-200 shrink-0 select-none shadow-[inset_0_1px_2px_rgba(0,0,0,0.2)] bg-bg-subtle hover:bg-bg-hover"
-              aria-label="Toggle Theme"
-              title={theme === "light" ? "Switch to Dark Mode" : "Switch to Light Mode"}
-            >
-              {/* Sun Icon */}
-              <svg className={`w-3.5 h-3.5 text-amber-500 transition-transform duration-200 ${theme === "light" ? "scale-100 rotate-0" : "scale-75 opacity-20 -rotate-45"}`} fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464-4.95a1 1 0 111.414 1.414L14.12 7.293a1 1 0 01-1.414-1.414l.828-.828zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-2.95 4.243a1 1 0 11-1.414-1.414l.828-.828a1 1 0 111.414 1.414l-.828.828zM11 17a1 1 0 11-2 0v-1a1 1 0 112 0v1zm-7.071-1.414a1 1 0 111.414-1.414l.828.828a1 1 0 11-1.414 1.414l-.828-.828zM4 11a1 1 0 100-2H3a1 1 0 100 2h1zM6.228 6.228a1 1 0 111.414-1.414l-.828-.828a1 1 0 11-1.414 1.414l.828.828z" clipRule="evenodd" />
-              </svg>
-
-              {/* Moon Icon */}
-              <svg className={`w-3.5 h-3.5 text-indigo-400 transition-transform duration-200 ${theme === "dark" ? "scale-100 rotate-0" : "scale-75 opacity-20 rotate-45"}`} fill="currentColor" viewBox="0 0 20 20">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-              </svg>
-
-              {/* Sliding thumb */}
-              <span className={`absolute top-[2px] left-[2px] w-[22px] h-[22px] rounded-full shadow-md transition-transform duration-200 ease-out pointer-events-none ${theme === "light"
-                ? "translate-x-0 bg-amber-500 shadow-amber-500/20"
-                : "translate-x-[28px] bg-primary shadow-primary/20"
-                }`} />
-            </button>
           </div>
         </header>
 
         {/* View Layouts */}
-        <div className={`px-6 pb-6 pt-4 flex-1 flex flex-col min-h-0 overflow-hidden ${
-          isRefreshing ? "is-refreshing pointer-events-none" : ""
-        }`}>
+        <div className={`px-6 pb-6 pt-4 flex-1 flex flex-col min-h-0 overflow-hidden ${isRefreshing ? "is-refreshing pointer-events-none" : ""
+          }`}>
           {selectedView === "dashboard" && (
             <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0 overflow-hidden">
               {/* Left Scrollable Content Panel */}
@@ -3290,16 +3418,81 @@ export default function DashboardScreen({
                   <div className={`grid gap-6 ${filteredWarriorId ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
                     {/* Left Column: Visualizer Chart / Ranked Table */}
                     <div className="bg-background/40 border border-slate-800/40 rounded-xl p-5 flex flex-col min-h-[300px]">
-                      <div className="border-b border-slate-800/40 pb-2 mb-3 text-left">
-                        <span className="text-[10px] font-black text-primary uppercase tracking-widest block">
-                          {filteredWarriorId
-                            ? "Call Metric Breakdown"
-                            : filteredLeaderId
-                              ? "Team Member Comparison"
-                              : filteredAdminId
-                                ? "Leaders Under Admin"
-                                : "Top Performers (by Total Calls)"}
-                        </span>
+                      <div className="border-b border-slate-800/40 pb-2 mb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left relative" ref={deptOrRoleDropdownRef}>
+                        <div>
+                          <span className="text-[10px] font-black text-primary uppercase tracking-widest block">
+                            {filteredWarriorId
+                              ? "Call Metric Breakdown"
+                              : filteredLeaderId
+                                ? "Team Member Comparison"
+                                : filteredAdminId
+                                  ? "Leaders Under Admin"
+                                  : "Top Performers (by Total Calls)"}
+                          </span>
+                          {!filteredWarriorId && !filteredLeaderId && !filteredAdminId && selectedDeptOrRole && (
+                            <span className="text-[11px] font-bold text-ai-accent mt-0.5 block">
+                              Total Calls: {selectedDeptOrRoleTotalCalls}
+                            </span>
+                          )}
+                        </div>
+
+                        {!filteredWarriorId && !filteredLeaderId && !filteredAdminId && (
+                          <div className="relative w-44 shrink-0">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-text-secondary">
+                              <svg className="w-3.5 h-3.5 animate-pulse" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                              </svg>
+                            </span>
+                            <input
+                              type="text"
+                              placeholder="Filter by Dept/Role..."
+                              value={deptOrRoleSearchQuery}
+                              onFocus={() => setIsDeptOrRoleSearchOpen(true)}
+                              onBlur={() => setTimeout(() => setIsDeptOrRoleSearchOpen(false), 200)}
+                              onChange={(e) => {
+                                setDeptOrRoleSearchQuery(e.target.value);
+                                if (!e.target.value) {
+                                  setSelectedDeptOrRole("");
+                                }
+                                setIsDeptOrRoleSearchOpen(true);
+                              }}
+                              className="w-full rounded-xl border border-slate-800 bg-background pl-8 pr-6 py-1 text-xs outline-none transition focus:border-primary font-semibold text-text placeholder:text-text-secondary/40"
+                            />
+                            {selectedDeptOrRole && (
+                              <button
+                                onClick={() => {
+                                  setSelectedDeptOrRole("");
+                                  setDeptOrRoleSearchQuery("");
+                                  setIsDeptOrRoleSearchOpen(false);
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text text-sm cursor-pointer bg-transparent border-0 outline-none font-bold"
+                              >
+                                ×
+                              </button>
+                            )}
+                            {isDeptOrRoleSearchOpen && (
+                              <div className="absolute right-0 mt-1 max-h-48 overflow-y-auto bg-card border border-slate-800 rounded-xl shadow-xl z-50 py-1 w-52">
+                                {filteredDeptOrRoleOptions.length === 0 ? (
+                                  <div className="px-3 py-2 text-[11px] text-text-secondary">No matching option</div>
+                                ) : (
+                                  filteredDeptOrRoleOptions.map((opt) => (
+                                    <button
+                                      key={opt.id}
+                                      onClick={() => {
+                                        setSelectedDeptOrRole(opt.id);
+                                        setDeptOrRoleSearchQuery(opt.label);
+                                        setIsDeptOrRoleSearchOpen(false);
+                                      }}
+                                      className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-slate-800/80 text-text-secondary hover:text-text transition-colors block border-none bg-transparent cursor-pointer font-medium"
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {filteredWarriorId ? (
@@ -3357,7 +3550,7 @@ export default function DashboardScreen({
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-800/30 text-text">
-                                {topPerformers.map((agent) => (
+                                {filteredTopPerformers.map((agent) => (
                                   <tr key={agent.id} className="hover:bg-slate-800/20 transition-colors h-[52px]">
                                     <td className="px-4 py-2 flex items-center gap-2.5">
                                       <span className="text-[11px] font-bold text-text-secondary w-4 shrink-0 text-center">{agent.rank}</span>
@@ -3500,7 +3693,7 @@ export default function DashboardScreen({
                     </svg>
                   }
                   accentColor="#1F8FFF"
-                  value={`${overallTotals.trackingOn}/${overallTotals.employees}`}
+                  value={`${overallTotals.employeesTrackingNeeded}/${overallTotals.employees}`}
                   label="Tracked"
                 />
               </div>
@@ -3509,6 +3702,10 @@ export default function DashboardScreen({
 
           {selectedView === "call-logs" && dashboard.me?.role === "super_admin" && (
             <CallLogsPage />
+          )}
+
+          {selectedView === "calling-team" && (
+            <CallingTeamPage users={dashboard.users} />
           )}
 
           {selectedView === "users" && (

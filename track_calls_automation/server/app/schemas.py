@@ -181,6 +181,7 @@ class CallDetail(BaseModel):
 class WarriorReport(BaseModel):
     warrior_id: UUID
     full_name: str
+    department: Optional[str] = None
     is_tracking_enabled: bool
     total_calls: int
     incoming_calls_count: int

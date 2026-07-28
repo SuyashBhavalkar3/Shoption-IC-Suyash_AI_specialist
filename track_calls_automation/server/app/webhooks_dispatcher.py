@@ -172,14 +172,15 @@ async def dispatch_webhook(org_id, event_type: str, payload):
                 except httpx.RequestError as e:
                     response_body = f"Delivery failed: {str(e)}"
 
-            logs_to_save.append({
-                "subscription_id": sub["id"],
-                "event_type": event_type,
-                "payload": payload_str,
-                "response_status": status_code,
-                "response_body": response_body,
-                "status": attempt_status
-            })
+            if attempt_status != "success":
+                logs_to_save.append({
+                    "subscription_id": sub["id"],
+                    "event_type": event_type,
+                    "payload": payload_str,
+                    "response_status": status_code,
+                    "response_body": response_body,
+                    "status": attempt_status
+                })
 
     # Phase 3: Write delivery logs.
     # Semaphore is re-acquired only for this short DB write (~100ms), then released.

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-from typing import List, AsyncGenerator
+from typing import List, AsyncGenerator, Optional
 from uuid import UUID
 from app.database import get_db
 from app.models import User
@@ -336,15 +336,15 @@ async def update_my_tracking_active(
     print(f"INFO: PUT /users/me/tracking-active (active={active}) requested by {current_user.email}")
     current_user.is_tracking_active = active
     current_user.last_activity_timestamp = datetime.utcnow()
-    db.commit()
-    db.refresh(current_user)
     
     # Invalidate cache so GET /users/me gets the fresh value immediately
     from app.security import invalidate_user_cache
     invalidate_user_cache(str(current_user.id))
     
     # Immediately broadcast status change to SSE listeners in memory
-    await broadcast_user_status(current_user, db)
+    await broadcast_user_status(current_user, db, commit=False)
+    db.commit()
+    db.refresh(current_user)
     
     return current_user
 
@@ -383,15 +383,14 @@ async def post_track_status(
     else:
         current_user.is_tracking_active = payload.is_tracking_enabled
 
-    db.commit()
-    db.refresh(current_user)
-    
     # Invalidate cache so GET /users/me gets the fresh value immediately
     from app.security import invalidate_user_cache
     invalidate_user_cache(str(current_user.id))
     
     # Immediately broadcast status change to SSE listeners in memory
-    await broadcast_user_status(current_user, db)
+    await broadcast_user_status(current_user, db, commit=False)
+    db.commit()
+    db.refresh(current_user)
     
     return {
         "success": True,
@@ -413,13 +412,13 @@ async def post_track_call_state(
     current_user.last_activity_timestamp = datetime.utcnow()
     if current_user.is_on_call:
         current_user.is_tracking_active = True
-    db.commit()
-    db.refresh(current_user)
-    
+        
     from app.security import invalidate_user_cache
     invalidate_user_cache(str(current_user.id))
     
-    await broadcast_user_status(current_user, db)
+    await broadcast_user_status(current_user, db, commit=False)
+    db.commit()
+    db.refresh(current_user)
     
     return {
         "success": True,
@@ -586,16 +585,24 @@ def admin_delete_user(
 # Keep track of active stream listeners (asyncio.Queue objects)
 active_listeners = []
 
-async def broadcast_user_status(user: User, db: Session):
+async def broadcast_user_status(
+    user: User, 
+    db: Session, 
+    emp_id: Optional[str] = None, 
+    is_tracking_needed: Optional[bool] = None,
+    commit: bool = True
+):
     try:
-        from app.models import OrgEmployee
-        v_emp_id = ""
-        v_needed = True
-        if user.system_id:
+        v_emp_id = emp_id or getattr(user, "cached_employee_id", "") or ""
+        v_needed = is_tracking_needed if is_tracking_needed is not None else True
+        
+        if not v_emp_id and user.system_id:
+            from app.models import OrgEmployee
             emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == user.system_id).first()
             if emp_rec:
                 v_emp_id = emp_rec.employee_id
-                v_needed = emp_rec.is_tracking_needed if emp_rec.is_tracking_needed is not None else True
+                if is_tracking_needed is None:
+                    v_needed = emp_rec.is_tracking_needed if emp_rec.is_tracking_needed is not None else True
                 
         formatted_ts = ""
         if user.last_activity_timestamp:
@@ -622,9 +629,8 @@ async def broadcast_user_status(user: User, db: Session):
             text("NOTIFY user_status_update, :payload;"),
             {"payload": json.dumps(payload)}
         )
-        # Commit the notify transaction
-        db.commit()
-        print(f"INFO [SSE-BROADCASTER]: Cross-process NOTIFY sent for {user.email} (active={user.is_tracking_active})")
+        if commit:
+            db.commit()
     except Exception as e:
         print(f"ERROR [SSE-BROADCASTER]: Cross-process NOTIFY failed: {e}")
 
@@ -824,60 +830,55 @@ async def track_status_stream(
     from app.database import SessionLocal
     with SessionLocal() as db:
         try:
+            from app.models import User as DBUser, OrgEmployee
+            all_users = db.query(DBUser).all()
+            emp_map = {e.system_id: e for e in db.query(OrgEmployee).all()}
+            
             if current_user.role == "group_leader":
-                # Find all users who have this manager
-                from app.models import User as DBUser
-                for u in db.query(DBUser).all():
+                for u in all_users:
                     if current_user in u.managers:
                         allowed_user_ids.add(str(u.id))
             elif current_user.role == "admin":
-                # Admins can see warriors and group leaders, and other admins who are managers
-                from app.models import User as DBUser
-                for u in db.query(DBUser).all():
+                for u in all_users:
                     if u.role in ("group_leader", "warrior"):
                         allowed_user_ids.add(str(u.id))
                     elif u.role in ("admin", "super_admin"):
-                        is_mgr = db.query(DBUser).filter(DBUser.manager_id == u.id).first() is not None
-                        if is_mgr or u.id == current_user.id:
+                        if u.manager_id is not None or u.id == current_user.id:
                             allowed_user_ids.add(str(u.id))
+            elif current_user.role == "super_admin":
+                for u in all_users:
+                    allowed_user_ids.add(str(u.id))
+
+            user_dict = {str(u.id): u for u in all_users if str(u.id) in allowed_user_ids}
+            
+            for uid, u in user_dict.items():
+                emp_rec = emp_map.get(u.system_id)
+                v_emp_id = emp_rec.employee_id if emp_rec else ""
+                v_needed = emp_rec.is_tracking_needed if (emp_rec and emp_rec.is_tracking_needed is not None) else True
+                
+                formatted_ts = ""
+                if u.last_activity_timestamp:
+                    from datetime import timedelta
+                    ist_dt = u.last_activity_timestamp + timedelta(hours=5, minutes=30)
+                    formatted_ts = ist_dt.strftime('%B %d, %Y at %I:%M:%S %p')
+                    
+                payload = {
+                    "user_id": str(u.id),
+                    "full_name": u.full_name,
+                    "email": u.email,
+                    "emp_id": v_emp_id,
+                    "org_id": str(u.organisation_id) if u.organisation_id else "",
+                    "system_id": u.system_id or "",
+                    "is_tracking_active": u.is_tracking_active,
+                    "is_tracking_needed": v_needed,
+                    "is_on_call": getattr(u, "is_on_call", False),
+                    "last_activity_timestamp": formatted_ts
+                }
+                initial_payloads.append(payload)
         except Exception as e:
             print(f"ERROR [SSE-STREAM-INIT]: Failed to pre-fetch allowed list: {e}")
-    
-        # Bootstrap initial states on client connection
-        try:
-            from app.models import User as DBUser, OrgEmployee
-            for uid in allowed_user_ids:
-                u = db.query(DBUser).filter(DBUser.id == uid).first()
-                if u:
-                    v_emp_id = ""
-                    v_needed = True
-                    if u.system_id:
-                        emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == u.system_id).first()
-                        if emp_rec:
-                            v_emp_id = emp_rec.employee_id
-                            v_needed = emp_rec.is_tracking_needed if emp_rec.is_tracking_needed is not None else True
-                    
-                    formatted_ts = ""
-                    if u.last_activity_timestamp:
-                        from datetime import timedelta
-                        ist_dt = u.last_activity_timestamp + timedelta(hours=5, minutes=30)
-                        formatted_ts = ist_dt.strftime('%B %d, %Y at %I:%M:%S %p')
-                        
-                    payload = {
-                        "user_id": str(u.id),
-                        "full_name": u.full_name,
-                        "email": u.email,
-                        "emp_id": v_emp_id,
-                        "org_id": str(u.organisation_id) if u.organisation_id else "",
-                        "system_id": u.system_id or "",
-                        "is_tracking_active": u.is_tracking_active,
-                        "is_tracking_needed": v_needed,
-                        "is_on_call": getattr(u, "is_on_call", False),
-                        "last_activity_timestamp": formatted_ts
-                    }
-                    initial_payloads.append(payload)
-        except Exception as e:
-            print(f"ERROR [SSE-INIT-BOOTSTRAP]: {e}")
+        finally:
+            db.rollback()
             
     return EventSourceResponse(event_generator(current_user, allowed_user_ids, initial_payloads))
 
@@ -891,16 +892,20 @@ async def track_status_stream_public(email: str):
     if not email:
         raise HTTPException(status_code=400, detail="Email query parameter is required")
         
+    clean_email = email.strip().lower()
     initial_payload = None
     from app.database import SessionLocal
     with SessionLocal() as db:
         try:
-            user = db.query(User).filter(User.email.ilike(email)).first()
+            from app.models import User as DBUser, OrgEmployee
+            user = db.query(DBUser).filter(DBUser.email == clean_email).first()
+            if not user:
+                user = db.query(DBUser).filter(DBUser.email.ilike(clean_email)).first()
+                
             if user:
                 v_emp_id = ""
                 v_needed = True
                 if user.system_id:
-                    from app.models import OrgEmployee
                     emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == user.system_id).first()
                     if emp_rec:
                         v_emp_id = emp_rec.employee_id
@@ -921,12 +926,15 @@ async def track_status_stream_public(email: str):
                     "system_id": user.system_id or "",
                     "is_tracking_active": user.is_tracking_active,
                     "is_tracking_needed": v_needed,
+                    "is_on_call": getattr(user, "is_on_call", False),
                     "last_activity_timestamp": formatted_ts
                 }
         except Exception as e:
             print(f"ERROR [SSE-PUBLIC-INIT]: {e}")
-        
-    return EventSourceResponse(public_event_generator(email, initial_payload))
+        finally:
+            db.rollback()
+            
+    return EventSourceResponse(public_event_generator(clean_email, initial_payload))
 
 
 # ── Background Worker to Auto-Deactivate Idle Users (> 2 Minutes) ────────────────────
@@ -973,13 +981,15 @@ async def auto_deactivate_idle_users_loop():
                             
                         # Immediately broadcast status change to SSE listeners in memory
                         try:
-                            await broadcast_user_status(u, db)
+                            await broadcast_user_status(u, db, commit=False)
                         except Exception:
                             pass
             db.commit()
         except Exception as e:
+            db.rollback()
             print(f"ERROR [AUTO-DEACTIVATE]: Worker loop failed: {e}")
         finally:
+            db.rollback()
             db.close()
 
 
@@ -987,6 +997,7 @@ async def stream_all_users_status_periodically_loop():
     """
     Runs in the background every 120 seconds.
     Streams the status of all approved users to all SSE listeners in real-time.
+    Uses bulk fetching and a single transaction commit to minimize DB load.
     """
     while True:
         await asyncio.sleep(120)
@@ -994,38 +1005,22 @@ async def stream_all_users_status_periodically_loop():
         db = SessionLocal()
         try:
             from app.models import User as DBUser, OrgEmployee
+            # Pre-fetch all org_employees into a dictionary in 1 query
+            emp_map = {e.system_id: e for e in db.query(OrgEmployee).all()}
             approved_users = db.query(DBUser).filter(DBUser.is_approved == True).all()
+            
             for u in approved_users:
-                v_emp_id = ""
-                v_needed = True
-                if u.system_id:
-                    emp_rec = db.query(OrgEmployee).filter(OrgEmployee.system_id == u.system_id).first()
-                    if emp_rec:
-                        v_emp_id = emp_rec.employee_id
-                        v_needed = emp_rec.is_tracking_needed if emp_rec.is_tracking_needed is not None else True
+                emp_rec = emp_map.get(u.system_id)
+                v_emp_id = emp_rec.employee_id if emp_rec else ""
+                v_needed = emp_rec.is_tracking_needed if (emp_rec and emp_rec.is_tracking_needed is not None) else True
+                await broadcast_user_status(u, db, emp_id=v_emp_id, is_tracking_needed=v_needed, commit=False)
                 
-                formatted_ts = ""
-                if u.last_activity_timestamp:
-                    from datetime import timedelta
-                    ist_dt = u.last_activity_timestamp + timedelta(hours=5, minutes=30)
-                    formatted_ts = ist_dt.strftime('%B %d, %Y at %I:%M:%S %p')
-                    
-                payload = {
-                    "user_id": str(u.id),
-                    "full_name": u.full_name,
-                    "email": u.email,
-                    "emp_id": v_emp_id,
-                    "org_id": str(u.organisation_id) if u.organisation_id else "",
-                    "system_id": u.system_id or "",
-                    "is_tracking_active": u.is_tracking_active,
-                    "is_tracking_needed": v_needed,
-                    "is_on_call": getattr(u, "is_on_call", False),
-                    "last_activity_timestamp": formatted_ts
-                }
-                await broadcast_user_status(u, db)
+            db.commit()
         except Exception as e:
+            db.rollback()
             print(f"ERROR [PERIODIC-STREAM]: Periodic status stream failed: {e}")
         finally:
+            db.rollback()
             db.close()
 
 
