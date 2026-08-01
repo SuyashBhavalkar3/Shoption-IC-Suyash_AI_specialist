@@ -5,14 +5,77 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import csv
 import io
+import os
+import time
+import uuid
 from datetime import datetime, timezone as py_timezone, timedelta as py_timedelta
 from jose import jwt, JWTError
 from app.config import JWT_SECRET_KEY, JWT_ALGORITHM
 from app.database import get_db
+import hashlib
 from app.models import User, CallLog, OrgEmployee
 from app.schemas import CallLogCreate, CallLogOut, LeaderReportResponse, WarriorReport, CallDetail
 from app.security import get_current_user
 from app.webhooks_dispatcher import dispatch_webhook
+
+def generate_deterministic_uuid7(user_id: str, client_id: str, timestamp_str: str) -> str:
+    """Generates a strictly unique, time-ordered, deterministic UUIDv7 based on user_id, client_id, and timestamp."""
+    try:
+        from dateutil import parser
+        dt = parser.parse(timestamp_str)
+        ms = int(dt.timestamp() * 1000)
+    except Exception:
+        ms = int(time.time() * 1000)
+        
+    ms = ms & 0xffffffffffff
+    
+    # Hash of user_id + client_id
+    hasher = hashlib.sha256(f"{user_id}:{client_id}".encode('utf-8'))
+    hash_bytes = bytearray(hasher.digest())
+    
+    # Construct UUID bytes
+    uuid_bytes = bytearray(16)
+    
+    # Set timestamp (first 6 bytes)
+    uuid_bytes[0] = (ms >> 40) & 0xff
+    uuid_bytes[1] = (ms >> 32) & 0xff
+    uuid_bytes[2] = (ms >> 24) & 0xff
+    uuid_bytes[3] = (ms >> 16) & 0xff
+    uuid_bytes[4] = (ms >> 8) & 0xff
+    uuid_bytes[5] = ms & 0xff
+    
+    # Copy hash bytes to the rest
+    uuid_bytes[6:] = hash_bytes[:10]
+    
+    # Set version to 7 (bits 48-51 to 0111)
+    uuid_bytes[6] = (uuid_bytes[6] & 0x0f) | 0x70
+    
+    # Set variant to RFC 4122 (bits 64-65 to 10)
+    uuid_bytes[8] = (uuid_bytes[8] & 0x3f) | 0x80
+    
+    return str(uuid.UUID(bytes=bytes(uuid_bytes)))
+
+def generate_uuid7() -> uuid.UUID:
+    """Generates a time-ordered sequential UUIDv7 (RFC 4122 compliant)"""
+    ms = int(time.time() * 1000)
+    rand_bytes = bytearray(os.urandom(16))
+    
+    # Fill in the timestamp (first 48 bits / 6 bytes)
+    rand_bytes[0] = (ms >> 40) & 0xff
+    rand_bytes[1] = (ms >> 32) & 0xff
+    rand_bytes[2] = (ms >> 24) & 0xff
+    rand_bytes[3] = (ms >> 16) & 0xff
+    rand_bytes[4] = (ms >> 8) & 0xff
+    rand_bytes[5] = ms & 0xff
+    
+    # Set version to 7 (bits 48-51 to 0111)
+    rand_bytes[6] = (rand_bytes[6] & 0x0f) | 0x70
+    
+    # Set variant to RFC 4122 (bits 64-65 to 10)
+    rand_bytes[8] = (rand_bytes[8] & 0x3f) | 0x80
+    
+    return uuid.UUID(bytes=bytes(rand_bytes))
+
 
 router = APIRouter(
     prefix="/calls",
@@ -58,12 +121,19 @@ def sync_call_logs(
         if emp_record:
             emp_id = emp_record.employee_id
 
-    # Bulk query existing call logs in one go to prevent N+1 queries
-    system_call_ids = [log_data.system_call_id for log_data in logs_in if log_data.system_call_id]
+    # Generate strictly unique, time-ordered, deterministic UUIDv7 for each incoming call log.
+    # This prevents cross-user collisions (e.g. simple numeric IDs like '5246') and preserves idempotency on retries.
+    resolved_ids = {}
+    for log_data in logs_in:
+        if log_data.system_call_id:
+            resolved_ids[log_data.system_call_id] = generate_deterministic_uuid7(
+                str(current_user.id), log_data.system_call_id, log_data.timestamp
+            )
+            
     existing_logs = []
-    if system_call_ids:
+    if resolved_ids:
         existing_logs = db.query(CallLog).filter(
-            CallLog.system_call_id.in_(system_call_ids),
+            CallLog.system_call_id.in_(list(resolved_ids.values())),
             CallLog.user_id == current_user.id
         ).all()
     
@@ -74,7 +144,8 @@ def sync_call_logs(
     webhook_payloads = []  # Collect all new log payloads to batch into a single background task
 
     for log_data in logs_in:
-        exists = existing_map.get(log_data.system_call_id)
+        resolved_id = resolved_ids.get(log_data.system_call_id)
+        exists = existing_map.get(resolved_id) if resolved_id else None
         call_type, call_status = _normalize_call_type(log_data.call_type, log_data.duration_seconds)
         
         if not exists:
@@ -85,7 +156,7 @@ def sync_call_logs(
                 call_status=call_status,
                 duration_seconds=log_data.duration_seconds,
                 timestamp=log_data.timestamp,
-                system_call_id=log_data.system_call_id,
+                system_call_id=resolved_id,
                 created_at=datetime.utcnow(),
                 system_id=current_user.system_id,
                 employee_id=emp_id,
@@ -98,7 +169,7 @@ def sync_call_logs(
                 "call_status": db_log.call_status,
                 "duration_seconds": db_log.duration_seconds,
                 "timestamp": db_log.timestamp,
-                "system_call_id": f"{db_log.user_id}_{_format_created_at_to_ist_str(db_log.created_at)}",
+                "system_call_id": db_log.system_call_id,
                 "employee_id": db_log.employee_id,
                 "system_id": db_log.system_id
             })
@@ -118,7 +189,7 @@ def sync_call_logs(
                 "call_status": exists.call_status,
                 "duration_seconds": exists.duration_seconds,
                 "timestamp": exists.timestamp,
-                "system_call_id": f"{exists.user_id}_{_format_created_at_to_ist_str(exists.created_at)}",
+                "system_call_id": exists.system_call_id,
                 "employee_id": exists.employee_id,
                 "system_id": exists.system_id
             })
