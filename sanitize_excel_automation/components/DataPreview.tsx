@@ -31,11 +31,16 @@ export default function DataPreview({ data, headers }: DataPreviewProps) {
                     <tbody className="divide-y divide-card-border">
                         {data.slice(0, 10).map((row, rowIndex) => (
                             <tr key={rowIndex} className="hover:bg-bg-base transition-colors">
-                                {row.map((cell, cellIndex) => (
-                                    <td key={cellIndex} className="px-4 py-3 text-text-base font-medium whitespace-nowrap overflow-hidden max-w-[200px] truncate">
-                                        {cell || <span className="text-muted-text">-</span>}
-                                    </td>
-                                ))}
+                                {row.map((cell, cellIndex) => {
+                                    const cleanCell = cell && cell.startsWith('="') && cell.endsWith('"')
+                                        ? cell.slice(2, -1)
+                                        : cell;
+                                    return (
+                                        <td key={cellIndex} className="px-4 py-3 text-text-base font-medium whitespace-nowrap overflow-hidden max-w-[200px] truncate">
+                                            {cleanCell || <span className="text-muted-text">-</span>}
+                                        </td>
+                                    );
+                                })}
                             </tr>
                         ))}
                     </tbody>

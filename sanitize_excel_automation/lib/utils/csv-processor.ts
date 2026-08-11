@@ -135,17 +135,20 @@ export function processCSVData(
                 }
             }
 
+            const formattedPhone = phone ? `="${phone}"` : "";
+            const formattedCampaignId = campaignId ? `="${campaignId}"` : "";
+
             // Map to strict array order corresponding to FIXED_SCHEMA_HEADERS
             const rowOutput = [
-                fullname,      // Full Name
-                phone,         // Phone Number
-                email,         // Email
-                campaignId,    // Campaign ID
-                source,        // Source
-                city,          // City
-                ...questions,  // Q1-Q10
-                ...answers,    // Answer  1-Answer  10
-                col1,          // Coloumn 1
+                fullname,            // Full Name
+                formattedPhone,      // Phone Number
+                email,               // Email
+                formattedCampaignId, // Campaign ID
+                source,              // Source
+                city,                // City
+                ...questions,        // Q1-Q10
+                ...answers,          // Answer  1-Answer  10
+                col1,                // Coloumn 1
                 "", "", "", "", "", "", "", "", "", "" // Coloumn 2-10 (10 is duplicated in headers)
             ];
 
