@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import datetime
 from uuid import UUID
 from enum import Enum
@@ -152,7 +152,7 @@ class CallLogBase(BaseModel):
     call_type: str
     call_status: Optional[str] = None
     duration_seconds: int
-    timestamp: str
+    timestamp: Union[str, datetime]
     system_call_id: str
 
 class CallLogCreate(CallLogBase):
@@ -176,7 +176,7 @@ class CallDetail(BaseModel):
     call_type: str
     call_status: Optional[str] = None
     duration_seconds: int
-    timestamp: str
+    timestamp: Union[str, datetime]
 
 class WarriorReport(BaseModel):
     warrior_id: UUID
@@ -201,7 +201,8 @@ class LeaderReportResponse(BaseModel):
     overall_outgoing_calls_count: int
     overall_total_calling_hours: float
     overall_average_call_seconds: float
-    warriors: List[WarriorReport]
+    warriors: List[WarriorReport] = []
+
 
 # ── Org Employee Schemas ──────────────────────────────────────────────────────
 
@@ -344,4 +345,97 @@ class DemoBookingOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Dashboard Analytics Schemas ───────────────────────────────────────────────
+
+class DashboardUserCounts(BaseModel):
+    total_users: int = 0
+    admins: int = 0
+    leaders: int = 0
+    warriors: int = 0
+    super_admins: int = 0
+    approved: int = 0
+    active: int = 0
+    tracking_on: int = 0
+    employees: int = 0
+    employees_tracking_needed: int = 0
+    employees_tracking_active: int = 0
+
+
+class DashboardCallMetrics(BaseModel):
+    total_calls_done: int = 0
+    total_success_calls: int = 0
+    total_talk_seconds: int = 0
+    total_talk_time_formatted: str = "00:00"
+    avg_tt_call_formatted: str = "00:00"
+
+    incoming_calls: int = 0
+    incoming_success_calls: int = 0
+    incoming_talk_seconds: int = 0
+    incoming_talk_time_formatted: str = "00:00"
+    avg_tt_incoming_formatted: str = "00:00"
+
+    outgoing_calls: int = 0
+    outgoing_success_calls: int = 0
+    outgoing_talk_seconds: int = 0
+    outgoing_talk_time_formatted: str = "00:00"
+    avg_tt_outgoing_formatted: str = "00:00"
+
+    total_missed: int = 0
+    missed_not_responded: int = 0
+    avg_response_time_seconds: float = 0.0
+    avg_response_time_formatted: str = "-"
+
+    dropped_calls: int = 0
+    incoming_dropped_calls: int = 0
+    outgoing_dropped_calls: int = 0
+
+
+class WarriorDashboardSummary(BaseModel):
+    warrior_id: UUID
+    full_name: str
+    email: str
+    department: Optional[str] = None
+    role: str
+    manager_id: Optional[UUID] = None
+    is_tracking_enabled: bool = False
+    is_tracking_active: bool = False
+
+    total_calls: int = 0
+    success_calls: int = 0
+    total_calling_seconds: int = 0
+    total_calling_hours: float = 0.0
+    average_call_seconds: float = 0.0
+
+    incoming_calls_count: int = 0
+    incoming_success_calls_count: int = 0
+    outgoing_calls_count: int = 0
+    outgoing_success_calls_count: int = 0
+
+    total_missed_calls: int = 0
+    missed_not_responded: int = 0
+    dropped_calls_count: int = 0
+
+    avg_response_time_seconds: float = 0.0
+
+
+class TimeDistributionBucket(BaseModel):
+    time_label: str
+    time_val: float
+    total: int = 0
+    incoming: int = 0
+    outgoing: int = 0
+    missed: int = 0
+    dropped: int = 0
+
+
+class DashboardMetricsResponse(BaseModel):
+    user_counts: DashboardUserCounts
+    totals: DashboardCallMetrics
+    warrior_summaries: List[WarriorDashboardSummary] = []
+    hourly_distribution: List[TimeDistributionBucket] = []
+    filter_start_date: Optional[str] = None
+    filter_end_date: Optional[str] = None
+
 

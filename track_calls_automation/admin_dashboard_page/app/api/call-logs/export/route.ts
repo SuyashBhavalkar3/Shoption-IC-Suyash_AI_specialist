@@ -133,8 +133,8 @@ export async function GET(request: Request) {
       whereClauses.push(`cl.org_id = $${params.length}`);
     }
 
-    const parsedDateExpr = `(CASE WHEN cl.timestamp LIKE '%-%-%' AND cl.timestamp NOT LIKE '%T%' AND cl.timestamp NOT LIKE '%Z%' THEN to_date(cl.timestamp, 'DD-Mon-YYYY') ELSE CAST(cl.timestamp AS date) END)`;
-    const parsedTimestampExpr = `(CASE WHEN cl.timestamp LIKE '%-%-%' AND cl.timestamp NOT LIKE '%T%' AND cl.timestamp NOT LIKE '%Z%' THEN to_timestamp(cl.timestamp, 'DD-Mon-YYYY HH24:MI') ELSE CAST(cl.timestamp AS timestamp) END)`;
+    const parsedDateExpr = `(cl.timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date`;
+    const parsedTimestampExpr = `(cl.timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')`;
 
     if (range === "today") {
       whereClauses.push(`${parsedDateExpr} >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date`);
@@ -267,7 +267,7 @@ export async function GET(request: Request) {
         // PDF Styling & Metadata (using standard hex codes)
         doc.fillColor("#1F8FFF").fontSize(22).font("Helvetica-Bold").text("LeadLens Dashboard Analytics", 30, 40);
         doc.fillColor("#0F172A").fontSize(12).font("Helvetica-Bold").text("All Organization Logs Export Report", 30, 65);
-        
+
         // Horizontal Line using a light solid border color
         doc.strokeColor("#E2E8F0").lineWidth(1).moveTo(30, 85).lineTo(565, 85).stroke();
 
@@ -278,10 +278,10 @@ export async function GET(request: Request) {
         doc.text(`Total Records Exported: ${pdfRows.length.toLocaleString()}`, 30, 131);
 
         let y = 155;
-        
+
         // Draw Table Header in dark slate background
         doc.rect(30, y, 535, 20).fill("#0F172A");
-        
+
         doc.fillColor("#FFFFFF").fontSize(8).font("Helvetica-Bold");
         doc.text("#", 35, y + 6);
         doc.text("Agent Name", 60, y + 6);
@@ -290,7 +290,7 @@ export async function GET(request: Request) {
         doc.text("Status", 325, y + 6);
         doc.text("Start Time", 395, y + 6);
         doc.text("Duration", 515, y + 6);
-        
+
         y += 20;
 
         // Draw rows
@@ -302,7 +302,7 @@ export async function GET(request: Request) {
           if (y > 750) {
             doc.addPage();
             y = 40;
-            
+
             // Re-draw table header on new page
             doc.rect(30, y, 535, 20).fill("#0F172A");
             doc.fillColor("#FFFFFF").fontSize(8).font("Helvetica-Bold");
@@ -320,7 +320,7 @@ export async function GET(request: Request) {
           if (odd) {
             doc.rect(30, y, 535, 16).fill("#F8FAFC");
           }
-          
+
           const startDate = (row.timestamp ? parseDbTimestamp(row.timestamp) : null) || new Date(row.created_at);
 
           // Reset text color to dark slate
@@ -328,7 +328,7 @@ export async function GET(request: Request) {
           doc.text(String(index), 35, y + 4);
           doc.text(row.agent_name || "Unknown Agent", 60, y + 4, { width: 95, height: 12, ellipsis: true });
           doc.fillColor("#475569").text(row.phone_number || "", 160, y + 4);
-          
+
           // Direction and Status text values
           doc.fillColor("#0F172A").text(row.call_type || "", 255, y + 4);
           doc.text(row.call_status || "", 325, y + 4);

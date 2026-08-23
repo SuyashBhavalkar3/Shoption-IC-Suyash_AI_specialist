@@ -95,7 +95,7 @@ class CallDatabase(context: Context) :
         val values = ContentValues().apply {
             put(COL_PHONE_NUMBER, phoneNumber)
             put(COL_CALL_TYPE, callType)
-            put(COL_TIMESTAMP, SimpleDateFormat("dd-MMM-yyyy HH:mm", Locale.getDefault()).format(Date()))
+            put(COL_TIMESTAMP, SimpleDateFormat("dd-MMM-yyyy HH:mm", Locale.US).format(Date()))
             put(COL_DURATION, durationSeconds)
         }
         return db.insert(TABLE_NAME, null, values)

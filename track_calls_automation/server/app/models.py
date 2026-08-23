@@ -80,7 +80,7 @@ class CallLog(Base):
     call_type        = Column(String, nullable=False)
     call_status      = Column(String, nullable=False, server_default="Answered")
     duration_seconds = Column(Integer, nullable=False)
-    timestamp        = Column(String, nullable=False, index=True)
+    timestamp        = Column(DateTime, nullable=False, index=True)
     system_call_id   = Column(String, nullable=False, unique=True, index=True)
     created_at       = Column(DateTime, server_default=text("now()"), nullable=False)
     # system_id is copied from user.system_id at call-log creation time for cross-table access

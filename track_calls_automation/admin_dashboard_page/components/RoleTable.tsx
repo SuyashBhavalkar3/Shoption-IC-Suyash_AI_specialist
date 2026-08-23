@@ -49,6 +49,22 @@ function parseDbTimestamp(tsStr: string): Date | null {
   return new Date(year, month, day, hours, minutes);
 }
 
+function arePhoneNumbersEqual(num1: string, num2: string): boolean {
+  if (!num1 || !num2) return false;
+  const clean1 = num1.replace(/\D/g, "");
+  const clean2 = num2.replace(/\D/g, "");
+
+  if (clean1 === clean2) return true;
+
+  const len1 = clean1.length;
+  const len2 = clean2.length;
+  if (len1 >= 10 && len2 >= 10) {
+    return clean1.slice(-10) === clean2.slice(-10);
+  }
+
+  return false;
+}
+
 export default function RoleTable({ users, employees, onToggleTrackingNeeded, report }: RoleTableProps) {
   const [activeTab, setActiveTab] = useState<"users" | "registry">("users");
   const [searchQuery, setSearchQuery] = useState("");
@@ -135,10 +151,19 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
     }
 
     // Find all missed calls (incoming missed)
-    const missedCalls = calls.filter(c => {
+    const missedCallsRaw = calls.filter(c => {
       const type = (c.call_type || "").toLowerCase();
       const status = (c.call_status || "").toLowerCase();
       return type === "incoming" && (status === "missed" || status === "missed call" || status.includes("missed"));
+    });
+
+    // Keep only unique phone numbers
+    const missedCalls: typeof missedCallsRaw = [];
+    missedCallsRaw.forEach(c => {
+      const alreadyExists = missedCalls.some(uc => arePhoneNumbersEqual(uc.phone_number, c.phone_number));
+      if (!alreadyExists) {
+        missedCalls.push(c);
+      }
     });
 
     // Map each missed call to its response details
@@ -168,9 +193,24 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         // Sort remaining calls chronologically to find the earliest response
         const subsequentCalls = calls
           .filter(c => {
-            if (c.phone_number !== mc.phone_number) return false;
+            if (!arePhoneNumbersEqual(c.phone_number, mc.phone_number)) return false;
             const cTime = parseDbTimestamp(c.timestamp);
-            return cTime && cTime >= mcTime && c.duration_seconds > 0;
+            if (!cTime || cTime < mcTime) return false;
+
+            const type = (c.call_type || "").toLowerCase();
+            const status = (c.call_status || "").toLowerCase();
+
+            // Outgoing calls count as response/attempt
+            if (type === "outgoing") return true;
+
+            // Incoming calls count as response if they were answered/successful
+            if (type === "incoming") {
+              const isDropped = (status === "dropped" || status === "rejected" || status === "failed") || (c.duration_seconds >= 1 && c.duration_seconds <= 10);
+              const isMissed = status === "missed" || status === "missed call" || status.includes("missed");
+              const isSuccess = (c.duration_seconds > 10) || (!isMissed && !isDropped && c.duration_seconds > 0);
+              return isSuccess;
+            }
+            return false;
           })
           .sort((a, b) => {
             const timeA = parseDbTimestamp(a.timestamp);
@@ -325,6 +365,9 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
         outgoingTalktime: "00:00",
         outgoingAvgTT: "00:00",
         totalDurationSeconds: 0,
+        incomingTotalSeconds: 0,
+        outgoingTotalSeconds: 0,
+        incomingSuccessAnswered: 0,
       };
     }
 
@@ -348,17 +391,54 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
       endLimit = new Date(y, mo - 1, d, h, m, 59);
     }
 
-    // Filter calls by date/time
-    if (startLimit || endLimit) {
-      calls = calls.filter((c) => {
-        const callDate = parseDbTimestamp(c.timestamp);
-        if (!callDate) return false;
+    // Pre-parse dates and metrics for all calls of this warrior to avoid redundant parsing inside loops
+    const parsedCalls = calls
+      .map((c) => {
+        const parsedDate = parseDbTimestamp(c.timestamp);
+        const type = (c.call_type || "").toLowerCase();
+        const status = (c.call_status || "").toLowerCase();
+        const duration = c.duration_seconds || 0;
 
-        if (startLimit && callDate < startLimit) return false;
-        if (endLimit && callDate > endLimit) return false;
+        const isIncoming = type === "incoming";
+        const isOutgoing = type === "outgoing";
+
+        // Dropped call: duration is 1-10s or explicit dropped status
+        const isDropped = (status === "dropped" || status === "rejected" || status === "failed") || (duration >= 1 && duration <= 10);
+
+        // Missed call: incoming missed
+        const isMissed = isIncoming && (status === "missed" || status === "missed call" || status.includes("missed"));
+
+        // Dialed call: outgoing but no answer/not accepted/not successful
+        const isDialed = isOutgoing && (status === "missed" || status === "missed call" || status.includes("missed") || status === "dialed" || status.includes("dialed") || status === "dropped" || status === "rejected" || status === "failed" || duration === 0 || isDropped);
+
+        // Success call: duration > 10s OR (not dialed, not missed, and not dropped)
+        const isSuccess = (duration > 10) || (!isDialed && !isMissed && !isDropped);
+
+        // Clean phone number (last 10 digits) for O(1) matching
+        const clean = c.phone_number ? c.phone_number.replace(/\D/g, "") : "";
+        const cleanPhone = clean.length >= 10 ? clean.slice(-10) : clean;
+
+        return {
+          ...c,
+          parsedDate,
+          timeMs: parsedDate ? parsedDate.getTime() : 0,
+          type,
+          status,
+          isIncoming,
+          isOutgoing,
+          isDropped,
+          isMissed,
+          isDialed,
+          isSuccess,
+          cleanPhone,
+        };
+      })
+      .filter((c) => {
+        if (!c.parsedDate) return false;
+        if (startLimit && c.parsedDate < startLimit) return false;
+        if (endLimit && c.parsedDate > endLimit) return false;
         return true;
       });
-    }
 
     let totalSuccessCalls = 0;
     let incomingCalls = 0;
@@ -371,64 +451,81 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
     let dialed = 0;
     let outgoingTotalSeconds = 0;
 
-    calls.forEach((c) => {
-      const type = (c.call_type || "").toLowerCase();
-      const status = (c.call_status || "").toLowerCase();
+    // Group parsed calls by phone number for instant lookup
+    const phoneCallsMap = new Map<string, typeof parsedCalls>();
 
-      const isIncoming = type === "incoming";
-      const isOutgoing = type === "outgoing";
-
-      // Dropped call: duration is 1-10s or explicit dropped status
-      const isDropped = (status === "dropped" || status === "rejected" || status === "failed") || (c.duration_seconds >= 1 && c.duration_seconds <= 10);
-
-      // Missed call: incoming missed
-      const isMissed = isIncoming && (status === "missed" || status === "missed call" || status.includes("missed"));
-
-      // Dialed call: outgoing but no answer/not accepted/not successful
-      const isDialed = isOutgoing && (status === "missed" || status === "missed call" || status.includes("missed") || status === "dialed" || status.includes("dialed") || status === "dropped" || status === "rejected" || status === "failed" || c.duration_seconds === 0 || isDropped);
-
-      // Success call: duration > 10s OR (not dialed, not missed, and not dropped)
-      const isSuccess = (c.duration_seconds > 10) || (!isDialed && !isMissed && !isDropped);
-
-      if (isSuccess) {
+    parsedCalls.forEach((c) => {
+      if (c.isSuccess) {
         totalSuccessCalls++;
       }
 
-      if (isIncoming) {
+      if (c.isIncoming) {
         incomingCalls++;
-        if (isSuccess) {
+        if (c.isSuccess) {
           incomingSuccessAnswered++;
           incomingTotalSeconds += c.duration_seconds || 0;
-        } else if (isMissed) {
+        } else if (c.isMissed) {
           missed++;
         }
-      } else if (isOutgoing) {
+      } else if (c.isOutgoing) {
         totalOutgoingCalls++;
         dialed++;
-        if (isSuccess) {
+        if (c.isSuccess) {
           outgoingSuccessReceived++;
           outgoingTotalSeconds += c.duration_seconds || 0;
         }
       }
+
+      // Group calls by clean phone number
+      if (c.cleanPhone) {
+        let list = phoneCallsMap.get(c.cleanPhone);
+        if (!list) {
+          list = [];
+          phoneCallsMap.set(c.cleanPhone, list);
+        }
+        list.push(c);
+      }
     });
 
-    // Calculate missed not responded
+    // Calculate missed not responded (unique numbers)
     let missedNotResponded = 0;
-    const missedCalls = calls.filter(c => {
-      const type = (c.call_type || "").toLowerCase();
-      const status = (c.call_status || "").toLowerCase();
-      return type === "incoming" && (status === "missed" || status === "missed call" || status.includes("missed"));
+    const missedCallsRaw = parsedCalls.filter(c => c.isMissed);
+    const uniqueMissedCalls: typeof missedCallsRaw = [];
+    const seenPhones = new Set<string>();
+
+    missedCallsRaw.forEach(mc => {
+      if (!mc.cleanPhone) {
+        uniqueMissedCalls.push(mc);
+      } else {
+        if (!seenPhones.has(mc.cleanPhone)) {
+          seenPhones.add(mc.cleanPhone);
+          uniqueMissedCalls.push(mc);
+        }
+      }
     });
 
-    missedCalls.forEach(mc => {
-      const mcTime = parseDbTimestamp(mc.timestamp);
-      if (!mcTime) return;
-      const hasOutgoingAfter = calls.some(c => {
-        if ((c.call_type || "").toLowerCase() !== "outgoing") return false;
-        if (c.phone_number !== mc.phone_number) return false;
-        const cTime = parseDbTimestamp(c.timestamp);
-        return cTime && cTime > mcTime;
+    uniqueMissedCalls.forEach(mc => {
+      if (mc.timeMs === 0) return;
+      if (!mc.cleanPhone) {
+        missedNotResponded++;
+        return;
+      }
+
+      // Look up ONLY candidate calls matching this phone number (fast indexed search)
+      const candidates = phoneCallsMap.get(mc.cleanPhone) || [];
+      const hasOutgoingAfter = candidates.some(c => {
+        // Must be chronological
+        if (c.timeMs <= mc.timeMs) return false;
+
+        // Outgoing counts as response/attempt
+        if (c.isOutgoing) return true;
+
+        // Incoming counts as response if answered successfully
+        if (c.isIncoming) return c.isSuccess;
+
+        return false;
       });
+
       if (!hasOutgoingAfter) {
         missedNotResponded++;
       }
@@ -445,7 +542,7 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
     const outgoingAvgTT = formatToMMSS(outgoingSuccessReceived > 0 ? outgoingTotalSeconds / outgoingSuccessReceived : 0);
 
     return {
-      totalCalls: incomingCalls + totalOutgoingCalls + missed,
+      totalCalls: incomingCalls + totalOutgoingCalls,
       totalSuccessCalls,
       missed,
       missedNotResponded,
@@ -647,6 +744,181 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleExportNotRespondedCalls = async () => {
+    // 1. Gather all not responded call records
+    const records: any[] = [];
+    const summaryMap: Record<string, { name: string; email: string; roleDept: string; count: number }> = {};
+
+    filteredUsers.forEach((user) => {
+      const warriorData = report?.warriors?.find((w) => w.warrior_id === user.id);
+      if (!warriorData) return;
+
+      let calls = warriorData.calls ?? [];
+
+      // Parse date/time limits
+      let startLimit: Date | null = null;
+      if (fromDate) {
+        const timeStr = fromTime || "00:00";
+        const [h, m] = timeStr.split(":").map(Number);
+        const [y, mo, d] = fromDate.split("-").map(Number);
+        startLimit = new Date(y, mo - 1, d, h, m, 0);
+      }
+
+      let endLimit: Date | null = null;
+      if (toDate) {
+        const timeStr = toTime || "23:59";
+        const [h, m] = timeStr.split(":").map(Number);
+        const [y, mo, d] = toDate.split("-").map(Number);
+        endLimit = new Date(y, mo - 1, d, h, m, 59);
+      }
+
+      if (startLimit || endLimit) {
+        calls = calls.filter((c) => {
+          const callDate = parseDbTimestamp(c.timestamp);
+          if (!callDate) return false;
+          if (startLimit && callDate < startLimit) return false;
+          if (endLimit && callDate > endLimit) return false;
+          return true;
+        });
+      }
+
+      const missedCalls = calls.filter(c => {
+        const type = (c.call_type || "").toLowerCase();
+        const status = (c.call_status || "").toLowerCase();
+        return type === "incoming" && (status === "missed" || status === "missed call" || status.includes("missed"));
+      });
+
+      let userNotRespondedCount = 0;
+
+      missedCalls.forEach(mc => {
+        const mcTime = parseDbTimestamp(mc.timestamp);
+        if (!mcTime) return;
+        const hasOutgoingAfter = calls.some(c => {
+          if (!arePhoneNumbersEqual(c.phone_number, mc.phone_number)) return false;
+          const cTime = parseDbTimestamp(c.timestamp);
+          if (!cTime || cTime < mcTime) return false;
+
+          const type = (c.call_type || "").toLowerCase();
+          const status = (c.call_status || "").toLowerCase();
+
+          // Outgoing calls count as response/attempt
+          if (type === "outgoing") return true;
+
+          // Incoming calls count as response if they were answered/successful
+          if (type === "incoming") {
+            const isDropped = (status === "dropped" || status === "rejected" || status === "failed") || (c.duration_seconds >= 1 && c.duration_seconds <= 10);
+            const isMissed = status === "missed" || status === "missed call" || status.includes("missed");
+            const isSuccess = (c.duration_seconds > 10) || (!isMissed && !isDropped && c.duration_seconds > 0);
+            return isSuccess;
+          }
+          return false;
+        });
+
+        if (!hasOutgoingAfter) {
+          userNotRespondedCount++;
+          records.push({
+            agentName: user.full_name,
+            email: user.email,
+            roleDept: `${user.role.replace("_", " ").toUpperCase()} / ${user.department || "Unassigned"}`,
+            phoneNumber: mc.phone_number,
+            callType: mc.call_type,
+            status: mc.call_status || "Missed",
+            timestamp: mc.timestamp
+          });
+        }
+      });
+
+      if (userNotRespondedCount > 0) {
+        summaryMap[user.id] = {
+          name: user.full_name,
+          email: user.email,
+          roleDept: `${user.role.replace("_", " ").toUpperCase()} / ${user.department || "Unassigned"}`,
+          count: userNotRespondedCount
+        };
+      }
+    });
+
+    // Sort records by phone number
+    records.sort((a, b) => a.phoneNumber.localeCompare(b.phoneNumber));
+
+    try {
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+
+      // Sheet 1: Detailed Not Responded Calls
+      const sheet1 = workbook.addWorksheet("Not Responded Calls");
+      sheet1.columns = [
+        { header: "Agent Name", key: "agentName", width: 25 },
+        { header: "Email", key: "email", width: 25 },
+        { header: "Role / Dept", key: "roleDept", width: 30 },
+        { header: "Customer Contact Number", key: "phoneNumber", width: 25 },
+        { header: "Direction", key: "callType", width: 15 },
+        { header: "Status", key: "status", width: 15 },
+        { header: "Timestamp", key: "timestamp", width: 25 }
+      ];
+
+      // Format header row style for sheet 1
+      sheet1.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+      sheet1.getRow(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE11D48" } // Rose color consistent with Not Responded theme
+      };
+
+      records.forEach(r => {
+        sheet1.addRow({
+          agentName: r.agentName,
+          email: r.email,
+          roleDept: r.roleDept,
+          phoneNumber: `\t${r.phoneNumber}`,
+          callType: r.callType,
+          status: r.status,
+          timestamp: r.timestamp
+        });
+      });
+
+      // Sheet 2: Summary of Not Responded Counts
+      const sheet2 = workbook.addWorksheet("Summary Counts");
+      sheet2.columns = [
+        { header: "Agent Name", key: "name", width: 25 },
+        { header: "Email", key: "email", width: 25 },
+        { header: "Role / Dept", key: "roleDept", width: 30 },
+        { header: "Total Not Responded Calls", key: "count", width: 25 }
+      ];
+
+      // Format header row style for sheet 2
+      sheet2.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+      sheet2.getRow(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE11D48" }
+      };
+
+      Object.values(summaryMap).forEach(s => {
+        sheet2.addRow({
+          name: s.name,
+          email: s.email,
+          roleDept: s.roleDept,
+          count: s.count
+        });
+      });
+
+      // Write to buffer and download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `not_responded_calls_${new Date().toISOString().split('T')[0]}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Failed to generate Excel file:", err);
+      alert("Failed to export Excel file. Please try again.");
+    }
   };
 
   const handleExportPDF = () => {
@@ -911,18 +1183,24 @@ export default function RoleTable({ users, employees, onToggleTrackingNeeded, re
 
         {/* Export Buttons */}
         {activeTab === "users" && (
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5 flex-wrap">
             <button
               onClick={handleExportCSV}
-              className="px-2.5 py-1 rounded-md border border-slate-800 bg-[#050816] hover:bg-slate-850 text-[#F8FAFC] text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap"
+              className="px-2.5 py-1 rounded-md border border-slate-800 bg-[#050816] hover:bg-slate-850 text-[#F8FAFC] text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer"
             >
               Export Excel
             </button>
             <button
               onClick={handleExportPDF}
-              className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#1F8FFF]/10 to-[#8B5CF6]/10 border border-[#1F8FFF]/30 hover:opacity-95 text-[#1F8FFF] text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap"
+              className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#1F8FFF]/10 to-[#8B5CF6]/10 border border-[#1F8FFF]/30 hover:opacity-95 text-[#1F8FFF] text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer"
             >
               Export PDF
+            </button>
+            <button
+              onClick={handleExportNotRespondedCalls}
+              className="px-2.5 py-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-bold transition-all flex items-center gap-1 whitespace-nowrap cursor-pointer"
+            >
+              Not Responded Calls Excel
             </button>
           </div>
         )}

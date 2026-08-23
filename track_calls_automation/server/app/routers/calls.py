@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from uuid import UUID
 import csv
 import io
 import os
@@ -14,9 +15,22 @@ from app.config import JWT_SECRET_KEY, JWT_ALGORITHM
 from app.database import get_db
 import hashlib
 from app.models import User, CallLog, OrgEmployee
-from app.schemas import CallLogCreate, CallLogOut, LeaderReportResponse, WarriorReport, CallDetail
+from app.schemas import (
+    CallLogCreate, CallLogOut, LeaderReportResponse, WarriorReport, CallDetail,
+    DashboardMetricsResponse, DashboardUserCounts, DashboardCallMetrics,
+    WarriorDashboardSummary, TimeDistributionBucket
+)
 from app.security import get_current_user
 from app.webhooks_dispatcher import dispatch_webhook
+
+def clean_timestamp(ts) -> datetime:
+    if isinstance(ts, datetime):
+        return ts
+    try:
+        from dateutil import parser
+        return parser.parse(ts)
+    except Exception:
+        return datetime.utcnow()
 
 def generate_deterministic_uuid7(user_id: str, client_id: str, timestamp_str: str) -> str:
     """Generates a strictly unique, time-ordered, deterministic UUIDv7 based on user_id, client_id, and timestamp."""
@@ -121,13 +135,16 @@ def sync_call_logs(
         if emp_record:
             emp_id = emp_record.employee_id
 
-    # Generate strictly unique, time-ordered, deterministic UUIDv7 for each incoming call log.
+    # Clean and pre-process timestamps, then generate strictly unique, time-ordered, deterministic UUIDv7 for each incoming call log.
     # This prevents cross-user collisions (e.g. simple numeric IDs like '5246') and preserves idempotency on retries.
+    cleaned_timestamps = []
     resolved_ids = {}
     for log_data in logs_in:
+        cleaned_ts = clean_timestamp(log_data.timestamp)
+        cleaned_timestamps.append(cleaned_ts)
         if log_data.system_call_id:
             resolved_ids[log_data.system_call_id] = generate_deterministic_uuid7(
-                str(current_user.id), log_data.system_call_id, log_data.timestamp
+                str(current_user.id), log_data.system_call_id, cleaned_ts.isoformat()
             )
             
     existing_logs = []
@@ -140,13 +157,15 @@ def sync_call_logs(
     # Map existing logs by system_call_id for O(1) lookups
     existing_map = {log.system_call_id: log for log in existing_logs if log.system_call_id}
 
-    created_logs = []
+    to_insert_logs = []
+    to_return_logs = []
     webhook_payloads = []  # Collect all new log payloads to batch into a single background task
 
-    for log_data in logs_in:
+    for idx, log_data in enumerate(logs_in):
         resolved_id = resolved_ids.get(log_data.system_call_id)
         exists = existing_map.get(resolved_id) if resolved_id else None
         call_type, call_status = _normalize_call_type(log_data.call_type, log_data.duration_seconds)
+        cleaned_ts = cleaned_timestamps[idx]
         
         if not exists:
             db_log = CallLog(
@@ -155,20 +174,21 @@ def sync_call_logs(
                 call_type=call_type,
                 call_status=call_status,
                 duration_seconds=log_data.duration_seconds,
-                timestamp=log_data.timestamp,
+                timestamp=cleaned_ts,
                 system_call_id=resolved_id,
                 created_at=datetime.utcnow(),
                 system_id=current_user.system_id,
                 employee_id=emp_id,
                 org_id=current_user.organisation_id
             )
-            created_logs.append(db_log)
+            to_insert_logs.append(db_log)
+            to_return_logs.append(db_log)
             webhook_payloads.append({
                 "phone_number": db_log.phone_number,
                 "call_type": db_log.call_type,
                 "call_status": db_log.call_status,
                 "duration_seconds": db_log.duration_seconds,
-                "timestamp": db_log.timestamp,
+                "timestamp": cleaned_ts.isoformat(),
                 "system_call_id": db_log.system_call_id,
                 "employee_id": db_log.employee_id,
                 "system_id": db_log.system_id
@@ -182,31 +202,32 @@ def sync_call_logs(
             exists.org_id = current_user.organisation_id
             exists.call_type = call_type
             exists.call_status = call_status
-            created_logs.append(exists)
+            to_return_logs.append(exists)
+            
+            ts_str = exists.timestamp.isoformat() if isinstance(exists.timestamp, datetime) else exists.timestamp
             webhook_payloads.append({
                 "phone_number": exists.phone_number,
                 "call_type": exists.call_type,
                 "call_status": exists.call_status,
                 "duration_seconds": exists.duration_seconds,
-                "timestamp": exists.timestamp,
+                "timestamp": ts_str,
                 "system_call_id": exists.system_call_id,
                 "employee_id": exists.employee_id,
                 "system_id": exists.system_id
             })
 
-    if created_logs:
-        try:
+    try:
+        if to_insert_logs:
             # bulk_save_objects handles batch inserts and populates database defaults
-            # (like generated IDs and timestamps) using Postgres RETURNING clause in 1 roundtrip.
-            db.bulk_save_objects(created_logs, return_defaults=True)
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"ERROR: Failed to bulk save call logs: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to save synced call logs"
-            )
+            db.bulk_save_objects(to_insert_logs, return_defaults=True)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR: Failed to save call logs: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save synced call logs: {str(e)}"
+        )
 
     # Fire a SINGLE background task for the entire batch of new logs, BUT only if
     # active subscriptions actually exist. This avoids scheduling background tasks
@@ -232,8 +253,8 @@ def sync_call_logs(
         else:
             print(f"INFO: No active webhook subscriptions for org {current_user.organisation_id}. Webhook dispatch skipped.")
 
-    print(f"INFO: Post calls successful. {len(created_logs)} calls synced to database for user {current_user.email}.")
-    return created_logs
+    print(f"INFO: Post calls successful. {len(to_return_logs)} calls synced to database for user {current_user.email}.")
+    return to_return_logs
 
 @router.get("/", response_model=List[CallLogOut])
 def get_my_call_logs(
@@ -402,8 +423,9 @@ def get_reports(
         overall_outgoing_calls_count=overall_outgoing_count,
         overall_total_calling_hours=round(overall_hours, 2),
         overall_average_call_seconds=round(overall_avg_seconds, 2),
-        warriors=warrior_reports
+        warriors=warrior_reports,
     )
+
 
 from fastapi import Request
 
@@ -439,6 +461,454 @@ def get_recursive_subordinate_ids(user_id, db) -> list:
     for report in direct_reports:
         descendants.extend(get_recursive_subordinate_ids(report[0], db))
     return descendants
+
+
+@router.get("/dashboard", response_model=DashboardMetricsResponse)
+def get_dashboard_summary(
+    leader_id: Optional[str] = None,
+    warrior_id: Optional[str] = None,
+    subordinate_id: Optional[str] = None,
+    search: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    High-performance pre-aggregated dashboard data endpoint.
+    Computes all metrics, totals, warrior summaries, and time distributions on the backend database level.
+    """
+    if current_user.role == "warrior":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Warriors do not have access to dashboard overview"
+        )
+
+    org_id = current_user.organisation_id
+
+    # 1. Determine scoped users based on user role and organisation
+    org_filter = User.organisation_id == org_id if org_id is not None else User.organisation_id.is_(None)
+
+    if current_user.role == "super_admin":
+        users_query = db.query(User).filter(org_filter)
+    elif current_user.role == "admin":
+        users_query = db.query(User).filter(org_filter, User.role != "super_admin")
+    elif current_user.role == "group_leader":
+        sub_ids = get_recursive_subordinate_ids(current_user.id, db)
+        users_query = db.query(User).filter(User.id.in_(sub_ids))
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown role")
+
+    all_scoped_users = users_query.all()
+    user_map = {str(u.id): u for u in all_scoped_users}
+    all_scoped_user_ids = [u.id for u in all_scoped_users]
+
+    # Calculate overall User Counts
+    total_users = len(all_scoped_users)
+    admins_count = sum(1 for u in all_scoped_users if u.role == "admin")
+    leaders_count = sum(1 for u in all_scoped_users if u.role == "group_leader")
+    warriors_count = sum(1 for u in all_scoped_users if u.role == "warrior")
+    super_admins_count = sum(1 for u in all_scoped_users if u.role == "super_admin")
+    approved_count = sum(1 for u in all_scoped_users if u.is_approved)
+    active_count = sum(1 for u in all_scoped_users if u.is_active)
+
+    # Resolve active tracking status (auto-deactivate stale tracking > 120s)
+    now_utc = datetime.utcnow()
+    tracking_on_count = 0
+    employees_tracking_active_count = 0
+
+    for u in all_scoped_users:
+        is_active_tr = False
+        if u.is_tracking_active:
+            if u.last_activity_timestamp and (now_utc - u.last_activity_timestamp).total_seconds() < 120:
+                is_active_tr = True
+            else:
+                u.is_tracking_active = False
+        if is_active_tr:
+            tracking_on_count += 1
+            employees_tracking_active_count += 1
+
+    db.commit()
+
+    # Employee counts
+    emp_query = db.query(OrgEmployee)
+    if org_id is not None:
+        emp_query = emp_query.filter(OrgEmployee.org_id == org_id)
+    all_employees = emp_query.all()
+    employees_count = len(all_employees)
+    employees_tracking_needed_count = sum(1 for e in all_employees if e.is_tracking_needed)
+
+    user_counts = DashboardUserCounts(
+        total_users=total_users,
+        admins=admins_count,
+        leaders=leaders_count,
+        warriors=warriors_count,
+        super_admins=super_admins_count,
+        approved=approved_count,
+        active=active_count,
+        tracking_on=tracking_on_count,
+        employees=employees_count,
+        employees_tracking_needed=employees_tracking_needed_count,
+        employees_tracking_active=employees_tracking_active_count,
+    )
+
+    # 2. Filter target warriors/users by requested filters (search, leader_id, warrior_id, subordinate_id)
+    target_user_ids = list(all_scoped_user_ids)
+
+    # Text search by name or email
+    if search and search.strip():
+        search_q = search.lower().strip()
+        matched_user_ids = set()
+        for u in all_scoped_users:
+            if search_q in (u.full_name or "").lower() or search_q in (u.email or "").lower():
+                desc_ids = get_recursive_subordinate_ids(u.id, db)
+                matched_user_ids.update(desc_ids)
+        target_user_ids = [uid for uid in target_user_ids if uid in matched_user_ids]
+
+    # Specific dropdown selection filter
+    selected_sub_id = subordinate_id or (warrior_id if warrior_id and warrior_id != "all" else None)
+    if not selected_sub_id and leader_id and leader_id != "all":
+        selected_sub_id = leader_id
+
+    if selected_sub_id and selected_sub_id != "all":
+        try:
+            sub_uuid = UUID(selected_sub_id)
+            sub_descendant_ids = set(get_recursive_subordinate_ids(sub_uuid, db))
+            target_user_ids = [uid for uid in target_user_ids if uid in sub_descendant_ids]
+        except ValueError:
+            pass
+
+
+    # 3. Date range filters
+    start_dt = None
+    end_dt = None
+    if start_date:
+        try:
+            start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
+        except Exception:
+            pass
+    if end_date:
+        try:
+            end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
+        except Exception:
+            pass
+
+    # 4. Fetch call logs for targeted users using indexed created_at column & lightweight tuples
+    if target_user_ids:
+        logs_query = db.query(
+            CallLog.user_id,
+            CallLog.phone_number,
+            CallLog.call_type,
+            CallLog.call_status,
+            CallLog.duration_seconds,
+            CallLog.created_at,
+            CallLog.timestamp
+        ).filter(CallLog.user_id.in_(target_user_ids))
+
+        if start_dt:
+            logs_query = logs_query.filter(CallLog.created_at >= start_dt)
+        if end_dt:
+            logs_query = logs_query.filter(CallLog.created_at <= end_dt)
+
+        raw_logs = logs_query.all()
+    else:
+        raw_logs = []
+
+    # 5. Fast memory calculation of call metrics matching DashboardScreen.tsx logic
+    warrior_logs = {str(uid): [] for uid in target_user_ids}
+    for log in raw_logs:
+        uid_str = str(log.user_id)
+        if uid_str in warrior_logs:
+            warrior_logs[uid_str].append(log)
+
+    def parse_log_dt(log):
+        if hasattr(log, "created_at") and log.created_at:
+            return log.created_at
+        ts_str = getattr(log, "timestamp", None)
+        if not ts_str:
+            return None
+        try:
+            if "T" in ts_str or "Z" in ts_str:
+                return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            parts = ts_str.strip().split()
+            if len(parts) >= 2:
+                dp = parts[0].split("-")
+                tp = parts[1].split(":")
+                if len(dp) >= 3 and len(tp) >= 2:
+                    month_map = {"jan":1, "feb":2, "mar":3, "apr":4, "may":5, "jun":6, "jul":7, "aug":8, "sep":9, "oct":10, "nov":11, "dec":12}
+                    m = month_map.get(dp[1].lower(), 1)
+                    return datetime(int(dp[2]), m, int(dp[0]), int(tp[0]), int(tp[1]))
+        except Exception:
+            pass
+        return None
+
+
+    def process_logs_set(logs):
+        incoming_calls = 0
+        incoming_success_calls = 0
+        incoming_talk_seconds = 0
+
+        outgoing_calls = 0
+        outgoing_success_calls = 0
+        outgoing_talk_seconds = 0
+
+        dropped_calls = 0
+        incoming_dropped_calls = 0
+        outgoing_dropped_calls = 0
+
+        total_talk_seconds = 0
+        total_success_calls = 0
+
+        missed_calls_list = []
+        outgoing_by_phone = {}
+
+        for c in logs:
+            type_lower = (c.call_type or "").strip().lower()
+            status_lower = (c.call_status or "").strip().lower()
+            duration = c.duration_seconds or 0
+
+            is_incoming = type_lower in ["incoming", "missed", "rejected", "blocked"]
+            is_outgoing = type_lower == "outgoing"
+
+            is_dropped = (status_lower in ["dropped", "rejected", "failed"]) or (0 <= duration <= 10)
+            is_missed = is_incoming and (status_lower in ["missed", "missed call"] or "missed" in status_lower or status_lower in ["rejected", "failed"] or duration == 0)
+            is_dialed = is_outgoing and (status_lower in ["missed", "missed call", "dialed", "dropped", "rejected", "failed"] or "missed" in status_lower or "dialed" in status_lower or duration == 0 or is_dropped)
+
+            is_success = (duration > 10) or (not is_dialed and not is_missed and not is_dropped and duration > 0)
+
+            if is_success:
+                total_success_calls += 1
+            if is_dropped:
+                dropped_calls += 1
+
+            if is_incoming:
+                incoming_calls += 1
+                incoming_talk_seconds += duration
+                if is_success:
+                    incoming_success_calls += 1
+                    if c.phone_number:
+                        outgoing_by_phone.setdefault(c.phone_number, []).append(c)
+                if is_dropped:
+                    incoming_dropped_calls += 1
+                if is_missed:
+                    missed_calls_list.append(c)
+            elif is_outgoing:
+                outgoing_calls += 1
+                outgoing_talk_seconds += duration
+                if is_success:
+                    outgoing_success_calls += 1
+                if is_dropped:
+                    outgoing_dropped_calls += 1
+                if c.phone_number:
+                    outgoing_by_phone.setdefault(c.phone_number, []).append(c)
+
+            if duration > 0 and not is_missed and status_lower != "failed":
+                total_talk_seconds += duration
+
+        total_missed = max(0, incoming_calls - incoming_success_calls)
+        total_calls_done = incoming_calls + outgoing_calls
+
+        # Sort outgoing calls per phone
+        for ph, plist in outgoing_by_phone.items():
+            plist.sort(key=lambda x: parse_log_dt(x) or datetime.min)
+
+        # De-duplicate missed calls by phone number (keeping the latest, which is first in descending order)
+        unique_missed_calls = []
+        seen_phones = set()
+        for mc in missed_calls_list:
+            phone = mc.phone_number
+            if not phone:
+                unique_missed_calls.append(mc)
+            else:
+                if phone not in seen_phones:
+                    seen_phones.add(phone)
+                    unique_missed_calls.append(mc)
+
+        total_resp_seconds = 0
+        responded_missed_count = 0
+        for mc in unique_missed_calls:
+            mc_dt = parse_log_dt(mc)
+            if not mc_dt:
+                continue
+            candidates = outgoing_by_phone.get(mc.phone_number, [])
+            for fc in candidates:
+                fc_dt = parse_log_dt(fc)
+                if fc_dt and fc_dt > mc_dt:
+                    total_resp_seconds += (fc_dt - mc_dt).total_seconds()
+                    responded_missed_count += 1
+                    break
+
+
+        missed_not_responded = max(0, len(unique_missed_calls) - responded_missed_count)
+        avg_resp_seconds = total_resp_seconds / responded_missed_count if responded_missed_count > 0 else 0.0
+
+        return {
+            "total_calls_done": total_calls_done,
+            "total_success_calls": total_success_calls,
+            "total_talk_seconds": total_talk_seconds,
+            "incoming_calls": incoming_calls,
+            "incoming_success_calls": incoming_success_calls,
+            "incoming_talk_seconds": incoming_talk_seconds,
+            "outgoing_calls": outgoing_calls,
+            "outgoing_success_calls": outgoing_success_calls,
+            "outgoing_talk_seconds": outgoing_talk_seconds,
+            "total_missed": total_missed,
+            "missed_not_responded": missed_not_responded,
+            "avg_response_time_seconds": avg_resp_seconds,
+            "dropped_calls": dropped_calls,
+            "incoming_dropped_calls": incoming_dropped_calls,
+            "outgoing_dropped_calls": outgoing_dropped_calls,
+        }
+
+    overall_stats = process_logs_set(raw_logs)
+
+    def format_hhmm(sec):
+        h = int(sec // 3600)
+        m = int((sec % 3600) // 60)
+        return f"{h:02d}:{m:02d}"
+
+    def format_mmss(sec):
+        m = int(sec // 60)
+        s = int(sec % 60)
+        return f"{m:02d}:{s:02d}"
+
+    def format_resp_time(sec):
+        if sec == 0:
+            return "-"
+        m = round(sec / 60)
+        if m < 60:
+            return f"{m}m"
+        h = m // 60
+        rem = m % 60
+        return f"{h}h {rem}m"
+
+    avg_tt_overall = overall_stats["total_talk_seconds"] / overall_stats["total_calls_done"] if overall_stats["total_calls_done"] > 0 else 0
+    avg_tt_in = overall_stats["incoming_talk_seconds"] / overall_stats["incoming_calls"] if overall_stats["incoming_calls"] > 0 else 0
+    avg_tt_out = overall_stats["outgoing_talk_seconds"] / overall_stats["outgoing_calls"] if overall_stats["outgoing_calls"] > 0 else 0
+
+    totals = DashboardCallMetrics(
+        total_calls_done=overall_stats["total_calls_done"],
+        total_success_calls=overall_stats["total_success_calls"],
+        total_talk_seconds=overall_stats["total_talk_seconds"],
+        total_talk_time_formatted=format_hhmm(overall_stats["total_talk_seconds"]),
+        avg_tt_call_formatted=format_mmss(avg_tt_overall),
+        incoming_calls=overall_stats["incoming_calls"],
+        incoming_success_calls=overall_stats["incoming_success_calls"],
+        incoming_talk_seconds=overall_stats["incoming_talk_seconds"],
+        incoming_talk_time_formatted=format_hhmm(overall_stats["incoming_talk_seconds"]),
+        avg_tt_incoming_formatted=format_mmss(avg_tt_in),
+        outgoing_calls=overall_stats["outgoing_calls"],
+        outgoing_success_calls=overall_stats["outgoing_success_calls"],
+        outgoing_talk_seconds=overall_stats["outgoing_talk_seconds"],
+        outgoing_talk_time_formatted=format_hhmm(overall_stats["outgoing_talk_seconds"]),
+        avg_tt_outgoing_formatted=format_mmss(avg_tt_out),
+        total_missed=overall_stats["total_missed"],
+        missed_not_responded=overall_stats["missed_not_responded"],
+        avg_response_time_seconds=round(overall_stats["avg_response_time_seconds"], 2),
+        avg_response_time_formatted=format_resp_time(overall_stats["avg_response_time_seconds"]),
+        dropped_calls=overall_stats["dropped_calls"],
+        incoming_dropped_calls=overall_stats["incoming_dropped_calls"],
+        outgoing_dropped_calls=overall_stats["outgoing_dropped_calls"],
+    )
+
+    # 6. Build Warrior Dashboard Summaries
+    warrior_summaries = []
+    for uid_str, u_logs in warrior_logs.items():
+        u = user_map.get(uid_str)
+        if not u:
+            continue
+        w_stats = process_logs_set(u_logs)
+        tot_calls = w_stats["total_calls_done"]
+        tot_secs = w_stats["total_talk_seconds"]
+        avg_secs = tot_secs / tot_calls if tot_calls > 0 else 0.0
+        tot_hours = round(tot_secs / 3600.0, 2)
+
+        warrior_summaries.append(
+            WarriorDashboardSummary(
+                warrior_id=u.id,
+                full_name=u.full_name,
+                email=u.email,
+                department=u.department,
+                role=u.role,
+                manager_id=u.manager_id,
+                is_tracking_enabled=u.is_tracking_active,
+                is_tracking_active=u.is_tracking_active,
+                total_calls=tot_calls,
+                success_calls=w_stats["total_success_calls"],
+                total_calling_seconds=tot_secs,
+                total_calling_hours=tot_hours,
+                average_call_seconds=round(avg_secs, 2),
+                incoming_calls_count=w_stats["incoming_calls"],
+                incoming_success_calls_count=w_stats["incoming_success_calls"],
+                outgoing_calls_count=w_stats["outgoing_calls"],
+                outgoing_success_calls_count=w_stats["outgoing_success_calls"],
+                total_missed_calls=w_stats["total_missed"],
+                missed_not_responded=w_stats["missed_not_responded"],
+                dropped_calls_count=w_stats["dropped_calls"],
+                avg_response_time_seconds=round(w_stats["avg_response_time_seconds"], 2),
+            )
+        )
+
+    # 7. Time Distribution Buckets (15-minute interval distribution for selected date scope)
+    interval_counts = {}
+    for h in range(24):
+        ampm = "PM" if h >= 12 else "AM"
+        dh = 12 if h % 12 == 0 else h % 12
+        for m in range(0, 60, 15):
+            t_key = f"{h}:{m}"
+            label = f"{dh}:{m:02d} {ampm}"
+            interval_counts[t_key] = {
+                "time_label": label,
+                "time_val": h + m / 60.0,
+                "total": 0,
+                "incoming": 0,
+                "outgoing": 0,
+                "missed": 0,
+                "dropped": 0
+            }
+
+    for log in raw_logs:
+        dt = parse_log_dt(log)
+        if not dt:
+            continue
+
+        h = dt.hour
+        m = (dt.minute // 15) * 15
+        t_key = f"{h}:{m}"
+
+        type_l = (log.call_type or "").strip().lower()
+        status_l = (log.call_status or "").strip().lower()
+        dur = log.duration_seconds or 0
+
+        is_inc = type_l in ["incoming", "missed", "rejected", "blocked"]
+        is_out = type_l == "outgoing"
+        is_drp = (status_l in ["dropped", "rejected", "failed"]) or (0 <= dur <= 10)
+        is_mis = is_inc and (status_l in ["missed", "missed call"] or "missed" in status_l or status_l in ["rejected", "failed"] or dur == 0)
+
+        if t_key in interval_counts:
+            interval_counts[t_key]["total"] += 1
+            if is_inc:
+                interval_counts[t_key]["incoming"] += 1
+            if is_out:
+                interval_counts[t_key]["outgoing"] += 1
+            if is_mis:
+                interval_counts[t_key]["missed"] += 1
+            if is_drp:
+                interval_counts[t_key]["dropped"] += 1
+
+    hourly_distribution = [
+        TimeDistributionBucket(**item) for item in sorted(interval_counts.values(), key=lambda x: x["time_val"])
+    ]
+
+    return DashboardMetricsResponse(
+        user_counts=user_counts,
+        totals=totals,
+        warrior_summaries=warrior_summaries,
+        hourly_distribution=hourly_distribution,
+        filter_start_date=start_date,
+        filter_end_date=end_date,
+    )
+
 
 @router.get("/reports/export/csv")
 def export_reports_csv(

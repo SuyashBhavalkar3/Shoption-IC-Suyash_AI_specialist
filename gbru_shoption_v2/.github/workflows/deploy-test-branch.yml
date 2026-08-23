@@ -1,0 +1,50 @@
+name: CI/CD Deploy to Azure via SSH
+
+on:
+  push:
+    branches:
+      - test
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "pnpm"
+ 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+        env:
+          CI: true
+
+      - name: Deploy on Azure server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AZURE_SSH_HOST }}
+          username: ${{ secrets.AZURE_SSH_USER }}
+          key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.AZURE_SSH_PORT }}
+          script: |
+            set -e
+            cd ${{ secrets.AZURE_APP_DIR }}
+            git fetch origin test
+            git reset --hard origin/test
+            pnpm install --frozen-lockfile
+            pnpm build
+            pm2 restart recom-next --update-env

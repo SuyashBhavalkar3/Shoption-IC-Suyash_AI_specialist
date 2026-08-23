@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 
 type CallRecord = {
   id: number;
-  user_id: string;
+  user_id?: string;
   agent_name: string | null;
   phone_number: string;
   call_type: string;
@@ -10,6 +10,8 @@ type CallRecord = {
   duration_seconds: number;
   created_at: string;
   timestamp?: string | null;
+  start_time_str?: string;
+  end_time_str?: string;
 };
 
 type PaginationMeta = {
@@ -26,7 +28,7 @@ type CallLogsPageProps = {
 export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) {
   // State variables matching URL parameters
   const [page, setPage] = useState<number>(1);
-  const [limit, setLimit] = useState<number>(50);
+  const [limit, setLimit] = useState<number>(100);
   const [range, setRange] = useState<string>("7days"); // Default preset
   const [searchInput, setSearchInput] = useState<string>("");
   const [search, setSearch] = useState<string>("");
@@ -37,7 +39,7 @@ export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) 
   const [logs, setLogs] = useState<CallRecord[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta>({
     page: 1,
-    limit: 50,
+    limit: 100,
     total: 0,
     totalPages: 0,
   });
@@ -63,7 +65,7 @@ export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) 
     const so = params.get("sortOrder");
 
     if (p) setPage(Math.max(1, parseInt(p) || 1));
-    if (l) setLimit(parseInt(l) || 50);
+    if (l) setLimit(parseInt(l) || 100);
     if (r) setRange(r);
     if (s) {
       setSearchInput(s);
@@ -99,6 +101,42 @@ export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) 
     return () => clearTimeout(delayDebounceFn);
   }, [searchInput]);
 
+  // Helper to construct start_date and end_date from range preset
+  const getDateRangeParams = (rangeVal: string) => {
+    const today = new Date();
+    const formatDate = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+
+    const end_date = formatDate(today);
+    let start_date = "";
+
+    if (rangeVal === "today") {
+      start_date = formatDate(today);
+    } else if (rangeVal === "7days") {
+      const d = new Date();
+      d.setDate(today.getDate() - 7);
+      start_date = formatDate(d);
+    } else if (rangeVal === "month") {
+      const d = new Date();
+      d.setDate(today.getDate() - 30);
+      start_date = formatDate(d);
+    } else if (rangeVal === "6months") {
+      const d = new Date();
+      d.setMonth(today.getMonth() - 6);
+      start_date = formatDate(d);
+    } else if (rangeVal === "1year") {
+      const d = new Date();
+      d.setFullYear(today.getFullYear() - 1);
+      start_date = formatDate(d);
+    }
+
+    return { start_date, end_date };
+  };
+
   // Fetch call logs from endpoint
   useEffect(() => {
     const fetchLogs = async () => {
@@ -111,10 +149,11 @@ export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) 
           headers["Authorization"] = `Bearer ${token}`;
         }
 
+        const { start_date, end_date } = getDateRangeParams(range);
         const res = await fetch(
-          `/api/call-logs?page=${page}&limit=${limit}&range=${range}&search=${encodeURIComponent(
+          `/api/team-logs?page=${page}&limit=${limit}&start_date=${start_date}&end_date=${end_date}&search=${encodeURIComponent(
             search
-          )}&sortBy=${sortBy}&sortOrder=${sortOrder}`,
+          )}`,
           { headers }
         );
 
@@ -126,11 +165,25 @@ export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) 
         }
 
         const payload = await res.json();
-        setLogs(payload.data || []);
+        const rawData = payload.data || [];
+        const normalizedData = rawData.map((row: any) => ({
+          id: row.id,
+          agent_name: row.caller_name || row.agent_name || "Unknown User",
+          phone_number: row.contact_number || row.phone_number || "-",
+          call_type: row.direction || row.call_type || "-",
+          call_status: row.status || row.call_status || "-",
+          duration_seconds: row.duration !== undefined ? row.duration : (row.duration_seconds || 0),
+          created_at: row.start_time || row.created_at,
+          timestamp: row.start_time || row.timestamp,
+          start_time_str: row.start_time,
+          end_time_str: row.end_time,
+        }));
+
+        setLogs(normalizedData);
         setPagination(
           payload.pagination || {
             page: 1,
-            limit: 50,
+            limit: 100,
             total: 0,
             totalPages: 0,
           }
@@ -144,7 +197,7 @@ export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) 
     };
 
     fetchLogs();
-  }, [page, limit, range, search, sortBy, sortOrder, refreshTrigger]);
+  }, [page, limit, range, search, refreshTrigger]);
 
   // Helper parsing & formatting functions
   const parseDbTimestamp = (tsStr: string): Date | null => {
@@ -608,12 +661,12 @@ export default function CallLogsPage({ refreshTrigger = 0 }: CallLogsPageProps) 
 
                       {/* Start Time */}
                       <td className="px-5 py-3.5 text-text-secondary/90 font-medium text-left text-xs whitespace-nowrap">
-                        {formatDateTime(startDate)}
+                        {row.start_time_str || formatDateTime(startDate)}
                       </td>
 
                       {/* End Time */}
                       <td className="px-5 py-3.5 text-text-secondary/70 font-medium text-left text-xs whitespace-nowrap">
-                        {formatDateTime(endDate)}
+                        {row.end_time_str || formatDateTime(endDate)}
                       </td>
 
                       {/* Duration */}

@@ -46,17 +46,11 @@ export default function Home() {
     }
   }, []);
 
-  // Poll for dashboard data when authenticated
+  // Fetch dashboard data once on initial mount/redirection when authenticated
   useEffect(() => {
     if (!isAuthenticated || !token) return;
 
     void loadDashboard(token);
-
-    const interval = setInterval(() => {
-      void loadDashboard(token);
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, [isAuthenticated, token]);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {

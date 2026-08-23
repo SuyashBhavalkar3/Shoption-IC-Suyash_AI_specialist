@@ -7,7 +7,9 @@ import android.provider.CallLog
 import android.text.format.DateFormat
 import android.util.Log
 import androidx.core.content.ContextCompat
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 
 /**
  * Syncs call logs from the Android system into the local SQLite database.
@@ -84,7 +86,7 @@ object CallLogSync {
                                         continue
                                     }
                                     val duration = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DURATION)).toInt()
-                                    val timestamp = DateFormat.format("dd-MMM-yyyy HH:mm", Date(dateMillis)).toString()
+                                    val timestamp = SimpleDateFormat("dd-MMM-yyyy HH:mm", Locale.US).format(Date(dateMillis))
 
                                     val rowId = db.insertCallLogFromSystem(
                                         phoneNumber = number,

@@ -1,0 +1,6 @@
+name: gbru_shoption_v2
+services:
+  web:
+    project: .
+    language: js
+    host: appservice

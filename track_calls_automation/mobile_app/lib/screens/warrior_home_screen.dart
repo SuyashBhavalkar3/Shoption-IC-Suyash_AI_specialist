@@ -264,7 +264,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
       'call_logs',
       where: 'user_id = ?',
       whereArgs: [userId],
-      orderBy: 'timestamp DESC',
+      orderBy: 'id DESC',
       limit: _sqliteLimit,
       offset: 0,
     );
@@ -283,7 +283,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
         'call_logs',
         where: 'user_id = ?',
         whereArgs: [userId],
-        orderBy: 'timestamp DESC',
+        orderBy: 'id DESC',
         limit: _sqliteLimit,
         offset: callLogs.length,
       );
@@ -325,7 +325,7 @@ class _WarriorHomeScreenState extends State<WarriorHomeScreen> with WidgetsBindi
             'call_logs',
             where: 'user_id = ?',
             whereArgs: [userId],
-            orderBy: 'timestamp DESC',
+            orderBy: 'id DESC',
             limit: _sqliteLimit,
             offset: callLogs.length,
           );
