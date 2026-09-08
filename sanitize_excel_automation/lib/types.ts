@@ -1,3 +1,5 @@
+export type SanitizationMode = 'crm' | 'wa';
+
 export interface RawLead {
   full_name?: string;
   phone_number?: string;
@@ -48,6 +50,11 @@ export interface SanitizedLead {
   'Coloumn 10 ': string;
 }
 
+export interface WACommunicationLead {
+  name: string;
+  phone: string;
+}
+
 export interface ProcessingLog {
   type: 'info' | 'success' | 'warning' | 'error';
   message: string;
@@ -72,6 +79,7 @@ export interface FileResult {
   id: string;             // unique key (timestamp + name)
   fileName: string;
   status: 'processing' | 'success' | 'error';
+  mode?: SanitizationMode;
   result?: ProcessingResult;
   error?: string;
 }

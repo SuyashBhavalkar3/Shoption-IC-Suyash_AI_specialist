@@ -184,3 +184,156 @@ export function processCSVData(
         }
     };
 }
+
+export const WA_SCHEMA_HEADERS = ['name', 'phone'];
+
+/** Process data in non-blocking async batches (yielding control to browser thread every 500 rows) */
+export async function processWADataAsync(
+    rawData: RawLead[],
+    headerMapping: Record<string, string>
+): Promise<ProcessingResult> {
+    const logs: ProcessingLog[] = [];
+    const processedData: string[][] = [];
+    const sortKeys: string[] = [];
+    let processedRows = 0;
+    let skippedRows = 0;
+    let failedRows = 0;
+
+    const timestamp = new Date().toLocaleTimeString();
+    logs.push({
+        type: 'info',
+        message: `Started WA Communication processing for ${rawData.length} rows with mapping: ${JSON.stringify(headerMapping)}`,
+        timestamp
+    });
+
+    const CHUNK_SIZE = 500;
+    for (let i = 0; i < rawData.length; i += CHUNK_SIZE) {
+        const chunk = rawData.slice(i, i + CHUNK_SIZE);
+        chunk.forEach((row, chunkIndex) => {
+            const index = i + chunkIndex;
+            try {
+                const values = Object.values(row).filter(v => v !== null && v !== undefined && v !== '');
+                if (values.length === 0) {
+                    skippedRows++;
+                    return;
+                }
+
+                const name = String(row[headerMapping['full_name']] || "").trim();
+                const rawPhone = String(row[headerMapping['phone_number']] || "");
+                const cleanedPhone = sanitizePhoneNumber(rawPhone);
+                const waPhone = cleanedPhone ? `91${cleanedPhone}` : "";
+
+                if (!name && !waPhone) {
+                    skippedRows++;
+                    return;
+                }
+
+                processedData.push([name, waPhone]);
+                sortKeys.push(name);
+                processedRows++;
+            } catch (error) {
+                failedRows++;
+                logs.push({
+                    type: 'error',
+                    message: `Error processing row ${index + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+            }
+        });
+
+        // Yield execution to browser main thread after every 500 rows so CSS animations and spinners remain fluid
+        if (i + CHUNK_SIZE < rawData.length) {
+            await new Promise((r) => setTimeout(r, 0));
+        }
+    }
+
+    logs.push({
+        type: 'success',
+        message: `Completed WA processing. ${processedRows} rows processed successfully.`,
+        timestamp: new Date().toLocaleTimeString()
+    });
+
+    return {
+        data: processedData,
+        sortKeys,
+        headers: WA_SCHEMA_HEADERS,
+        logs,
+        summary: {
+            totalRows: rawData.length,
+            processedRows,
+            skippedRows,
+            failedRows
+        }
+    };
+}
+
+export function processWAData(
+    rawData: RawLead[],
+    headerMapping: Record<string, string>
+): ProcessingResult {
+    const logs: ProcessingLog[] = [];
+    const processedData: string[][] = [];
+    const sortKeys: string[] = [];
+    let processedRows = 0;
+    let skippedRows = 0;
+    let failedRows = 0;
+
+    const timestamp = new Date().toLocaleTimeString();
+    logs.push({
+        type: 'info',
+        message: `Started WA Communication processing for ${rawData.length} rows with mapping: ${JSON.stringify(headerMapping)}`,
+        timestamp
+    });
+
+    rawData.forEach((row, index) => {
+        try {
+            const values = Object.values(row).filter(v => v !== null && v !== undefined && v !== '');
+            if (values.length === 0) {
+                skippedRows++;
+                return;
+            }
+
+            const name = String(row[headerMapping['full_name']] || "").trim();
+            const rawPhone = String(row[headerMapping['phone_number']] || "");
+            const cleanedPhone = sanitizePhoneNumber(rawPhone);
+            const waPhone = cleanedPhone ? `91${cleanedPhone}` : "";
+
+            if (!name && !waPhone) {
+                skippedRows++;
+                return;
+            }
+
+            processedData.push([name, waPhone]);
+            sortKeys.push(name);
+            processedRows++;
+        } catch (error) {
+            failedRows++;
+            logs.push({
+                type: 'error',
+                message: `Error processing row ${index + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                timestamp: new Date().toLocaleTimeString()
+            });
+        }
+    });
+
+    logs.push({
+        type: 'success',
+        message: `Completed WA processing. ${processedRows} rows processed successfully.`,
+        timestamp: new Date().toLocaleTimeString()
+    });
+
+    return {
+        data: processedData,
+        sortKeys,
+        headers: WA_SCHEMA_HEADERS,
+        logs,
+        summary: {
+            totalRows: rawData.length,
+            processedRows,
+            skippedRows,
+            failedRows
+        }
+    };
+}
+
+

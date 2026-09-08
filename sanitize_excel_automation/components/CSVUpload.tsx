@@ -3,8 +3,9 @@
 import React, { useState, useCallback } from 'react';
 import { Upload, Loader2, Files } from 'lucide-react';
 import Papa from 'papaparse';
-import { validateHeaders } from '@/lib/utils/sanitization';
-import { RawLead } from '@/lib/types';
+import * as XLSX from 'xlsx';
+import { validateHeaders, validateHeadersWA } from '@/lib/utils/sanitization';
+import { RawLead, SanitizationMode } from '@/lib/types';
 
 export interface ParsedFile {
     data: RawLead[];
@@ -16,16 +17,74 @@ interface CSVUploadProps {
     onFilesReady: (files: ParsedFile[]) => void;
     onError: (error: string) => void;
     isLoading: boolean;
+    mode?: SanitizationMode;
 }
 
-/** Parses a single CSV File into a ParsedFile object, or returns an error string. */
-function parseCSVFile(file: File): Promise<ParsedFile | { fileName: string; error: string }> {
-    return new Promise((resolve) => {
-        if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
-            resolve({ fileName: file.name, error: 'Not a valid CSV file.' });
-            return;
-        }
+/** Helper to check if file is CSV or Excel */
+function isSupportedFile(file: File): boolean {
+    const name = file.name.toLowerCase();
+    return name.endsWith('.csv') || name.endsWith('.xlsx') || name.endsWith('.xls');
+}
 
+/** Parses an Excel or CSV File into a ParsedFile object */
+async function parseUploadedFile(file: File, mode: SanitizationMode = 'crm'): Promise<ParsedFile | { fileName: string; error: string }> {
+    const name = file.name.toLowerCase();
+
+    if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+        try {
+            const buffer = await file.arrayBuffer();
+            const workbook = XLSX.read(buffer, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            if (!firstSheetName) {
+                return { fileName: file.name, error: 'Excel file contains no sheets.' };
+            }
+            const sheet = workbook.Sheets[firstSheetName];
+            const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: '' });
+
+            if (rows.length === 0) {
+                return { fileName: file.name, error: 'The Excel file is empty.' };
+            }
+
+            const headerValidator = mode === 'wa' ? validateHeadersWA : validateHeaders;
+            let headerRowIndex = -1;
+            let mapping: Record<string, string> = {};
+
+            for (let i = 0; i < Math.min(rows.length, 10); i++) {
+                const rowHeaders = (rows[i] || []).map((h) => String(h || ''));
+                const validation = headerValidator(rowHeaders);
+                if (validation.isValid) {
+                    headerRowIndex = i;
+                    mapping = validation.mapping;
+                    break;
+                }
+            }
+
+            if (headerRowIndex === -1) {
+                const missingText = mode === 'wa'
+                    ? 'Could not find Name or Phone columns (e.g. name, full_name, phone, mobile).'
+                    : 'Could not find mandatory columns (full_name, phone_number, campaign_id, platform).';
+                return { fileName: file.name, error: missingText };
+            }
+
+            const headers = (rows[headerRowIndex] || []).map((h) => String(h || ''));
+            const dataRows = rows.slice(headerRowIndex + 1).map((row) => {
+                const obj: RawLead = {};
+                headers.forEach((header, index) => {
+                    if (header) {
+                        obj[header] = row[index] !== undefined ? String(row[index]) : '';
+                    }
+                });
+                return obj;
+            });
+
+            return { data: dataRows, fileName: file.name, mapping };
+        } catch (err) {
+            return { fileName: file.name, error: `Excel read error: ${err instanceof Error ? err.message : 'Unknown error'}` };
+        }
+    }
+
+    // Default CSV handling
+    return new Promise((resolve) => {
         Papa.parse(file, {
             header: false,
             skipEmptyLines: true,
@@ -36,11 +95,12 @@ function parseCSVFile(file: File): Promise<ParsedFile | { fileName: string; erro
                     return;
                 }
 
+                const headerValidator = mode === 'wa' ? validateHeadersWA : validateHeaders;
                 let headerRowIndex = -1;
                 let mapping: Record<string, string> = {};
 
                 for (let i = 0; i < Math.min(rows.length, 10); i++) {
-                    const validation = validateHeaders(rows[i]);
+                    const validation = headerValidator(rows[i]);
                     if (validation.isValid) {
                         headerRowIndex = i;
                         mapping = validation.mapping;
@@ -49,10 +109,10 @@ function parseCSVFile(file: File): Promise<ParsedFile | { fileName: string; erro
                 }
 
                 if (headerRowIndex === -1) {
-                    resolve({
-                        fileName: file.name,
-                        error: 'Could not find mandatory columns (full_name, phone_number, campaign_id, platform).',
-                    });
+                    const missingText = mode === 'wa'
+                        ? 'Could not find Name or Phone columns (e.g. name, full_name, phone, mobile).'
+                        : 'Could not find mandatory columns (full_name, phone_number, campaign_id, platform).';
+                    resolve({ fileName: file.name, error: missingText });
                     return;
                 }
 
@@ -74,39 +134,50 @@ function parseCSVFile(file: File): Promise<ParsedFile | { fileName: string; erro
     });
 }
 
-export default function CSVUpload({ onFilesReady, onError, isLoading }: CSVUploadProps) {
+export default function CSVUpload({ onFilesReady, onError, isLoading, mode = 'crm' }: CSVUploadProps) {
     const [isDragging, setIsDragging] = useState(false);
     const [isParsing, setIsParsing] = useState(false);
 
     const processFiles = useCallback(
         async (files: File[]) => {
-            const csvFiles = files.filter(
-                (f) => f.type === 'text/csv' || f.name.endsWith('.csv')
-            );
+            const validFiles = files.filter(isSupportedFile);
 
-            if (csvFiles.length === 0) {
-                onError('No valid CSV files found. Please upload .csv files only.');
+            if (validFiles.length === 0) {
+                onError('No valid files found. Please upload .csv, .xlsx, or .xls files only.');
                 return;
             }
 
             setIsParsing(true);
-            const results = await Promise.all(csvFiles.map(parseCSVFile));
+            // Double requestAnimationFrame guarantees browser paints spinner overlay before parsing CPU work begins
+            requestAnimationFrame(() => {
+                requestAnimationFrame(async () => {
+                    try {
+                        const results: (ParsedFile | { fileName: string; error: string })[] = [];
+                        for (const f of validFiles) {
+                            const parsed = await parseUploadedFile(f, mode);
+                            results.push(parsed);
+                            // Yield to browser UI loop between files
+                            await new Promise((r) => setTimeout(r, 0));
+                        }
 
-            const errors = results.filter((r): r is { fileName: string; error: string } => 'error' in r);
-            const parsed = results.filter((r): r is ParsedFile => !('error' in r));
+                        const errors = results.filter((r): r is { fileName: string; error: string } => 'error' in r);
+                        const parsed = results.filter((r): r is ParsedFile => !('error' in r));
 
-            if (errors.length > 0) {
-                const errorMessages = errors.map((e) => `"${e.fileName}": ${e.error}`).join('\n');
-                onError(`${errors.length} file(s) failed:\n${errorMessages}`);
-            }
+                        if (errors.length > 0) {
+                            const errorMessages = errors.map((e) => `"${e.fileName}": ${e.error}`).join('\n');
+                            onError(`${errors.length} file(s) failed:\n${errorMessages}`);
+                        }
 
-            if (parsed.length > 0) {
-                onFilesReady(parsed);
-            }
-
-            setIsParsing(false);
+                        if (parsed.length > 0) {
+                            onFilesReady(parsed);
+                        }
+                    } finally {
+                        setIsParsing(false);
+                    }
+                });
+            });
         },
-        [onFilesReady, onError]
+        [onFilesReady, onError, mode]
     );
 
     const onDragOver = useCallback((e: React.DragEvent) => {
@@ -154,7 +225,7 @@ export default function CSVUpload({ onFilesReady, onError, isLoading }: CSVUploa
         >
             <input
                 type="file"
-                accept=".csv"
+                accept=".csv,.xlsx,.xls"
                 multiple
                 onChange={onFileChange}
                 disabled={busy}
@@ -164,13 +235,13 @@ export default function CSVUpload({ onFilesReady, onError, isLoading }: CSVUploa
             <div className="flex flex-col items-center justify-center space-y-4">
                 <div
                     className={`p-4 rounded-2xl transition-all duration-300 ${
-                        isDragging
+                        isDragging || busy
                             ? 'bg-card-bg text-primary-brand scale-110'
                             : 'bg-bg-base text-muted-text'
                     }`}
                 >
                     {busy ? (
-                        <Loader2 className="w-8 h-8 animate-spin" />
+                        <Loader2 className="w-10 h-10 animate-spin text-primary-brand" />
                     ) : isDragging ? (
                         <Files className="w-8 h-8" />
                     ) : (
@@ -179,11 +250,17 @@ export default function CSVUpload({ onFilesReady, onError, isLoading }: CSVUploa
                 </div>
 
                 <div className="text-center">
-                    <p className="text-lg font-semibold text-text-base">
-                        {busy ? 'Parsing files...' : 'Drag and drop your Meta lead CSVs'}
+                    <p className="text-lg font-semibold text-text-base flex items-center justify-center gap-2">
+                        {busy ? (
+                            <>
+                                <span>Processing large file(s)...</span>
+                            </>
+                        ) : (
+                            'Drag and drop your CSV or Excel files'
+                        )}
                     </p>
                     <p className="text-sm text-muted-text mt-1">
-                        Select one or multiple .csv files at once
+                        {busy ? 'Please wait while data is parsed and sanitized' : 'Select one or multiple .csv, .xlsx, or .xls files'}
                     </p>
                 </div>
 
@@ -196,3 +273,5 @@ export default function CSVUpload({ onFilesReady, onError, isLoading }: CSVUploa
         </div>
     );
 }
+
+

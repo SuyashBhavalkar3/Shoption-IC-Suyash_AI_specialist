@@ -3,14 +3,15 @@
 import React, { useState, useCallback } from 'react';
 import {
     Download, CheckCircle2, AlertCircle, RefreshCcw,
-    FileSpreadsheet, Activity, Loader2, ChevronDown, ChevronUp, FileX2, Files, Trash2
+    FileSpreadsheet, Activity, Loader2, ChevronDown, ChevronUp, FileX2, Files, Trash2, MessageSquare
 } from 'lucide-react';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import CSVUpload, { ParsedFile } from './CSVUpload';
 import LogConsole from './LogConsole';
 import DataPreview from './DataPreview';
-import { processCSVData, FIXED_SCHEMA_HEADERS } from '@/lib/utils/csv-processor';
-import { FileResult } from '@/lib/types';
+import { processCSVData, processWAData, processWADataAsync, FIXED_SCHEMA_HEADERS, WA_SCHEMA_HEADERS } from '@/lib/utils/csv-processor';
+import { FileResult, SanitizationMode } from '@/lib/types';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -18,9 +19,7 @@ function generateCSVBlob(result: NonNullable<FileResult['result']>): string {
     return Papa.unparse({ fields: result.headers, data: result.data });
 }
 
-function triggerDownload(csvString: string, filename: string) {
-    const csvWithBom = '\uFEFF' + csvString;
-    const blob = new Blob([csvWithBom], { type: 'text/csv;charset=utf-8;' });
+function triggerDownloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -30,6 +29,22 @@ function triggerDownload(csvString: string, filename: string) {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+}
+
+function triggerCSVDownload(csvString: string, filename: string) {
+    const csvWithBom = '\uFEFF' + csvString;
+    const blob = new Blob([csvWithBom], { type: 'text/csv;charset=utf-8;' });
+    triggerDownloadBlob(blob, filename);
+}
+
+function triggerExcelDownload(headers: string[], data: string[][], filename: string) {
+    const sheetData = [headers, ...data];
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sanitized Data');
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    triggerDownloadBlob(blob, filename);
 }
 
 function uniqueId(name: string) {
@@ -67,13 +82,22 @@ interface SourceFile {
 
 // ─── FileCard ────────────────────────────────────────────────────────────────
 
-function FileCard({ fr, onRemove }: { fr: FileResult; onRemove?: (id: string) => void }) {
+function FileCard({ fr, mode, onRemove }: { fr: FileResult; mode: SanitizationMode; onRemove?: (id: string) => void }) {
     const [open, setOpen] = useState(false);
 
-    const handleDownload = () => {
+    const handleDownloadCSV = () => {
         if (!fr.result) return;
         const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        triggerDownload(generateCSVBlob(fr.result), `sanitized_${fr.fileName}_${ts}.csv`);
+        const prefix = mode === 'wa' ? 'wa_sanitized' : 'sanitized';
+        triggerCSVDownload(generateCSVBlob(fr.result), `${prefix}_${fr.fileName}_${ts}.csv`);
+    };
+
+    const handleDownloadExcel = () => {
+        if (!fr.result) return;
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const prefix = mode === 'wa' ? 'wa_sanitized' : 'sanitized';
+        const cleanName = fr.fileName.replace(/\.[^/.]+$/, "");
+        triggerExcelDownload(fr.result.headers, fr.result.data, `${prefix}_${cleanName}_${ts}.xlsx`);
     };
 
     return (
@@ -113,13 +137,22 @@ function FileCard({ fr, onRemove }: { fr: FileResult; onRemove?: (id: string) =>
                                     {fr.result.summary.failedRows} failed
                                 </span>
                             )}
-                            <button
-                                onClick={handleDownload}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-brand text-bg-base text-xs font-bold rounded-xl hover:bg-primary-brand active:scale-95 transition-all"
-                            >
-                                <Download className="w-3.5 h-3.5" />
-                                Download
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleDownloadCSV}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-brand text-bg-base text-xs font-bold rounded-xl hover:bg-primary-brand active:scale-95 transition-all"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    CSV
+                                </button>
+                                <button
+                                    onClick={handleDownloadExcel}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-card-bg text-text-base border border-card-border text-xs font-bold rounded-xl hover:bg-bg-base active:scale-95 transition-all"
+                                >
+                                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                                    Excel (.xlsx)
+                                </button>
+                            </div>
                             <button
                                 onClick={() => setOpen((o) => !o)}
                                 className="p-1.5 text-muted-text hover:text-text-base bg-bg-base border border-card-border rounded-xl transition-all active:scale-95"
@@ -167,6 +200,7 @@ function FileCard({ fr, onRemove }: { fr: FileResult; onRemove?: (id: string) =>
 // ─── ProcessingDashboard ────────────────────────────────────────────────────
 
 export default function ProcessingDashboard() {
+    const [mode, setMode] = useState<SanitizationMode>('crm');
     const [fileResults, setFileResults] = useState<FileResult[]>([]);
     const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([]);
     const [globalError, setGlobalError] = useState<string | null>(null);
@@ -187,30 +221,46 @@ export default function ProcessingDashboard() {
     const failedRows = successResults.reduce((s, f) => s + (f.result?.summary.failedRows ?? 0), 0);
     const skippedOrFailedRows = skippedRows + failedRows;
 
-    // ── Handle multiple uploaded files ──
-    const reprocessAll = useCallback((files: SourceFile[], timeValue: string) => {
-        const results: FileResult[] = files.map((sf) => {
+    // ── Handle reprocess all uploaded files ──
+    const reprocessAll = useCallback(async (files: SourceFile[], timeValue: string, currentMode: SanitizationMode) => {
+        const results: FileResult[] = [];
+        for (const sf of files) {
             try {
-                const result = processCSVData(sf.data, sf.mapping, timeValue || null);
-                return {
+                const result = currentMode === 'wa'
+                    ? await processWADataAsync(sf.data, sf.mapping)
+                    : processCSVData(sf.data, sf.mapping, timeValue || null);
+
+                results.push({
                     id: sf.id,
                     fileName: sf.fileName,
                     status: 'success',
+                    mode: currentMode,
                     result
-                };
+                });
             } catch (err) {
-                return {
+                results.push({
                     id: sf.id,
                     fileName: sf.fileName,
                     status: 'error',
+                    mode: currentMode,
                     error: err instanceof Error ? err.message : 'Unexpected error',
-                };
+                });
             }
-        });
+            // Yield UI thread between files
+            await new Promise((r) => setTimeout(r, 0));
+        }
         setFileResults(results);
     }, []);
 
-    const handleFilesReady = useCallback((parsedFiles: ParsedFile[]) => {
+    const handleModeChange = (newMode: SanitizationMode) => {
+        if (newMode === mode) return;
+        setMode(newMode);
+        setSourceFiles([]);
+        setFileResults([]);
+        setGlobalError(null);
+    };
+
+    const handleFilesReady = useCallback(async (parsedFiles: ParsedFile[]) => {
         setGlobalError(null);
         const newlyAdded: SourceFile[] = parsedFiles.map((pf) => ({
             id: uniqueId(pf.fileName),
@@ -218,12 +268,25 @@ export default function ProcessingDashboard() {
             data: pf.data,
             mapping: pf.mapping,
         }));
-        setSourceFiles((prev) => {
-            const combined = [...prev, ...newlyAdded];
-            reprocessAll(combined, selectedTime);
-            return combined;
+
+        // Set processing placeholder first so spinner remains active
+        const placeholderResults: FileResult[] = newlyAdded.map((sf) => ({
+            id: sf.id,
+            fileName: sf.fileName,
+            status: 'processing',
+            mode
+        }));
+        setFileResults((prev) => [...prev, ...placeholderResults]);
+
+        // Double requestAnimationFrame ensures browser paints the loading state before running sanitization loop
+        requestAnimationFrame(() => {
+            requestAnimationFrame(async () => {
+                const combined = [...sourceFiles, ...newlyAdded];
+                setSourceFiles(combined);
+                await reprocessAll(combined, selectedTime, mode);
+            });
         });
-    }, [reprocessAll, selectedTime]);
+    }, [reprocessAll, selectedTime, mode, sourceFiles]);
 
     const handleRemoveFile = useCallback((id: string) => {
         setSourceFiles((prev) => {
@@ -242,13 +305,13 @@ export default function ProcessingDashboard() {
             setSelectedMeridiem(meridiem);
             setSelectedTime(nextTime);
             setTimeFilterEnabled(true);
-            reprocessAll(sourceFiles, nextTime);
+            reprocessAll(sourceFiles, nextTime, mode);
         },
-        [reprocessAll, sourceFiles]
+        [reprocessAll, sourceFiles, mode]
     );
 
-    // ── Download all files merged into one CSV ──
-    const handleDownloadAll = () => {
+    // ── Download all files merged into one CSV / Excel ──
+    const getCombinedData = () => {
         const combined = successResults.flatMap((f) =>
             f.result!.data.map((row, index) => ({
                 row,
@@ -256,15 +319,33 @@ export default function ProcessingDashboard() {
             }))
         );
 
-        if (combined.length === 0) return;
+        if (combined.length === 0) return null;
 
         combined.sort((a, b) =>
             a.sortKey.localeCompare(b.sortKey, undefined, { numeric: true, sensitivity: 'base' })
         );
 
-        const csv = Papa.unparse({ fields: FIXED_SCHEMA_HEADERS, data: combined.map((entry) => entry.row) });
+        const headers = mode === 'wa' ? WA_SCHEMA_HEADERS : FIXED_SCHEMA_HEADERS;
+        return { headers, rows: combined.map((entry) => entry.row) };
+    };
+
+    const handleDownloadAllCSV = () => {
+        const combined = getCombinedData();
+        if (!combined) return;
+
+        const csv = Papa.unparse({ fields: combined.headers, data: combined.rows });
         const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        triggerDownload(csv, `sanitized_all_${ts}.csv`);
+        const prefix = mode === 'wa' ? 'wa_sanitized_all' : 'sanitized_all';
+        triggerCSVDownload(csv, `${prefix}_${ts}.csv`);
+    };
+
+    const handleDownloadAllExcel = () => {
+        const combined = getCombinedData();
+        if (!combined) return;
+
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const prefix = mode === 'wa' ? 'wa_sanitized_all' : 'sanitized_all';
+        triggerExcelDownload(combined.headers, combined.rows, `${prefix}_${ts}.xlsx`);
     };
 
     const reset = () => {
@@ -284,10 +365,10 @@ export default function ProcessingDashboard() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-card-border pb-6">
                 <div>
                     <h1 className="text-3xl font-extrabold tracking-tight text-text-base">
-                        CRM CSV Sanitizer
+                        Data Sanitization Studio
                     </h1>
                     <p className="text-muted-text mt-1 text-sm font-medium">
-                        Production-safe lead data transformation tool
+                        Production-safe lead & WA communication data transformation tool
                     </p>
                 </div>
 
@@ -304,104 +385,144 @@ export default function ProcessingDashboard() {
                 )}
             </div>
 
+            {/* ── Mode Selection Tabs ── */}
+            <div className="flex items-center gap-3 p-1.5 bg-card-bg border border-card-border rounded-2xl w-fit">
+                <button
+                    onClick={() => handleModeChange('crm')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                        mode === 'crm'
+                            ? 'bg-primary-brand text-bg-base shadow-md'
+                            : 'text-muted-text hover:text-text-base hover:bg-bg-base'
+                    }`}
+                >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    CRM Lead Sanitization
+                </button>
+                <button
+                    onClick={() => handleModeChange('wa')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                        mode === 'wa'
+                            ? 'bg-primary-brand text-bg-base shadow-md'
+                            : 'text-muted-text hover:text-text-base hover:bg-bg-base'
+                    }`}
+                >
+                    <MessageSquare className="w-4 h-4" />
+                    WA Communication
+                </button>
+            </div>
+
+            {/* ── Mode Info Banner ── */}
+            <div className="p-4 bg-bg-base border border-card-border rounded-2xl text-xs text-muted-text">
+                {mode === 'crm' ? (
+                    <p><strong className="text-text-base">CRM Lead Sanitization Mode:</strong> Cleans full lead data into strict 37-column CRM schema, phone numbers (10 digits), campaign IDs, questions/answers, and created_time filtering.</p>
+                ) : (
+                    <p><strong className="text-text-base">WA Communication Mode:</strong> Extracts only <code className="bg-card-bg px-1.5 py-0.5 rounded text-text-base border border-card-border">name</code> and <code className="bg-card-bg px-1.5 py-0.5 rounded text-text-base border border-card-border">phone</code> columns with <code className="bg-card-bg px-1.5 py-0.5 rounded text-text-base border border-card-border">91</code> country code prefix (e.g. 919876543210). Supports CSV and Excel (.xlsx, .xls) files.</p>
+                )}
+            </div>
+
             {/* ── Upload Zone ── */}
             <CSVUpload
+                key={mode}
                 onFilesReady={handleFilesReady}
                 onError={setGlobalError}
                 isLoading={isProcessing}
+                mode={mode}
             />
 
-            <div className="bg-card-bg border border-card-border rounded-2xl p-4 md:p-5">
-                <div className="flex flex-col gap-4">
-                    <div className="min-w-0">
-                        <p className="text-sm font-semibold text-text-base">Time Filter (created_time)</p>
-                        <p className="text-xs text-muted-text mt-0.5">
-                            Select time only (inclusive). Example: `10:00` keeps leads from 10:00 onward.
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <label className="inline-flex items-center gap-2 text-sm text-text-base font-medium">
-                            <input
-                                type="checkbox"
-                                checked={timeFilterEnabled}
-                                onChange={(e) => {
-                                    const enabled = e.target.checked;
-                                    setTimeFilterEnabled(enabled);
-                                    if (!enabled) {
-                                        setSelectedTime('');
-                                        reprocessAll(sourceFiles, '');
-                                        return;
-                                    }
-                                    const nextTime = to24HourTime(selectedHour, selectedMinute, selectedMeridiem);
-                                    setSelectedTime(nextTime);
-                                    reprocessAll(sourceFiles, nextTime);
-                                }}
-                                className="h-4 w-4 rounded border-card-border"
-                            />
-                            Enable time filter
-                        </label>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <select
-                            value={selectedHour}
-                            disabled={!timeFilterEnabled}
-                            onChange={(e) => applyClockTime(e.target.value, selectedMinute, selectedMeridiem)}
-                            className="px-3 py-2 rounded-xl border border-card-border bg-bg-base text-text-base text-sm disabled:opacity-50"
-                        >
-                            {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
-                                <option key={h} value={h}>{h}</option>
-                            ))}
-                        </select>
-                        <span className="text-muted-text font-semibold">:</span>
-                        <select
-                            value={selectedMinute}
-                            disabled={!timeFilterEnabled}
-                            onChange={(e) => applyClockTime(selectedHour, e.target.value, selectedMeridiem)}
-                            className="px-3 py-2 rounded-xl border border-card-border bg-bg-base text-text-base text-sm disabled:opacity-50"
-                        >
-                            {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0')).map((m) => (
-                                <option key={m} value={m}>{m}</option>
-                            ))}
-                        </select>
-                        <select
-                            value={selectedMeridiem}
-                            disabled={!timeFilterEnabled}
-                            onChange={(e) => applyClockTime(selectedHour, selectedMinute, e.target.value as 'AM' | 'PM')}
-                            className="px-3 py-2 rounded-xl border border-card-border bg-bg-base text-text-base text-sm disabled:opacity-50"
-                        >
-                            <option value="AM">AM</option>
-                            <option value="PM">PM</option>
-                        </select>
-                        <button
-                            onClick={() => {
-                                setSelectedTime('');
-                                setTimeFilterEnabled(false);
-                                reprocessAll(sourceFiles, '');
-                            }}
-                            className="px-3 py-2 rounded-xl border border-card-border text-sm font-semibold text-muted-text hover:text-text-base hover:bg-bg-base transition-all"
-                        >
-                            None (All)
-                        </button>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        {['09:00', '10:00', '12:00', '15:00', '18:00'].map((preset) => (
-                            <button
-                                key={preset}
-                                onClick={() => {
-                                    const parsed = from24HourTime(preset);
-                                    applyClockTime(parsed.hour12, parsed.minute, parsed.meridiem);
-                                }}
-                                className="px-2.5 py-1.5 rounded-lg border border-card-border text-xs font-semibold text-muted-text hover:text-text-base hover:bg-bg-base transition-all"
+            {/* ── Time Filter (CRM Mode Only) ── */}
+            {mode === 'crm' && (
+                <div className="bg-card-bg border border-card-border rounded-2xl p-4 md:p-5">
+                    <div className="flex flex-col gap-4">
+                        <div className="min-w-0">
+                            <p className="text-sm font-semibold text-text-base">Time Filter (created_time)</p>
+                            <p className="text-xs text-muted-text mt-0.5">
+                                Select time only (inclusive). Example: `10:00` keeps leads from 10:00 onward.
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <label className="inline-flex items-center gap-2 text-sm text-text-base font-medium">
+                                <input
+                                    type="checkbox"
+                                    checked={timeFilterEnabled}
+                                    onChange={(e) => {
+                                        const enabled = e.target.checked;
+                                        setTimeFilterEnabled(enabled);
+                                        if (!enabled) {
+                                            setSelectedTime('');
+                                            reprocessAll(sourceFiles, '', mode);
+                                            return;
+                                        }
+                                        const nextTime = to24HourTime(selectedHour, selectedMinute, selectedMeridiem);
+                                        setSelectedTime(nextTime);
+                                        reprocessAll(sourceFiles, nextTime, mode);
+                                    }}
+                                    className="h-4 w-4 rounded border-card-border"
+                                />
+                                Enable time filter
+                            </label>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <select
+                                value={selectedHour}
+                                disabled={!timeFilterEnabled}
+                                onChange={(e) => applyClockTime(e.target.value, selectedMinute, selectedMeridiem)}
+                                className="px-3 py-2 rounded-xl border border-card-border bg-bg-base text-text-base text-sm disabled:opacity-50"
                             >
-                                {preset}
+                                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((h) => (
+                                    <option key={h} value={h}>{h}</option>
+                                ))}
+                            </select>
+                            <span className="text-muted-text font-semibold">:</span>
+                            <select
+                                value={selectedMinute}
+                                disabled={!timeFilterEnabled}
+                                onChange={(e) => applyClockTime(selectedHour, e.target.value, selectedMeridiem)}
+                                className="px-3 py-2 rounded-xl border border-card-border bg-bg-base text-text-base text-sm disabled:opacity-50"
+                            >
+                                {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0')).map((m) => (
+                                    <option key={m} value={m}>{m}</option>
+                                ))}
+                            </select>
+                            <select
+                                value={selectedMeridiem}
+                                disabled={!timeFilterEnabled}
+                                onChange={(e) => applyClockTime(selectedHour, selectedMinute, e.target.value as 'AM' | 'PM')}
+                                className="px-3 py-2 rounded-xl border border-card-border bg-bg-base text-text-base text-sm disabled:opacity-50"
+                            >
+                                <option value="AM">AM</option>
+                                <option value="PM">PM</option>
+                            </select>
+                            <button
+                                onClick={() => {
+                                    setSelectedTime('');
+                                    setTimeFilterEnabled(false);
+                                    reprocessAll(sourceFiles, '', mode);
+                                }}
+                                className="px-3 py-2 rounded-xl border border-card-border text-sm font-semibold text-muted-text hover:text-text-base hover:bg-bg-base transition-all"
+                            >
+                                None (All)
                             </button>
-                        ))}
-                        {selectedTime && timeFilterEnabled && (
-                            <span className="text-xs text-muted-text">Active: {selectedTime}</span>
-                        )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            {['09:00', '10:00', '12:00', '15:00', '18:00'].map((preset) => (
+                                <button
+                                    key={preset}
+                                    onClick={() => {
+                                        const parsed = from24HourTime(preset);
+                                        applyClockTime(parsed.hour12, parsed.minute, parsed.meridiem);
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-lg border border-card-border text-xs font-semibold text-muted-text hover:text-text-base hover:bg-bg-base transition-all"
+                                >
+                                    {preset}
+                                </button>
+                            ))}
+                            {selectedTime && timeFilterEnabled && (
+                                <span className="text-xs text-muted-text">Active: {selectedTime}</span>
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             {/* ── Global Error ── */}
             {globalError && (
@@ -434,19 +555,27 @@ export default function ProcessingDashboard() {
             {hasResults && (
                 <div className="space-y-4">
                     {successResults.length > 1 && (
-                        <div className="flex justify-start">
+                        <div className="flex items-center gap-3 flex-wrap">
                             <button
-                                onClick={handleDownloadAll}
+                                onClick={handleDownloadAllCSV}
                                 disabled={isProcessing}
                                 className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-bg-base bg-primary-brand hover:bg-primary-brand rounded-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <Files className="w-4 h-4" />
-                                Download Combined Sanitized
+                                Download Combined CSV
+                            </button>
+                            <button
+                                onClick={handleDownloadAllExcel}
+                                disabled={isProcessing}
+                                className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-text-base bg-card-bg border border-card-border hover:bg-bg-base rounded-xl transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <FileSpreadsheet className="w-4 h-4" />
+                                Download Combined Excel (.xlsx)
                             </button>
                         </div>
                     )}
                     {fileResults.map((fr) => (
-                        <FileCard key={fr.id} fr={fr} onRemove={handleRemoveFile} />
+                        <FileCard key={fr.id} fr={fr} mode={mode} onRemove={handleRemoveFile} />
                     ))}
                 </div>
             )}
@@ -455,9 +584,9 @@ export default function ProcessingDashboard() {
             {!hasResults && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
                     {[
-                        { title: 'Strict Schema', desc: 'Maintains 100% fixed column order and naming for CRM compatibility.', icon: FileSpreadsheet },
-                        { title: 'Safe Sanitization', desc: 'Predictable cleaning for phone numbers and campaign IDs.', icon: CheckCircle2 },
-                        { title: 'Real-time Logs', desc: 'Detailed processing logs and validation error reporting per file.', icon: Activity },
+                        { title: mode === 'crm' ? 'Strict CRM Schema' : 'Minimal WA Schema', desc: mode === 'crm' ? 'Maintains 100% fixed column order and naming for CRM compatibility.' : 'Extracts strictly "name" and "phone" with 91 prefix.', icon: FileSpreadsheet },
+                        { title: 'Safe Sanitization', desc: 'Predictable cleaning for phone numbers (extracts 10 digits accurately).', icon: CheckCircle2 },
+                        { title: 'CSV & Excel Export', desc: 'Download sanitized outputs instantly in CSV or Excel (.xlsx) format.', icon: Activity },
                     ].map((feature, i) => (
                         <div
                             key={i}
@@ -475,3 +604,4 @@ export default function ProcessingDashboard() {
         </div>
     );
 }
+
