@@ -38,8 +38,26 @@ function triggerCSVDownload(csvString: string, filename: string) {
 }
 
 function triggerExcelDownload(headers: string[], data: string[][], filename: string) {
-    const sheetData = [headers, ...data];
-    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+    // Strip CSV formula wrappers like `="919876543210"` so Excel stores them as explicit text cells without scientific compression
+    const cleanedData = data.map(row =>
+        row.map(cell => {
+            const match = String(cell).match(/^="([^"]+)"$/);
+            return match ? match[1] : cell;
+        })
+    );
+    const sheetData = [headers, ...cleanedData];
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData, { cellDates: false });
+
+    // Explicitly set cell type to 's' (string) for all phone number cells so Excel treats them strictly as text
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+    for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: 1 }); // Column 1 is 'phone'
+        if (worksheet[cellAddress]) {
+            worksheet[cellAddress].t = 's'; // Force string type
+            worksheet[cellAddress].z = '@'; // Explicit text cell format
+        }
+    }
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Sanitized Data');
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });

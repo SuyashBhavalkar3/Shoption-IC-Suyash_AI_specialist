@@ -221,7 +221,7 @@ export async function processWADataAsync(
                 const name = String(row[headerMapping['full_name']] || "").trim();
                 const rawPhone = String(row[headerMapping['phone_number']] || "");
                 const cleanedPhone = sanitizePhoneNumber(rawPhone);
-                const waPhone = cleanedPhone ? `91${cleanedPhone}` : "";
+                const waPhone = cleanedPhone ? `="91${cleanedPhone}"` : "";
 
                 if (!name && !waPhone) {
                     skippedRows++;
@@ -296,7 +296,7 @@ export function processWAData(
             const name = String(row[headerMapping['full_name']] || "").trim();
             const rawPhone = String(row[headerMapping['phone_number']] || "");
             const cleanedPhone = sanitizePhoneNumber(rawPhone);
-            const waPhone = cleanedPhone ? `91${cleanedPhone}` : "";
+            const waPhone = cleanedPhone ? `="91${cleanedPhone}"` : "";
 
             if (!name && !waPhone) {
                 skippedRows++;
