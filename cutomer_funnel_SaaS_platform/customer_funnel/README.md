@@ -1,36 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Analytics Platform MVP
 
-## Getting Started
+A lightweight full-stack analytics platform for tracking user events and visualizing funnel conversion.
 
-First, run the development server:
+## What’s included
+
+- FastAPI backend with SQLAlchemy and PostgreSQL
+- Pydantic request/response validation
+- Alembic migrations and sample seed data
+- React + Vite + TypeScript dashboard
+- Tailwind CSS styling and Recharts funnel visualization
+- Standalone browser SDK for client-side event tracking
+
+## Project structure
+
+- `backend/` FastAPI API, models, services, Alembic migrations
+- `frontend/` dashboard app
+- `sdk/` standalone JavaScript analytics SDK
+- `docs/` API, tracking plan, and architecture notes
+
+## Local setup
+
+### 1. Start PostgreSQL
+
+Use the included Docker Compose file or your own local PostgreSQL instance.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up -d db
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Backend
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+alembic upgrade head
+python -m app.utils.seed
+uvicorn app.main:app --reload --port 8000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Frontend
 
-## Learn More
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+The dashboard will be available at `http://localhost:5173`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 4. SDK usage
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```html
+<script type="module">
+  import Analytics from './sdk/src/analytics.js';
 
-## Deploy on Vercel
+  Analytics.init({
+    apiKey: 'pk_live_bcd39b8924457c7be39983e0117dd57f',
+    endpoint: 'http://localhost:8000',
+  });
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+  Analytics.track('product_view', { product_id: 'P001' });
+</script>
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## API highlights
+
+- `POST /api/events/track`
+- `GET /api/events`
+- `GET /api/analytics/funnel`
+- `GET /api/analytics/overview`
+
+## Notes
+
+- The backend auto-creates tables on startup for local development.
+- Use Alembic for controlled schema changes.
+- The SDK stores an anonymous ID in `localStorage` and fails closed on network errors.

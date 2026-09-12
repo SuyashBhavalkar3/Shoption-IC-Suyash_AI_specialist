@@ -26,9 +26,14 @@ class CallReceiver : BroadcastReceiver() {
                 Log.d(tag, "PHONE_STATE_CHANGED state=$state")
 
                 when (state) {
-                    TelephonyManager.EXTRA_STATE_RINGING,
+                    TelephonyManager.EXTRA_STATE_RINGING -> {
+                        wasInCallSession = true
+                        com.shoption.calltracker.telecom.CallManager.instance.updateTelephonyState(com.shoption.calltracker.telecom.CallState.RINGING)
+                        sendCallStateUpdate(context, true)
+                    }
                     TelephonyManager.EXTRA_STATE_OFFHOOK -> {
                         wasInCallSession = true
+                        com.shoption.calltracker.telecom.CallManager.instance.updateTelephonyState(com.shoption.calltracker.telecom.CallState.CONNECTED)
                         sendCallStateUpdate(context, true)
                     }
                     TelephonyManager.EXTRA_STATE_IDLE -> {
@@ -37,6 +42,7 @@ class CallReceiver : BroadcastReceiver() {
                             CallLogSync.syncLatest(context)
                         }
                         wasInCallSession = false
+                        com.shoption.calltracker.telecom.CallManager.instance.updateTelephonyState(com.shoption.calltracker.telecom.CallState.DISCONNECTED)
                         sendCallStateUpdate(context, false)
                     }
                 }

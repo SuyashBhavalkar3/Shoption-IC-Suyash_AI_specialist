@@ -8,6 +8,7 @@ import LoginPrompt from "./LoginPrompt";
 import PaymentOptionModal from "./PaymentOptionModal";
 
 import { getMobileNo } from "@/utils/cartUtils";
+import { trackEvent } from "@/utils/analytics";
 
 function AllProductsContent() {
   const [productsList, setProductsList] = useState<any[]>([]);
@@ -87,6 +88,13 @@ function AllProductsContent() {
   }, [searchQuery]);
 
   const handleAddToCart = (product: any) => {
+    trackEvent('catalog_option_selected', {
+      item_code: product.item_code,
+      item_name: product.item_name,
+      price: product.price,
+      brand: product.brand,
+      source: 'all_products',
+    });
     setSelectedProduct(product);
     setShowPaymentModal(true);
   };

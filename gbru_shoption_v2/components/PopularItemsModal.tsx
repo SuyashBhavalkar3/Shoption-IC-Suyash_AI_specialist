@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getMobileNo } from "@/utils/cartUtils";
+import { trackEvent } from "@/utils/analytics";
 
 export default function PopularItemsModal() {
   const router = useRouter();
@@ -157,6 +158,12 @@ export default function PopularItemsModal() {
 
       const resJson = await res.json();
       if (resJson.message?.status || resJson.success) {
+        trackEvent('add_to_cart', {
+          item_code: item.item_code,
+          item_name: item.item_name,
+          quantity: item.moq || 1,
+          source: 'popular_recommendations_modal',
+        });
         setAddedItemsState((prev) => ({ ...prev, [item.item_code]: true }));
         window.dispatchEvent(new Event("cartUpdate"));
         setSelectedItemForPayment(null);

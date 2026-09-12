@@ -3,6 +3,9 @@ import Image from 'next/image';
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { trackEvent } from '@/utils/analytics';
+
+import { trackMetaEvent } from '@/utils/metaTracker';
 
 const Login = () => {
   const [mobileNumber, setMobileNumber] = useState('');
@@ -19,6 +22,8 @@ const Login = () => {
       return;
     }
     
+    trackEvent('mobile_number_entered', { mobile_no: mobileNumber, source: 'login_form' }, { customer_phone: mobileNumber });
+
     setLoading(true);
     try {
       const response = await fetch('/api/send-otp', {
@@ -32,6 +37,9 @@ const Login = () => {
       const data = await response.json();
       
       if (data.message?.status) {
+        // Track Meta Event on Mobile Number entered & OTP sent
+        trackMetaEvent('MobileNumberEntered', { status: 'otp_sent' }, { phone: mobileNumber });
+
         // Redirect to OTP page immediately
         router.push(`/otp?mobile_no=${mobileNumber}&txn_id=${data.message.txn_id}`);
       } else {

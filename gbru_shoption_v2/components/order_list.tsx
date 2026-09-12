@@ -6,6 +6,7 @@ import Image from "next/image";
 import Navbar from "./Navbar";
 import { Package, MapPin, Banknote, Bell, Headphones, Phone, CreditCard, ChevronLeft, ChevronRight, Calendar, BadgeCheck } from "lucide-react";
 import Footer from "./Footer";
+import { trackMetaEvent } from "@/utils/metaTracker";
 
 interface Order {
   order_id: string;
@@ -325,6 +326,14 @@ export default function OrderList() {
         hidden.name = "token";
         hidden.value = data.token;
         form.appendChild(hidden);
+
+        // Track Meta Purchase event right when starting payment on PayU
+        trackMetaEvent("Purchase", {
+          order_id: orderId,
+          value: amount,
+          currency: "INR",
+          payment_method: "PayU",
+        }, { phone: mobile_no, email });
 
         document.body.appendChild(form);
         form.submit();

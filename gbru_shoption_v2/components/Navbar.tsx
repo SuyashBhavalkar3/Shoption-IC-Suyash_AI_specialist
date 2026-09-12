@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import SearchBar from "./SearchBar";
 import ProfilePop from "./profile_pop";
+import { trackEvent } from "@/utils/analytics";
 
 export default function Navbar() {
   const router = useRouter();
@@ -529,6 +530,7 @@ export default function Navbar() {
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         onLogout={() => {
+          trackEvent('logout');
           localStorage.removeItem("gbru_user");
           localStorage.removeItem("mobile_no");
           localStorage.removeItem("gbru_applied_coupon");

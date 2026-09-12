@@ -25,7 +25,7 @@ export default function HelpSupportBanner() {
 
           <div className="flex flex-wrap items-center gap-4">
             <a
-              href="tel:+919226514174"
+              href={`tel:${(process.env.NEXT_PUBLIC_SUPPORT_PHONE || "+919226514174").replace(/[^\d+]/g, "")}`}
               className="flex items-center gap-2 bg-[#006B21] hover:bg-[#005a1b] transition-colors text-white font-bold py-3.5 px-6 rounded-full text-base shadow-md"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

@@ -8,6 +8,8 @@ import { useToast } from "@/components/ToastContext";
 import Navbar from "@/components/Navbar";
 import { getPlaceNames } from "@/utils/addressUtils";
 import { getMobileNo } from "@/utils/cartUtils";
+import { trackMetaEvent } from "@/utils/metaTracker";
+import { trackEvent } from "@/utils/analytics";
 
 function SearchableDropdown<T>({
   label,
@@ -287,7 +289,7 @@ export default function Checkout() {
             }
           }
         } catch (e) {
-          
+
         }
 
         const api_key = user.key_details?.api_key || user.api_key;
@@ -302,11 +304,11 @@ export default function Checkout() {
 
         if (res.ok) {
           const json = await res.json();
-          
+
           if (json.message?.status && Array.isArray(json.message?.data)) {
             // Intercept: If shipping address list is empty, open the add address form inline
             if (json.message.data.length === 0) {
-              
+
               setIsAddingAddress(true);
               setIsAddressSaved(false);
             }
@@ -316,11 +318,11 @@ export default function Checkout() {
             const primaryIdx = json.message.data.findIndex((a: any) => a.is_primary === 1);
             if (primaryIdx !== -1) setSelectedAddressIndex(primaryIdx);
           } else {
-            
+
             setIsAddingAddress(true);
           }
         } else {
-          
+
           setIsAddingAddress(true);
         }
 
@@ -337,7 +339,7 @@ export default function Checkout() {
           try {
             checkoutJson = JSON.parse(text_checkoutJson);
           } catch (e) {
-            
+
             checkoutJson = { message: { status: false, message: "Invalid JSON response" }, error: "Invalid JSON response" };
           }
           if (checkoutJson.message?.status && checkoutJson.message.data) {
@@ -407,10 +409,19 @@ export default function Checkout() {
 
             // Immediately load Proceed details
             await fetchProceedData(checkoutJson.message.data.items);
+
+            // Track Meta InitiateCheckout event
+            const totalCheckoutValue = checkoutJson.message.data.items.reduce((sum: number, i: any) => sum + (Number(i.amount) || ((i.price || i.rate || 0) * (i.quantity || 1))), 0);
+            trackMetaEvent("InitiateCheckout", {
+              content_ids: checkoutJson.message.data.items.map((i: any) => i.item),
+              num_items: checkoutJson.message.data.items.length,
+              value: totalCheckoutValue,
+              currency: "INR",
+            }, { phone: checkoutMobile });
           }
         }
       } catch (e) {
-        
+
         setIsAddingAddress(true);
       } finally {
         setLoadingAddresses(false);
@@ -430,7 +441,7 @@ export default function Checkout() {
           try {
             json = JSON.parse(text_json);
           } catch (e) {
-            
+
             json = { message: { status: false, message: "Invalid JSON response" }, error: "Invalid JSON response" };
           }
           if (json.message?.status && Array.isArray(json.message?.data)) {
@@ -438,7 +449,7 @@ export default function Checkout() {
           }
         }
       } catch (e) {
-        
+
       }
     }
 
@@ -479,7 +490,7 @@ export default function Checkout() {
           try {
             json = JSON.parse(text_json);
           } catch (e) {
-            
+
             json = { message: { status: false, message: "Invalid JSON response" }, error: "Invalid JSON response" };
           }
           if (json.message?.status && Array.isArray(json.message?.data)) {
@@ -487,7 +498,7 @@ export default function Checkout() {
           }
         }
       } catch (e) {
-        
+
       }
     }
     fetchDistricts();
@@ -512,7 +523,7 @@ export default function Checkout() {
           try {
             json = JSON.parse(text_json);
           } catch (e) {
-            
+
             json = { message: { status: false, message: "Invalid JSON response" }, error: "Invalid JSON response" };
           }
           if (json.message?.status && Array.isArray(json.message?.data)) {
@@ -520,7 +531,7 @@ export default function Checkout() {
           }
         }
       } catch (e) {
-        
+
       }
     }
     fetchTahsils();
@@ -553,7 +564,7 @@ export default function Checkout() {
           try {
             json = JSON.parse(text_json);
           } catch (e) {
-            
+
             json = { message: { status: false, message: "Invalid JSON response" }, error: "Invalid JSON response" };
           }
           if (json.message?.status && Array.isArray(json.message?.data)) {
@@ -561,7 +572,7 @@ export default function Checkout() {
           }
         }
       } catch (e) {
-        
+
       }
     }
     fetchMarketplaces();
@@ -619,7 +630,7 @@ export default function Checkout() {
       try {
         json = JSON.parse(text_json);
       } catch (e) {
-        
+
         json = { message: { status: false, message: "Invalid JSON response" }, error: "Invalid JSON response" };
       }
       if (!res.ok || !json.message?.status) {
@@ -646,7 +657,7 @@ export default function Checkout() {
         showToast(errorMsg, "error");
       }
     } catch (e) {
-      
+
       // Revert optimistic update
       setSavedAddresses(previousAddresses);
       setSelectedAddressIndex(previousIndex);
@@ -686,7 +697,7 @@ export default function Checkout() {
       try {
         json = JSON.parse(text_json);
       } catch (e) {
-        
+
         json = { message: { status: false, message: "Invalid JSON response" }, error: "Invalid JSON response" };
       }
       if (!res.ok || !json.message?.status) {
@@ -708,7 +719,7 @@ export default function Checkout() {
         showToast(errorMsg, "error");
       }
     } catch (e) {
-      
+
       // Revert optimistic update
       setSavedAddresses(previousAddresses);
       showToast("Error setting primary address", "error");
@@ -773,11 +784,18 @@ export default function Checkout() {
       try {
         json = JSON.parse(text_json);
       } catch (e) {
-        
+
         json = { message: { status: false, message: "Invalid JSON response" }, error: "Invalid JSON response" };
       }
       if (res.ok && json.message?.status) {
         const returnedAddress = json.message.data;
+        trackEvent('shipping_address_added', {
+          city: selectedTahsil?.name || formData.city,
+          district: selectedDistrict?.name || formData.district,
+          state: formData.state,
+          pincode: formData.pin,
+          is_update: !!editingAddressName,
+        });
         if (editingAddressName) {
           const updatedAddresses = savedAddresses.map(a =>
             a.name === editingAddressName ? returnedAddress : a
@@ -811,14 +829,14 @@ export default function Checkout() {
               }
             }
           } catch (e) {
-            
+
           }
         }
 
         showAlert(errorMsg, "Error Saving Address");
       }
     } catch (e) {
-      
+
       showToast("Error saving address", "error");
     } finally {
       setIsSavingAddress(false);
@@ -858,7 +876,7 @@ export default function Checkout() {
     if (!ambassadorCode) return;
     setAmbassadorError("");
     setAmbassadorApplied(false);
-    
+
     try {
       const userStr = localStorage.getItem("gbru_user");
       if (!userStr) {
@@ -879,7 +897,7 @@ export default function Checkout() {
       });
 
       const data = await res.json();
-      
+
       if (data?.message?.status) {
         setAmbassadorApplied(true);
         showToast(data.message.message || "Brand Ambassador Code Applied!", "success");
@@ -902,6 +920,12 @@ export default function Checkout() {
   };
 
   const handleSelectPaymentMode = (mode: "full" | "booking") => {
+    trackEvent('payment_method_selected', {
+      payment_type: mode === "full" ? "Full Payment" : "Cash On Delivery",
+      amount: mode === "full"
+        ? (proceedData?.payment_summary?.full_payment?.payable_amount || total)
+        : (defaultProceedData?.payment_summary?.cash_on_delivery?.pay_now || proceedData?.payment_summary?.cash_on_delivery?.pay_now || 0),
+    });
     setPaymentMode(mode);
   };
 
@@ -956,10 +980,17 @@ export default function Checkout() {
       try {
         data = JSON.parse(text_data);
       } catch (e) {
-        
+
         data = { message: { status: false, message: "Invalid JSON response" }, error: "Invalid JSON response" };
       }
       if (data.status && data.token && data.actionUrl) {
+        trackEvent('payment_initiated', {
+          payment_type,
+          transaction_amount,
+          item_count: formattedItems.length,
+          items: formattedItems,
+          coupon_code: couponApplied ? (proceedData?.coupon?.code || couponCode) : null,
+        });
         // Clear cart to avoid showing stale cart items upon return
         localStorage.removeItem("gbru_cart");
         window.dispatchEvent(new Event("cartUpdate"));
@@ -974,6 +1005,15 @@ export default function Checkout() {
         hidden.value = data.token;
         form.appendChild(hidden);
 
+        // Track Meta Purchase event on starting payment on PayU
+        trackMetaEvent("Purchase", {
+          order_id: data.order_id || data.txn_id,
+          value: transaction_amount,
+          currency: "INR",
+          payment_method: payment_type,
+          content_ids: formattedItems.map((i: any) => i.item),
+        }, { phone: mobile_no, email });
+
         document.body.appendChild(form);
         form.submit();
       } else {
@@ -985,7 +1025,7 @@ export default function Checkout() {
         });
       }
     } catch (e: any) {
-      
+
       setModalConfig({
         isOpen: true,
         title: "Error",
@@ -1173,7 +1213,7 @@ export default function Checkout() {
                             <span>Order Total</span>
                             <span className="line-through text-zinc-400 notranslate" translate="no">₹{formatPrice(defaultProceedData?.payment_summary?.original_amount || proceedData?.payment_summary?.original_amount)}</span>
                           </div>
-                           {Number(bookingNormalDiscount) > 0 && (
+                          {Number(bookingNormalDiscount) > 0 && (
                             <div className="flex justify-between text-[#0D9740]">
                               <span>Instant Discount</span>
                               <span className="notranslate" translate="no">− ₹{formatPrice(bookingNormalDiscount)} Off</span>
@@ -1407,7 +1447,7 @@ export default function Checkout() {
                   <form onSubmit={checkPincode} className="bg-[#F8F9FA] rounded-[16px] p-4 flex flex-col md:flex-row items-center justify-between gap-4 border border-zinc-100">
                     <div className="flex items-center gap-3">
                       <div className="flex items-center justify-center w-7 h-7 shrink-0 mr-1 relative">
-                        <div 
+                        <div
                           className="w-[20px] h-[20px] border-[2.5px] border-[#0F291B] rounded-tl-full rounded-tr-full rounded-bl-full rotate-45 flex items-center justify-center bg-transparent relative top-[-2px]"
                           style={{ borderBottomRightRadius: '3px' }}
                         >
@@ -1609,9 +1649,8 @@ export default function Checkout() {
                   <span className="text-xs font-semibold text-[#0F291B] block">Offers & Coupons</span>
                 </div>
                 <span className="text-[10px] text-zinc-500 block -mt-1">Tap to apply coupon code. Use "GBRU10" to save ₹500.</span>
-                <div className={`flex w-full h-10 border rounded-[8px] overflow-hidden focus-within:ring-1 focus-within:border-[#0D9740] focus-within:ring-[#0D9740] ${
-                  couponCode === "Invalid code" ? "border-red-500" : "border-zinc-200"
-                }`}>
+                <div className={`flex w-full h-10 border rounded-[8px] overflow-hidden focus-within:ring-1 focus-within:border-[#0D9740] focus-within:ring-[#0D9740] ${couponCode === "Invalid code" ? "border-red-500" : "border-zinc-200"
+                  }`}>
                   <input
                     type="text"
                     placeholder="Enter coupon code"
@@ -1626,18 +1665,16 @@ export default function Checkout() {
                         setCouponError("");
                       }
                     }}
-                    className={`flex-1 min-w-0 px-3 outline-none text-xs bg-transparent ${
-                      couponCode === "Invalid code" ? "text-red-500" : "text-[#0F291B]"
-                    }`}
+                    className={`flex-1 min-w-0 px-3 outline-none text-xs bg-transparent ${couponCode === "Invalid code" ? "text-red-500" : "text-[#0F291B]"
+                      }`}
                   />
                   <button
                     onClick={applyCoupon}
                     disabled={couponApplied}
-                    className={`px-4 font-bold text-xs transition-colors shrink-0 ${
-                      couponApplied
+                    className={`px-4 font-bold text-xs transition-colors shrink-0 ${couponApplied
                         ? "bg-zinc-300 text-zinc-500 cursor-not-allowed"
                         : "bg-[#0F291B] hover:bg-[#08170f] text-white"
-                    }`}
+                      }`}
                   >
                     Apply
                   </button>
@@ -1672,11 +1709,10 @@ export default function Checkout() {
                   <button
                     onClick={applyAmbassadorCode}
                     disabled={ambassadorApplied}
-                    className={`px-4 font-bold text-xs transition-colors shrink-0 ${
-                      ambassadorApplied
+                    className={`px-4 font-bold text-xs transition-colors shrink-0 ${ambassadorApplied
                         ? "bg-zinc-300 text-zinc-500 cursor-not-allowed"
                         : "bg-[#0F291B] hover:bg-[#08170f] text-white"
-                    }`}
+                      }`}
                   >
                     Apply
                   </button>

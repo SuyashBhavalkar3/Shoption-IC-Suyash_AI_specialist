@@ -23,7 +23,7 @@ export async function GET() {
         let maintenanceActive = false;
         if (docSnap.exists) {
           const data = docSnap.data();
-          // Check the recom_gbru_shoption field
+          // Check the prod_gbru_shoption field
           maintenanceActive = !!(data?.['prod_gbru_shoption']);
         }
 

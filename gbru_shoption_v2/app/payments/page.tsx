@@ -6,6 +6,7 @@ import Footer from "@/components/Footer";
 import { ArrowLeft, Receipt, AlertCircle, ChevronRight, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/components/ToastContext";
+import { trackMetaEvent } from "@/utils/metaTracker";
 
 interface OrderData {
   order_id: string;
@@ -134,6 +135,14 @@ export default function PaymentsPage() {
         hidden.name = "token";
         hidden.value = data.token;
         form.appendChild(hidden);
+
+        // Track Meta Purchase event right when starting payment on PayU
+        trackMetaEvent("Purchase", {
+          order_id: order.order_id,
+          value: payAmount,
+          currency: "INR",
+          payment_method: order.payupreferedmode || order.payment_type || "PayU",
+        }, { phone: mobile_no, email });
 
         document.body.appendChild(form);
         form.submit();

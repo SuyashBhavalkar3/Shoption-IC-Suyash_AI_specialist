@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { trackPageEventOnce } from "@/utils/analytics";
 
 export default function OrderConfirmed() {
   const [orderId, setOrderId] = useState<string | null>(null);
@@ -12,16 +13,30 @@ export default function OrderConfirmed() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      const id = params.get("orderId") || params.get("Order_id");
+      const id = params.get("orderId") || params.get("Order_id") || params.get("order_id");
       const statusParam = params.get("status") || params.get("Status") || params.get("payment_status") || params.get("transaction_status");
+      const txnid = params.get("txnid") || params.get("txn_id") || params.get("transaction_id");
+      const amount = params.get("amount") || params.get("total_amount");
       
       setOrderId(id);
 
+      let failed = false;
       if (statusParam) {
         const s = statusParam.toLowerCase();
         if (s === 'failed' || s === 'failure' || s === 'error' || s === 'canceled' || s === 'cancelled') {
+          failed = true;
           setIsFailed(true);
         }
+      }
+
+      if (!failed) {
+        trackPageEventOnce('purchase_completed', `${id || txnid || 'order'}`, {
+          order_id: id || '',
+          transaction_id: txnid || '',
+          amount: amount || '',
+          payment_mode: txnid && txnid.startsWith('COD-') ? 'Cash On Delivery' : 'Online',
+          source: 'order_success'
+        });
       }
     }
   }, []);

@@ -11,6 +11,7 @@ import {
   Home, Plus, Edit3, Trash2, Loader2, ChevronDown, BadgeCheck,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { trackEvent } from "@/utils/analytics";
 
 function SearchableDropdown<T>({
   label,
@@ -354,6 +355,13 @@ export default function AddressList() {
       const json = await res.json();
       if (res.ok && json.message?.status) {
         const returned = json.message.data;
+        trackEvent('shipping_address_added', {
+          city: selectedTahsil?.name || formData.city,
+          district: selectedDistrict?.name || formData.district,
+          state: formData.state,
+          pincode: formData.pin,
+          is_update: !!editingAddressName,
+        });
         if (editingAddressName) {
           setSavedAddresses((prev) => prev.map((a) => (a.name === editingAddressName ? returned : a)));
         } else {

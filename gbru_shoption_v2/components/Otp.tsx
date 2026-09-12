@@ -4,6 +4,8 @@ import Link from 'next/link';
 import React, { useState, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useToast } from '@/components/ToastContext';
+import { trackMetaEvent } from '@/utils/metaTracker';
+import { trackEvent } from '@/utils/analytics';
 
 const OtpContent = () => {
   const { showToast } = useToast();
@@ -168,6 +170,9 @@ const OtpContent = () => {
       const data = await response.json();
 
       if (data.success) {
+        trackMetaEvent('CompleteRegistration', { status: 'otp_verified' }, { phone: mobileNo });
+        trackEvent('otp_entered', { mobile_no: mobileNo, is_new_user: !!data.isNewUser }, { customer_phone: mobileNo || '' });
+
         if (data.isNewUser) {
           setShowRegistrationPopup(true);
         } else if (data.user?.role?.toLowerCase() === 'dealer') {
@@ -180,6 +185,8 @@ const OtpContent = () => {
           localStorage.setItem('mobile_no', mobileNo);
           localStorage.removeItem("gbru_applied_coupon");
           localStorage.removeItem("gbru_applied_ambassador");
+
+          trackEvent('login', { mobile_no: mobileNo, user_id: userToSave.name || userToSave.Customer_name || mobileNo }, { user: userToSave, customer_phone: mobileNo || '' });
 
           // Run pending cart action
           await handlePendingCart(userToSave);
@@ -246,6 +253,9 @@ const OtpContent = () => {
         localStorage.setItem('gbru_user', JSON.stringify(finalUserObj));
         localStorage.setItem('mobile_no', mobileNo || '');
         setShowRegistrationPopup(false);
+
+        trackEvent('sign_up_completed', { name: registrationName.trim(), mobile_no: mobileNo, lead_id: data.message.lead }, { user: finalUserObj, customer_name: registrationName.trim(), customer_phone: mobileNo || '' });
+        trackEvent('login', { mobile_no: mobileNo, user_id: finalUserObj.name || registrationName.trim() }, { user: finalUserObj, customer_phone: mobileNo || '' });
 
         // Run pending cart action
         await handlePendingCart(finalUserObj);

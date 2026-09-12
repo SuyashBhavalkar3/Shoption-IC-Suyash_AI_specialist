@@ -9,6 +9,7 @@ import Footer from "./Footer";
 import LoginPrompt from "./LoginPrompt";
 import PaymentOptionModal from "./PaymentOptionModal";
 import { getMobileNo } from "@/utils/cartUtils";
+import { trackEvent, trackPageEventOnce } from "@/utils/analytics";
 
 interface ERPProduct {
   item_code: string;
@@ -55,6 +56,15 @@ export default function Products() {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [cartItemCodes, setCartItemCodes] = useState<string[]>([]);
+
+  useEffect(() => {
+    trackPageEventOnce('category_page_viewed', `products_${categoryId || 'all'}`, {
+      page: 'products',
+      category_id: categoryId,
+      category_name: categoryName,
+      source: 'products_page'
+    });
+  }, [categoryId, categoryName]);
 
   useEffect(() => {
     const fetchCartStatus = async () => {
@@ -121,7 +131,22 @@ export default function Products() {
     return () => clearTimeout(handler);
   }, [searchInput]);
 
+  const handleSubcategorySelect = (subId: string) => {
+    setSelectedSubcategory(subId);
+    trackEvent('subcategory_clicked', {
+      category_id: categoryId,
+      category_name: categoryName,
+      subcategory_id: subId,
+    });
+  };
+
   const handleAddToCart = (product: any) => {
+    trackEvent('catalog_option_selected', {
+      item_code: product.item_code,
+      item_name: product.item_name,
+      price: product.price,
+      brand: product.brand,
+    });
     setSelectedProduct(product);
     setShowPaymentModal(true);
   };
@@ -272,7 +297,7 @@ export default function Products() {
                     <span className="text-[11px] font-roboto font-bold text-zinc-500 mr-2 uppercase tracking-wide">Category:</span>
                     <select
                       value={selectedSubcategory}
-                      onChange={(e) => setSelectedSubcategory(e.target.value)}
+                      onChange={(e) => handleSubcategorySelect(e.target.value)}
                       className="appearance-none bg-transparent text-[#1A1A1A] text-xs font-roboto font-semibold outline-none w-full pr-6 cursor-pointer"
                     >
                       <option value="all">All Subcategories</option>
@@ -318,7 +343,7 @@ export default function Products() {
                     <div className="relative">
                       <select
                         value={selectedSubcategory}
-                        onChange={(e) => setSelectedSubcategory(e.target.value)}
+                        onChange={(e) => handleSubcategorySelect(e.target.value)}
                         className="appearance-none bg-white border border-gray-300 text-[#1A1A1A] text-sm rounded-md pl-4 pr-10 py-2 outline-none focus:border-[#006B21] focus:ring-1 focus:ring-[#006B21] cursor-pointer"
                       >
                         <option value="all">All Subcategories</option>

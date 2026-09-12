@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { getMobileNo } from "@/utils/cartUtils";
+import { trackMetaEvent } from "@/utils/metaTracker";
+import { trackEvent, trackPageEventOnce } from "@/utils/analytics";
 
 export default function Cart() {
   const router = useRouter();
@@ -60,8 +62,29 @@ export default function Cart() {
           });
           setCartItems(normalizedItems);
           setCartSummary(data.message.data);
+
+          // Track Meta ViewCart
+          const totalAmount = data.message.data.total_amount || normalizedItems.reduce((acc: number, item: any) => acc + item.amount, 0);
+          trackMetaEvent("ViewCart", {
+            content_ids: normalizedItems.map((i: any) => i.item),
+            num_items: normalizedItems.length,
+            value: totalAmount,
+            currency: "INR",
+          }, { phone: mobile_no });
+          trackPageEventOnce('cart_viewed', 'cart', {
+            page: 'cart',
+            cart_items_count: normalizedItems.length,
+            cart_total: data.message.data.total_amount || data.message.data.rounded_total || 0,
+            source: 'cart'
+          });
         } else {
           setError(data?.message?.message || "Failed to load cart.");
+          trackPageEventOnce('cart_viewed', 'cart', {
+            page: 'cart',
+            cart_items_count: 0,
+            cart_total: 0,
+            source: 'cart'
+          });
         }
       } catch (err: any) {
 
@@ -113,6 +136,12 @@ export default function Cart() {
       const resJson = await res.json();
 
       if (resJson?.message?.status) {
+        trackEvent('cart_updated', {
+          item_code: itemObj.item,
+          item_name: itemObj.item_name,
+          quantity: newQty,
+          price: itemObj.rate,
+        });
         window.dispatchEvent(new Event("cartUpdate"));
 
         // Re-fetch cart details to sync final calculations from ERP
@@ -166,6 +195,9 @@ export default function Cart() {
 
       const resJson = await res.json();
       if (resJson.message?.status) {
+        trackEvent('remove_from_cart', {
+          item_code: itemId,
+        });
         window.dispatchEvent(new Event("cartUpdate"));
         setToastMessage("Product removed from cart successfully!");
         setTimeout(() => {
@@ -240,6 +272,20 @@ export default function Cart() {
 
       }
     }
+
+    // Track Meta InitiateCheckout event on proceeding to checkout
+    trackMetaEvent("InitiateCheckout", {
+      content_ids: cartItems.map((i: any) => i.item),
+      num_items: cartItems.length,
+      value: cartSummary?.total_amount || cartItems.reduce((acc: number, i: any) => acc + i.amount, 0),
+      currency: "INR",
+    });
+
+    trackEvent('checkout_started', {
+      items: cartItems.map((i) => ({ item: i.item, quantity: i.quantity, rate: i.rate })),
+      total_amount: cartSummary?.total_amount || 0,
+      item_count: cartItems.length,
+    });
     router.push("/proceed-to-checkout");
   };
 

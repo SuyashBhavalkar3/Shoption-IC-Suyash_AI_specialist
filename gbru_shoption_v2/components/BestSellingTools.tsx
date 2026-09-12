@@ -6,6 +6,7 @@ import Link from "next/link";
 import LoginPrompt from "./LoginPrompt";
 import PaymentOptionModal from "./PaymentOptionModal";
 import { getMobileNo } from "@/utils/cartUtils";
+import { trackEvent } from "@/utils/analytics";
 
 export default function BestSellingTools() {
   const [products, setProducts] = useState<any[]>([]);
@@ -72,6 +73,13 @@ export default function BestSellingTools() {
   }, []);
 
   const handleAddToCart = (product: any) => {
+    trackEvent('catalog_option_selected', {
+      item_code: product.item_code,
+      item_name: product.item_name,
+      price: product.price,
+      brand: product.brand,
+      source: 'best_selling_tools',
+    });
     setSelectedProduct(product);
     setShowPaymentModal(true);
   };

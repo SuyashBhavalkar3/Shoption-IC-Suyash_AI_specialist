@@ -10,6 +10,8 @@ import { addToCartUtil } from "@/utils/cartUtils";
 import ActionPopup from "./ActionPopup";
 import { useShoptionSetting } from "@/hooks/useShoptionSetting";
 import { Share2 } from "lucide-react";
+import { trackMetaEvent } from "@/utils/metaTracker";
+import { trackEvent, trackPageEventOnce } from "@/utils/analytics";
 
 function ProductDetailContent() {
   const router = useRouter();
@@ -48,9 +50,36 @@ function ProductDetailContent() {
         });
         const data = await res.json();
         if (data?.message?.status && data.message.data) {
-          setProduct(data.message.data);
+          const p = data.message.data;
+          setProduct(p);
           setActiveImgIdx(0);
-          setQuantity(data.message.data.moq || 1);
+          setQuantity(p.moq || 1);
+
+          // Track Meta ViewContent
+          trackMetaEvent("ViewContent", {
+            content_ids: [p.item_code],
+            content_name: p.item_name,
+            content_type: "product",
+            value: p.full_payment_amount || p.mrp || 0,
+            currency: "INR",
+          });
+
+          trackPageEventOnce('product_viewed', itemCode, {
+            item_code: itemCode,
+            item_name: data.message.data.item_name,
+            price: data.message.data.full_payment_amount || data.message.data.price,
+            category: data.message.data.item_group,
+          });
+          trackPageEventOnce('product_view', itemCode, {
+            product_id: itemCode,
+            item_code: itemCode,
+            product_name: data.message.data.item_name,
+            item_name: data.message.data.item_name,
+            price: data.message.data.full_payment_amount || data.message.data.price,
+            category: data.message.data.item_group,
+            brand: data.message.data.brand || '',
+            source: 'product_details'
+          });
         } else {
           setError(data?.message?.message || "Failed to load product details.");
         }
@@ -223,6 +252,15 @@ function ProductDetailContent() {
 
       const resJson = await res.json();
       if (resJson.message?.status || resJson.success) {
+        trackEvent('add_to_cart', {
+          item_code: product.item_code,
+          item_name: product.item_name,
+          quantity: quantity,
+          payment_type: paymentOption === 'full' ? 'Full Payment' : 'Cash On Delivery',
+          price: paymentOption === 'full' ? (product.full_payment_amount || product.price) : (product.cod_value || product.COD_value),
+          category: product.item_group,
+          brand: product.brand,
+        });
         window.dispatchEvent(new Event("cartUpdate"));
         window.dispatchEvent(new CustomEvent("productAddedToCart", {
           detail: {
@@ -232,6 +270,18 @@ function ProductDetailContent() {
             item_name: product.item_name
           }
         }));
+
+        // Track Meta AddToCart
+        trackMetaEvent("AddToCart", {
+          content_ids: [product.item_code],
+          content_name: product.item_name,
+          content_type: "product",
+          value: (product.full_payment_amount || product.mrp || 0) * quantity,
+          currency: "INR",
+          quantity: quantity,
+          payment_option: paymentOption,
+        });
+
         setToastType("success");
         setToastMessage(`${product.item_name} ${isInCart ? "updated in" : "added to"} cart successfully!`);
         setIsInCart(true);
@@ -357,7 +407,7 @@ function ProductDetailContent() {
       try {
         await navigator.share(shareData);
       } catch (err) {
-        
+
       }
     } else {
       try {
@@ -541,7 +591,10 @@ function ProductDetailContent() {
                 {validImages.map((img, idx) => (
                   <button
                     key={idx}
-                    onClick={() => setActiveImgIdx(idx)}
+                    onClick={() => {
+                      setActiveImgIdx(idx);
+                      trackEvent('product_image_viewed', { item_code: product.item_code, image_index: idx });
+                    }}
                     className={`relative w-20 h-20 rounded-[12px] overflow-hidden border-2 bg-zinc-50 transition-all p-2 flex items-center justify-center ${activeImgIdx === idx ? "border-[#0D9740] ring-2 ring-[#0D9740]/20" : "border-zinc-200 hover:border-zinc-300"
                       }`}
                   >
@@ -770,7 +823,11 @@ function ProductDetailContent() {
               </div>
               <div className="flex items-center bg-white rounded-[9999px] border border-zinc-200 px-3 py-1 gap-4 shadow-sm">
                 <button
-                  onClick={() => setQuantity(prev => Math.max(product?.moq || 1, prev - 1))}
+                  onClick={() => {
+                    const newQty = Math.max(product?.moq || 1, quantity - 1);
+                    setQuantity(newQty);
+                    trackEvent('product_quantity_changed', { item_code: product?.item_code, quantity: newQty });
+                  }}
                   className="text-zinc-500 hover:text-[#0F291B] font-extrabold text-[16px] px-1 transition-colors"
                 >
                   −
@@ -779,7 +836,11 @@ function ProductDetailContent() {
                   {quantity}
                 </span>
                 <button
-                  onClick={() => setQuantity(prev => prev + 1)}
+                  onClick={() => {
+                    const newQty = quantity + 1;
+                    setQuantity(newQty);
+                    trackEvent('product_quantity_changed', { item_code: product?.item_code, quantity: newQty });
+                  }}
                   className="text-zinc-500 hover:text-[#0F291B] font-extrabold text-[16px] px-1 transition-colors"
                 >
                   +
@@ -809,17 +870,17 @@ function ProductDetailContent() {
               </button>
 
               {whatsappEnabled === 1 && (
-              <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="w-full h-14 rounded-[14px] bg-white hover:bg-zinc-50 border border-zinc-200 text-black font-bold text-[16px] transition-all flex items-center justify-center gap-3 shadow-sm">
-                <div className="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0 bg-white">
-                  <Image
-                    src="/assets/nova.jpeg"
-                    alt="Nova Logo"
-                    fill
-                    className="object-cover"
-                  />
-                </div>
-                Chat with Nova
-              </a>
+                <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="w-full h-14 rounded-[14px] bg-white hover:bg-zinc-50 border border-zinc-200 text-black font-bold text-[16px] transition-all flex items-center justify-center gap-3 shadow-sm">
+                  <div className="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0 bg-white">
+                    <Image
+                      src="/assets/nova.jpeg"
+                      alt="Nova Logo"
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                  Chat with Nova
+                </a>
               )}
             </div>
 

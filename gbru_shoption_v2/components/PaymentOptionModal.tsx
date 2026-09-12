@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import LoginPrompt from "./LoginPrompt";
 import ActionPopup from "./ActionPopup";
 import { getMobileNo } from "@/utils/cartUtils";
+import { trackEvent } from "@/utils/analytics";
 
 interface PaymentOptionModalProps {
   isOpen: boolean;
@@ -193,6 +194,15 @@ export default function PaymentOptionModal({
       const resJson = await res.json();
 
       if (resJson.message?.status || resJson.success) {
+        trackEvent('add_to_cart', {
+          item_code: itemCode,
+          item_name: productDetails?.item_name,
+          quantity: quantity,
+          payment_type: selectedOption === "full" ? "Full Payment" : "Cash On Delivery",
+          price: selectedOption === "full" ? (productDetails?.full_payment_amount || productDetails?.price) : (productDetails?.COD_value || productDetails?.cod_value),
+          category: productDetails?.item_group,
+          brand: productDetails?.brand,
+        });
         window.dispatchEvent(new Event("cartUpdate"));
         window.dispatchEvent(new CustomEvent("productAddedToCart", {
           detail: {

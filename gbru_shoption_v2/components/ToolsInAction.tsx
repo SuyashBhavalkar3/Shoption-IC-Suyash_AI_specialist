@@ -17,7 +17,7 @@ export default function ToolsInAction() {
     {
       id: 1,
       title: "spray pump in action",
-      thumbnail: "/assets/Tufaan2.0.png",
+      thumbnail: "/assets/Tufaan2.0.1.png",
       videoUrl: "https://www.youtube.com/embed/3rhBieQevLA?autoplay=1",
     },
     {
@@ -35,7 +35,7 @@ export default function ToolsInAction() {
     {
       id: 4,
       title: "seeder in action",
-      thumbnail: "/assets/16 teeth seeder png.png",
+      thumbnail: "/assets/16 teeth seeder.png",
       videoUrl: "https://www.youtube.com/embed/fGxiAGA4uf0?autoplay=1",
     },
   ];
@@ -78,14 +78,16 @@ export default function ToolsInAction() {
                   <img
                     src={vid.thumbnail}
                     alt={vid.title}
-                    className={`w-full h-full ${vid.id === 1 || vid.id === 4 ? "object-contain" : "object-cover"} transition-transform duration-500 group-hover:scale-105 ${vid.id === 1 || vid.id === 4 ? "bg-white" : ""}`}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    style={vid.id === 1 ? { objectPosition: "center 75%" } : undefined}
                   />
                 ) : (
                   <Image
                     src={vid.thumbnail}
                     alt={vid.title}
                     fill
-                    className={`${vid.id === 1 || vid.id === 4 ? "object-contain" : "object-cover"} transition-transform duration-500 group-hover:scale-105 ${vid.id === 1 || vid.id === 4 ? "bg-white" : ""}`}
+                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    style={vid.id === 1 ? { objectPosition: "center 75%" } : undefined}
                   />
                 )}
                 <div className="absolute inset-0 bg-black/5 group-hover:bg-black/10 transition-colors" />
@@ -177,14 +179,16 @@ export default function ToolsInAction() {
                   <img
                     src={vid.thumbnail}
                     alt={vid.title}
-                    className={`w-full h-full ${vid.id === 1 || vid.id === 4 ? "object-contain" : "object-cover"} ${vid.id === 1 || vid.id === 4 ? "bg-white" : ""}`}
+                    className="w-full h-full object-cover"
+                    style={vid.id === 1 ? { objectPosition: "center 75%" } : undefined}
                   />
                 ) : (
                   <Image
                     src={vid.thumbnail}
                     alt={vid.title}
                     fill
-                    className={`${vid.id === 1 || vid.id === 4 ? "object-contain" : "object-cover"} ${vid.id === 1 || vid.id === 4 ? "bg-white" : ""}`}
+                    className="object-cover"
+                    style={vid.id === 1 ? { objectPosition: "center 75%" } : undefined}
                   />
                 )}
                 

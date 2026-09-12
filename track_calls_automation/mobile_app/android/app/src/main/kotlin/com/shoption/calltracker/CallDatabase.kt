@@ -13,7 +13,7 @@ class CallDatabase(context: Context) :
 
     companion object {
         const val DATABASE_NAME = "call_tracker.db"
-        const val DATABASE_VERSION = 4
+        const val DATABASE_VERSION = 5
         const val TABLE_NAME = "call_logs"
         const val COL_ID = "id"
         const val COL_PHONE_NUMBER = "phone_number"
@@ -23,6 +23,8 @@ class CallDatabase(context: Context) :
         const val COL_SYSTEM_CALL_ID = "system_call_id"
         const val COL_IS_SYNCED = "is_synced"
         const val COL_USER_ID = "user_id"
+
+        const val COL_RECORDING_PATH = "recording_path"
 
         private var instance: CallDatabase? = null
 
@@ -46,7 +48,8 @@ class CallDatabase(context: Context) :
                 $COL_DURATION INTEGER,
                 $COL_SYSTEM_CALL_ID TEXT UNIQUE,
                 $COL_IS_SYNCED INTEGER DEFAULT 0,
-                $COL_USER_ID TEXT
+                $COL_USER_ID TEXT,
+                $COL_RECORDING_PATH TEXT
             )
             """.trimIndent()
         )
@@ -82,6 +85,11 @@ class CallDatabase(context: Context) :
         if (oldVersion < 4) {
             if (!columnExists(db, TABLE_NAME, COL_USER_ID)) {
                 db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_USER_ID TEXT")
+            }
+        }
+        if (oldVersion < 5) {
+            if (!columnExists(db, TABLE_NAME, COL_RECORDING_PATH)) {
+                db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN $COL_RECORDING_PATH TEXT")
             }
         }
     }
@@ -141,7 +149,8 @@ class CallDatabase(context: Context) :
                     COL_PHONE_NUMBER to cursor.getString(cursor.getColumnIndexOrThrow(COL_PHONE_NUMBER)),
                     COL_CALL_TYPE to cursor.getString(cursor.getColumnIndexOrThrow(COL_CALL_TYPE)),
                     COL_TIMESTAMP to cursor.getString(cursor.getColumnIndexOrThrow(COL_TIMESTAMP)),
-                    COL_DURATION to cursor.getInt(cursor.getColumnIndexOrThrow(COL_DURATION))
+                    COL_DURATION to cursor.getInt(cursor.getColumnIndexOrThrow(COL_DURATION)),
+                    COL_RECORDING_PATH to (if (cursor.isNull(cursor.getColumnIndexOrThrow(COL_RECORDING_PATH))) "" else cursor.getString(cursor.getColumnIndexOrThrow(COL_RECORDING_PATH)))
                 )
                 logs.add(log)
             } while (cursor.moveToNext())

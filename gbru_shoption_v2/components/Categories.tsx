@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { trackEvent } from "@/utils/analytics";
 
 interface CategoryItem {
   category_id: string;
@@ -66,6 +67,7 @@ export default function Categories() {
               <Link
                 key={idx}
                 href={`/products?category_id=${cat.category_id}&category_name=${encodeURIComponent(cat.category_name)}`}
+                onClick={() => trackEvent('category_clicked', { category_id: cat.category_id, category_name: cat.category_name })}
                 className="flex-shrink-0 snap-start flex flex-col items-center gap-2 group"
               >
                 {/* White Square Card (130 x 115.8px, rounded 18px, padding-top/bottom 45px) */}
@@ -135,6 +137,7 @@ export default function Categories() {
               <Link
                 key={idx}
                 href={`/products?category_id=${cat.category_id}&category_name=${encodeURIComponent(cat.category_name)}`}
+                onClick={() => trackEvent('category_clicked', { category_id: cat.category_id, category_name: cat.category_name })}
                 className="w-full flex flex-col items-center gap-4 group"
               >
                 {/* White Square Card (211.2 x 211.2px, rounded 32px) */}

@@ -226,7 +226,7 @@ def sync_call_logs(
         print(f"ERROR: Failed to save call logs: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save synced call logs: {str(e)}"
+            detail=f"Failed to save synced call logs"
         )
 
     # Fire a SINGLE background task for the entire batch of new logs, BUT only if
@@ -354,10 +354,29 @@ def get_reports(
         # Fetch all call logs
         logs = query.order_by(CallLog.timestamp.desc(), CallLog.id.desc()).all()
         
-        total_calls = len(logs)
-        incoming_count = sum(1 for l in logs if (l.call_type or "").lower() in ["incoming", "missed", "rejected", "blocked"])
-        outgoing_count = sum(1 for l in logs if (l.call_type or "").lower() == "outgoing")
-        total_seconds = sum(l.duration_seconds for l in logs)
+        # 2. Paginated Calls Query
+        calls_query = db.query(CallLog).filter(CallLog.user_id == warrior.id)
+        
+        # Apply start and end date filters on the query
+        if start_date:
+            try:
+                start_dt = datetime.combine(datetime.fromisoformat(start_date).date(), datetime.min.time())
+                query = query.filter(func.parse_my_timestamp(CallLog.timestamp) >= start_dt)
+            except Exception:
+                pass
+        if end_date:
+            try:
+                end_dt = datetime.combine(datetime.fromisoformat(end_date).date(), datetime.max.time())
+                query = query.filter(func.parse_my_timestamp(CallLog.timestamp) <= end_dt)
+            except Exception:
+                pass
+                
+        stats_result = stats_query.first()
+        
+        total_calls = stats_result.total_calls or 0
+        total_seconds = int(stats_result.total_seconds or 0)
+        incoming_count = int(stats_result.incoming_count or 0)
+        outgoing_count = int(stats_result.outgoing_count or 0)
         
         avg_seconds = total_seconds / total_calls if total_calls > 0 else 0.0
         total_hours = total_seconds / 3600.0

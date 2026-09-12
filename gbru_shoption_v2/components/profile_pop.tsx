@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useShoptionSetting } from "@/hooks/useShoptionSetting";
+import { trackEvent } from "@/utils/analytics";
 
 interface UserDetails {
   Customer_name: string;
@@ -253,7 +254,7 @@ export default function ProfilePop({ isOpen, onClose, onLogout }: ProfilePopProp
               )}
 
               {/* Call Card */}
-              <a href="tel:+919226514174" className="flex items-center justify-between bg-white p-4 rounded-2xl hover:bg-gray-50 transition-colors group shadow-[0_2px_12px_rgb(0,0,0,0.06)] border border-gray-100">
+              <a href={`tel:${(process.env.NEXT_PUBLIC_SUPPORT_PHONE || "+919226514174").replace(/[^\d+]/g, "")}`} className="flex items-center justify-between bg-white p-4 rounded-2xl hover:bg-gray-50 transition-colors group shadow-[0_2px_12px_rgb(0,0,0,0.06)] border border-gray-100">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 flex items-center justify-center shrink-0">
                     <svg className="w-[26px] h-[26px] text-[#194028]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
@@ -287,6 +288,7 @@ export default function ProfilePop({ isOpen, onClose, onLogout }: ProfilePopProp
             <li>
               <button
                 onClick={() => {
+                  trackEvent('logout');
                   setIsLoggingOut(true);
                   setTimeout(() => {
                     if (onLogout) {

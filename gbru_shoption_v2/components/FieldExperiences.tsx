@@ -12,7 +12,7 @@ export default function FieldExperiences() {
       desc: "See what our Gbru user are saying",
       duration: "03:41",
       category: "Information",
-      thumbnail: "/assets/Tufaan2.0.png",
+      thumbnail: "/assets/Tufaan2.0.1.png",
       videoUrl: "https://www.youtube.com/embed/3rhBieQevLA?autoplay=1",
     },
     {
@@ -39,7 +39,7 @@ export default function FieldExperiences() {
       desc: "See how the seeder makes planting faster and easier",
       duration: "04:15",
       category: "Exclusive Video",
-      thumbnail: "/assets/16 teeth seeder png.png",
+      thumbnail: "/assets/16 teeth seeder.png",
       videoUrl: "https://www.youtube.com/embed/fGxiAGA4uf0?autoplay=1",
     },
   ];

@@ -17,11 +17,21 @@ import ToolsInAction from "@/components/ToolsInAction";
 import HelpSupportBanner from "@/components/HelpSupportBanner";
 import AppDownloadBanner from "@/components/AppDownloadBanner";
 import Footer from "@/components/Footer";
+import { trackPageEventOnce } from "@/utils/analytics";
 
 export default function Home() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    trackPageEventOnce('website_landed', 'home', {
+      page: 'home',
+      referrer: typeof document !== "undefined" ? document.referrer : '',
+      page_title: typeof document !== "undefined" ? document.title : 'GBRU Shoption',
+      source: 'direct'
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import LoginPrompt from "./LoginPrompt";
 import { addToCartUtil, getMobileNo } from "@/utils/cartUtils";
 import PaymentOptionModal from "./PaymentOptionModal";
+import { trackEvent } from "@/utils/analytics";
 
 interface ERPProduct {
   item_code: string;
@@ -98,6 +99,13 @@ export default function FeaturedProducts() {
   }, []);
 
   const handleAddToCart = (product: ERPProduct) => {
+    trackEvent('catalog_option_selected', {
+      item_code: product.item_code,
+      item_name: product.item_name,
+      price: product.price,
+      brand: product.brand,
+      source: 'featured_products',
+    });
     const user = localStorage.getItem("gbru_user");
     if (!user) {
       setShowLoginPrompt(true);

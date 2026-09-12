@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { trackEvent, trackPageEventOnce } from '@/utils/analytics';
 
 interface CategoryItem {
   category_id: string;
@@ -41,6 +42,12 @@ export default function CategoriesPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    trackPageEventOnce('category_page_viewed', 'all_categories', {
+      page: 'categories',
+      category_name: 'All Categories',
+      source: 'categories_page'
+    });
+
     async function fetchCategories() {
       try {
         const res = await fetch("/api/categories");
@@ -122,6 +129,7 @@ export default function CategoriesPage() {
               <Link
                 key={cat.category_id}
                 href={`/products?category_id=${cat.category_id}&category_name=${encodeURIComponent(cat.category_name)}`}
+                onClick={() => trackEvent('category_clicked', { category_id: cat.category_id, category_name: cat.category_name })}
                 className="bg-white rounded-[18px] border border-[#E5E7EB] overflow-hidden hover:shadow-lg transition-shadow flex flex-col group cursor-pointer text-left pb-4"
               >
                 {/* Image Container */}

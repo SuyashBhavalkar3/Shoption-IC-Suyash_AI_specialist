@@ -320,7 +320,9 @@ export default function HelpCentre() {
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-[#0F291B]">Phone Support</h4>
-                      <p className="text-xs text-zinc-500 mt-1">+91 9226514174</p>
+                      <a href={`tel:${(process.env.NEXT_PUBLIC_SUPPORT_PHONE || "+919226514174").replace(/[^\d+]/g, "")}`} className="text-xs text-zinc-500 hover:text-[#0D9740] mt-1 block">
+                        {process.env.NEXT_PUBLIC_SUPPORT_PHONE || "+91 9226514174"}
+                      </a>
                     </div>
                   </div>
                   <div className="border border-zinc-200 p-5 rounded-xl flex items-center gap-4 hover:border-[#0D9740] transition-colors">

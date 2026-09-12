@@ -11,7 +11,7 @@ export default function Hero() {
   const carouselImages = [
     "/assets/carousel2.JPG",
     "/assets/carousel3.JPG",
-    "/assets/caroussel-1.jpg",
+    "/assets/expo.png",
   ];
 
   // Desktop handlers (manual)
