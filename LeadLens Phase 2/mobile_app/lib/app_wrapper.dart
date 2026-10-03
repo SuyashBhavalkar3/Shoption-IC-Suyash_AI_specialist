@@ -1,0 +1,375 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:http/http.dart' as http;
+
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'providers/app_providers.dart';
+import 'services/api_service.dart';
+
+class AppWrapper extends ConsumerStatefulWidget { 
+  final Widget child;
+  const AppWrapper({super.key, required this.child});
+
+  @override
+  ConsumerState<AppWrapper> createState() => _AppWrapperState();
+}
+
+class _AppWrapperState extends ConsumerState<AppWrapper> {
+  Timer? _maintenanceTimer;
+  Timer? _trackingPingTimer;
+  Map<String, dynamic>? _maintenanceData;
+  String? _userEmail;
+  bool _isAdmin = false;
+  String _currentVersion = "1.0.2";
+
+  @override
+  void initState() {
+    super.initState();
+    AppRouteObserver.currentRoute.addListener(_onRouteChanged);
+    _loadCurrentVersion();
+    _loadUserEmail();
+    _initMaintenanceListener();
+    _initTrackingPingListener();
+  }
+
+  Future<void> _loadCurrentVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _currentVersion = packageInfo.version;
+        });
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to load local version name: $e');
+    }
+  }
+
+  void _onRouteChanged() {
+    _loadUserEmail();
+  }
+
+  Future<void> _loadUserEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _userEmail = prefs.getString('user_email');
+        _isAdmin = _userEmail == "shoptionspl@gmail.com";
+      });
+    }
+  }
+
+  void _initMaintenanceListener() {
+    _fetchMaintenanceStatus();
+    // Poll every 10 seconds to get updates in real-time
+    _maintenanceTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _fetchMaintenanceStatus();
+    });
+  }
+
+  void _initTrackingPingListener() {
+    // Poll every 10 seconds. Unconditional heartbeat ping.
+    _trackingPingTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final toggledActive = prefs.getBool('tracking_toggled_active') ?? false;
+        
+        const platform = MethodChannel('com.shoption.calltracker/tracking');
+        bool running = false;
+        try {
+          running = await platform.invokeMethod('isTrackingActive');
+        } catch (_) {}
+
+        final isTrackingActive = toggledActive && running;
+
+        final empId = prefs.getString('user_emp_id') ?? '';
+        final orgId = prefs.getString('user_org_id') ?? '';
+        final systemId = prefs.getString('user_system_id') ?? '';
+
+        if (systemId.isNotEmpty) {
+          final now = DateTime.now().toUtc().toIso8601String();
+          await ApiService.updateTrackingStatus(
+            empId: empId,
+            organisationId: orgId,
+            systemId: systemId,
+            isTrackingEnabled: isTrackingActive,
+            lastActivityTimestamp: now,
+          );
+          debugPrint('[GLOBAL HEARTBEAT] Sent active=$isTrackingActive ping successfully');
+        }
+      } catch (e) {
+        debugPrint('[GLOBAL HEARTBEAT ERROR] Failed to send heartbeat: $e');
+      }
+    });
+  }
+
+  Future<void> _fetchMaintenanceStatus() async {
+    try {
+      final response = await http.get(Uri.parse(
+        'https://firestore.googleapis.com/v1/projects/shoption-af244/databases/(default)/documents/maintenance/mode'
+      ));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final fields = data['fields'] as Map<String, dynamic>?;
+        if (mounted && fields != null) {
+          setState(() {
+            _maintenanceData = fields;
+          });
+        }
+      } else {
+        debugPrint('⚠️ Failed to fetch maintenance status via REST: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error fetching maintenance status: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    AppRouteObserver.currentRoute.removeListener(_onRouteChanged);
+    _maintenanceTimer?.cancel();
+    _trackingPingTimer?.cancel();
+    super.dispose();
+  }
+
+
+  bool _isRemoteVersionGreater(String remote, String local) {
+    String cleanRemote = remote.replaceAll(RegExp(r'[^0-9.]'), '');
+    String cleanLocal = local.replaceAll(RegExp(r'[^0-9.]'), '');
+    
+    if (cleanRemote.isEmpty || cleanLocal.isEmpty) return false;
+    
+    List<String> remoteParts = cleanRemote.split('.');
+    List<String> localParts = cleanLocal.split('.');
+    
+    int maxLength = remoteParts.length > localParts.length ? remoteParts.length : localParts.length;
+    for (int i = 0; i < maxLength; i++) {
+      int rPart = i < remoteParts.length ? (int.tryParse(remoteParts[i]) ?? 0) : 0;
+      int lPart = i < localParts.length ? (int.tryParse(localParts[i]) ?? 0) : 0;
+      if (rPart > lPart) return true;
+      if (rPart < lPart) return false;
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final versionAsync = ref.watch(versionCheckProvider);
+    final routeName = AppRouteObserver.currentRoute.value;
+    debugPrint('🛡️ AppWrapper build: path=$routeName, dataNull=${_maintenanceData == null}');
+    
+    if (routeName == '/login' || routeName == '/register') {
+      debugPrint('🛡️ Skipping AppWrapper for path=$routeName');
+      return widget.child;
+    }
+
+    final String remoteVersionFromRemoteConfig = versionAsync.when(
+      data: (val) => val,
+      loading: () => "",
+      error: (_, __) => "",
+    );
+
+    final String remoteVersionFromFirestore = _maintenanceData?["lead_lens_min_version"]?["stringValue"]?.toString() ??
+                                              _maintenanceData?["lead_lens_android_version"]?["stringValue"]?.toString() ?? "";
+
+    final String remoteVersion = remoteVersionFromRemoteConfig.isNotEmpty 
+        ? remoteVersionFromRemoteConfig 
+        : remoteVersionFromFirestore;
+
+    final bool forceUpdate = _maintenanceData?["force_update"]?["booleanValue"] ?? false;
+
+    bool needsUpdate = false;
+    if (remoteVersion.isNotEmpty && _currentVersion.isNotEmpty) {
+      if (_isRemoteVersionGreater(remoteVersion, _currentVersion)) {
+        needsUpdate = forceUpdate;
+      }
+    }
+
+    if (_maintenanceData == null) {
+      if (!_isAdmin && needsUpdate) {
+        return _buildUpdateScreen();
+      }
+      return widget.child;
+    }
+
+    final List<dynamic> exceptionalUsersRaw = _maintenanceData?["exceptional_users"]?["arrayValue"]?["values"] ?? [];
+    final List<String> exceptionalUsers = exceptionalUsersRaw
+        .map((val) => val["stringValue"]?.toString() ?? "")
+        .where((str) => str.isNotEmpty)
+        .toList();
+    final bool isUserExceptional = _userEmail != null && exceptionalUsers.contains(_userEmail);
+
+    // Check maintenance mode specifically for lead_lens_android (checking both key variants due to potential tab character)
+    final bool isMaintenance = Platform.isAndroid
+        ? ((_maintenanceData?["lead_lens_android"]?["booleanValue"] ?? false) ||
+           (_maintenanceData?["lead_lens_android\t"]?["booleanValue"] ?? false))
+        : false;
+    final String message = _maintenanceData?['message']?['stringValue']?.toString() ?? "Under Maintenance";
+
+    debugPrint('🛡️ isMaintenance=$isMaintenance, isExceptional=$isUserExceptional, needsUpdate=$needsUpdate, _isAdmin=$_isAdmin, current=$_currentVersion, remoteFirestore=$remoteVersionFromFirestore, forceUpdate=$forceUpdate');
+
+    if (!_isAdmin) {
+      if (needsUpdate) {
+        return _buildUpdateScreen();
+      }
+      if (isMaintenance && !isUserExceptional) {
+        return _buildMaintenanceWidget(message);
+      }
+    }
+
+    return widget.child;
+  }
+
+  Widget _buildUpdateScreen() {
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF050816),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.system_update_rounded,
+                  size: 80,
+                  color: Color(0xFF1F8FFF),
+                ),
+                const SizedBox(height: 32),
+                const Text(
+                  "Update your application\nto the latest version",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF8FAFC),
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  "A brand new version of the app is available. Please update your app to use our amazing features.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 48),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _launchStore,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1F8FFF),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      "UPDATE APP",
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMaintenanceWidget(String message) {
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF050816),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.construction_rounded,
+                  size: 80,
+                  color: Color(0xFF1F8FFF),
+                ),
+                const SizedBox(height: 32),
+                const Text(
+                  "Under Maintenance",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFF8FAFC),
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _launchStore() {
+    const url = "https://play.google.com/store/apps/details?id=com.shoption.calltracker";
+    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+}
+
+class AppRouteObserver extends NavigatorObserver {
+  static final ValueNotifier<String?> currentRoute = ValueNotifier<String?>(null);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    // Use post-frame callback to avoid modifying state during layout/build phase
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      currentRoute.value = route.settings.name;
+    });
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      currentRoute.value = newRoute?.settings.name;
+    });
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      currentRoute.value = previousRoute?.settings.name;
+    });
+  }
+}
