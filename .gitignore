@@ -1,18 +1,84 @@
-# Data files
-*.csv
-*.xlsx
-*.xls
-
-# Next.js
-web_app_automation/.next/
-web_app_automation/node_modules/
-web_app_automation/build/
-web_app_automation/dist/
-
-# OS
-.DS_Store
-
-# Do NOT ignore .json files as they are needed for package.json, tsconfig.json, etc.
-# If you want to ignore specific data JSONs, add them explicitly or by folder.
-# *.json  *.zip
+# Dependencies
+node_modules/
 **/node_modules/
+.pnp
+.pnp.js
+
+# Next.js / Web Build Outputs
+.next/
+**/.next/
+out/
+**/out/
+dist/
+**/dist/
+build/
+**/build/
+
+# Flutter / Dart / Mobile Build Artifacts
+.dart_tool/
+**/.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+**/build/
+android/.gradle/
+**/android/.gradle/
+android/app/build/
+**/android/app/build/
+ios/.symlinks/
+ios/Pods/
+
+# Secrets, Keystores & Environment Files
+.env
+**/.env
+.env*.local
+*.pem
+**/*.pem
+*.ppk
+**/*.ppk
+*.jks
+**/*.jks
+*.key
+**/*.key
+*.cert
+*.crt
+
+# Python Artifacts & Virtual Environments
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+**/env/
+venv/
+**/venv/
+.venv/
+**/.venv/
+ENV/
+
+# Data Files (Spreadsheets / Big CSVs)
+*.csv
+**/*.csv
+*.xlsx
+**/*.xlsx
+*.xls
+**/*.xls
+
+# IDE & OS Metadata
+.DS_Store
+**/.DS_Store
+Thumbs.db
+.vscode/
+**/.vscode/
+.idea/
+**/.idea/
+*.iml
+**/*.iml
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
