@@ -14,12 +14,9 @@ export async function GET(request: Request) {
 
   try {
     const apiBaseUrl = getApiBaseUrl();
-    const urlObj = new URL(request.url);
-    const searchParams = urlObj.searchParams.toString();
-    const targetUrl = searchParams ? `${apiBaseUrl}/calls/reports?${searchParams}` : `${apiBaseUrl}/calls/reports`;
 
     // Fetch complete reports directly from the python backend
-    const reportRes = await fetch(targetUrl, {
+    const reportRes = await fetch(`${apiBaseUrl}/calls/reports`, {
       headers: { authorization: authHeader },
     });
 

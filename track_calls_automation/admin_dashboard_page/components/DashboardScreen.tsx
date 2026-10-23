@@ -529,29 +529,14 @@ function computeTotals(
   // Total Missed Calls = Total incoming calls - Total success incoming calls
   const totalMissed = Math.max(0, incomingCalls - incomingSuccessCalls);
 
-  // Total calls = incoming + outgoing
-  totalCallsDone = incomingCalls + outgoingCalls;
+  // Total calls = incoming + outgoing + totalMissed
+  totalCallsDone = incomingCalls + outgoingCalls + totalMissed;
 
-  // Calculate missed call response details (unique numbers):
+  // Calculate missed call response details:
   let totalResponseSeconds = 0;
   let respondedMissedCallsCount = 0;
 
-  const uniqueMissedCalls: any[] = [];
-  const seenPhones = new Set<string>();
-  
   missedCallsList.forEach((mc) => {
-    const phone = mc.phone_number;
-    if (!phone) {
-      uniqueMissedCalls.push(mc);
-    } else {
-      if (!seenPhones.has(phone)) {
-        seenPhones.add(phone);
-        uniqueMissedCalls.push(mc);
-      }
-    }
-  });
-
-  uniqueMissedCalls.forEach((mc) => {
     const mcTimeMs = mc.parsedTimeMs;
     const candidates = outgoingCallsByPhone.get(mc.phone_number);
     if (candidates) {
@@ -564,7 +549,7 @@ function computeTotals(
     }
   });
 
-  const missedNotResponded = Math.max(0, uniqueMissedCalls.length - respondedMissedCallsCount);
+  const missedNotResponded = Math.max(0, totalMissed - respondedMissedCallsCount);
 
   const avgResponseTimeSeconds = respondedMissedCallsCount > 0 ? totalResponseSeconds / respondedMissedCallsCount : 0;
 

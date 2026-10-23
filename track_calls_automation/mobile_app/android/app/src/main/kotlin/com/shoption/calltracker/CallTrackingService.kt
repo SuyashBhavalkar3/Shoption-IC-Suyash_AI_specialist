@@ -167,19 +167,13 @@ class CallTrackingService : Service() {
                             super.onCallStateChanged(state, phoneNumber)
                             Log.d(tag, "PhoneStateListener onCallStateChanged state=$state")
                             when (state) {
-                                TelephonyManager.CALL_STATE_RINGING -> {
-                                    isCurrentlyOnCall = true
-                                    com.shoption.calltracker.telecom.CallManager.instance.updateTelephonyState(com.shoption.calltracker.telecom.CallState.RINGING)
-                                    sendCallStateUpdate(this@CallTrackingService, true)
-                                }
+                                TelephonyManager.CALL_STATE_RINGING,
                                 TelephonyManager.CALL_STATE_OFFHOOK -> {
                                     isCurrentlyOnCall = true
-                                    com.shoption.calltracker.telecom.CallManager.instance.updateTelephonyState(com.shoption.calltracker.telecom.CallState.CONNECTED)
                                     sendCallStateUpdate(this@CallTrackingService, true)
                                 }
                                 TelephonyManager.CALL_STATE_IDLE -> {
                                     isCurrentlyOnCall = false
-                                    com.shoption.calltracker.telecom.CallManager.instance.updateTelephonyState(com.shoption.calltracker.telecom.CallState.DISCONNECTED)
                                     sendCallStateUpdate(this@CallTrackingService, false)
                                     CallLogSync.syncLatest(this@CallTrackingService)
                                 }

@@ -74,12 +74,8 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacementNamed(context, '/home');
       }
     } catch (e) {
-      String msg = e.toString().replaceFirst('Exception: ', '');
-      if (msg.contains('SocketException') || msg.contains('Failed host lookup') || msg.contains('errno = 7')) {
-        msg = 'Unable to connect to server. Please check internet connection or server status.';
-      }
       setState(() {
-        _errorMessage = msg;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
     } finally {
       setState(() {
@@ -252,37 +248,23 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.transparent,
                         shadowColor: Colors.transparent,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 0,
                       ),
                       child: _isLoading
                           ? const SizedBox(
-                              height: 22,
-                              width: 22,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                             )
                           : const Text(
                               'Sign In',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                             ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Center(
-                    child: TextButton.icon(
-                      onPressed: () async {
-                        final prefs = await SharedPreferences.getInstance();
-                        await prefs.setString('user_role', 'warrior');
-                        await prefs.setString('user_name', 'Test Warrior');
-                        await prefs.setBool('user_is_approved', true);
-                        if (context.mounted) {
-                          Navigator.pushReplacementNamed(context, '/home');
-                        }
-                      },
-                      icon: const Icon(Icons.offline_bolt_outlined, color: Colors.amberAccent),
-                      label: const Text(
-                        'Continue Offline / Auto-Dialer Test Mode',
-                        style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.w600),
-                      ),
                     ),
                   ),
                   const SizedBox(height: 28),

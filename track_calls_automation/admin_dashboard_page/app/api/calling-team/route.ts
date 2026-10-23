@@ -66,7 +66,12 @@ export async function GET(request: Request) {
           END)::int AS total_calling_seconds
         FROM call_logs cl
         JOIN users u ON cl.user_id = u.id
-        WHERE (cl.timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = $1::date
+        WHERE (CASE 
+          WHEN cl.timestamp LIKE '%-%-%' AND cl.timestamp NOT LIKE '%T%' AND cl.timestamp NOT LIKE '%Z%' 
+            THEN to_date(cl.timestamp, 'DD-Mon-YYYY')
+          ELSE 
+            CAST(cl.timestamp AS date)
+        END) = $1::date
           AND u.organisation_id IS NULL
         GROUP BY cl.user_id, u.id, u.full_name, u.email, u.role, u.department
         ORDER BY total_calling_seconds DESC, u.full_name ASC
@@ -91,7 +96,12 @@ export async function GET(request: Request) {
           END)::int AS total_calling_seconds
         FROM call_logs cl
         JOIN users u ON cl.user_id = u.id
-        WHERE (cl.timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date = $1::date
+        WHERE (CASE 
+          WHEN cl.timestamp LIKE '%-%-%' AND cl.timestamp NOT LIKE '%T%' AND cl.timestamp NOT LIKE '%Z%' 
+            THEN to_date(cl.timestamp, 'DD-Mon-YYYY')
+          ELSE 
+            CAST(cl.timestamp AS date)
+        END) = $1::date
           AND u.organisation_id = $2
         GROUP BY cl.user_id, u.id, u.full_name, u.email, u.role, u.department
         ORDER BY total_calling_seconds DESC, u.full_name ASC

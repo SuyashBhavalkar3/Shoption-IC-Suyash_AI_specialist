@@ -11,7 +11,6 @@ import 'org_employees_screen.dart';
 import 'warrior_management_screen.dart';
 import 'profile_screen.dart';
 import 'permission_disclosure_screen.dart';
-import 'auto_dialer_screen.dart';
 import '../widgets/shoption_app_bar.dart';
 
 class UnifiedShellScreen extends StatefulWidget {
@@ -482,17 +481,12 @@ class _UnifiedShellScreenState extends State<UnifiedShellScreen> {
               children: [
                 _buildDrawerItem(
                   icon: Icons.dashboard_rounded,
-                  title: 'Dashboard',
+                  title: 'Console Home',
                   route: 'dashboard',
                 ),
                 _buildDrawerItem(
-                  icon: Icons.phone_in_talk_rounded,
-                  title: 'Auto Dialer',
-                  route: 'autodialer',
-                ),
-                _buildDrawerItem(
-                  icon: Icons.phone_callback_rounded,
-                  title: 'Call Tracking Logs',
+                  icon: Icons.my_location_rounded,
+                  title: 'My Tracking',
                   route: 'tracking',
                 ),
                 if (isAdmin || isGL)
@@ -1162,11 +1156,6 @@ class _UnifiedShellScreenState extends State<UnifiedShellScreen> {
     String screenSubtitle = 'System Console';
 
     switch (_activeRoute) {
-      case 'autodialer':
-        content = const AutoDialerScreen();
-        screenTitle = 'Auto Dialer';
-        screenSubtitle = 'SIM Sequential Sales Dialer';
-        break;
       case 'tracking':
         content = const WarriorHomeScreen();
         screenTitle = 'My Tracking';
@@ -1214,7 +1203,6 @@ class _UnifiedShellScreenState extends State<UnifiedShellScreen> {
         screenSubtitle = 'Management Dashboard';
         break;
     }
-
 
     // Wrap the respective screen inside a Scaffold with the custom Drawer and ShoptionAppBar
     return Scaffold(

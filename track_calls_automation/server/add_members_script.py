@@ -9,17 +9,10 @@ from app.security import get_password_hash
 db = SessionLocal()
 members = [
     {
-        'full_name': 'Harshada Karche',
-        'department': 'HR',
-        'designation': 'HR',
-        'email': 'harshada.karche@shoption.in',
-        'role': 'warrior'
-    },
-    {
-        'full_name': 'Pooja Aniket Sapkal',
-        'department': 'HR',
-        'designation': 'HR',
-        'email': 'pooja.gaikwad@shoption.in',
+        'full_name': 'Piyush Jadhav',
+        'department': 'IT - SPL',
+        'designation': 'IT',
+        'email': 'piyush.jadhav@shoption.in',
         'role': 'warrior'
     }
 ]

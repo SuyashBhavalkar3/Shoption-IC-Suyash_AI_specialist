@@ -14,12 +14,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.shoption.calltracker/tracking"
     private val REQUEST_CODE_REQUIRED_PERMISSIONS = 4101
-    private val REQUEST_CODE_SET_DEFAULT_DIALER = 4102
     private var pendingPermissionResult: MethodChannel.Result? = null
-    private var pendingRoleResult: MethodChannel.Result? = null
-
-    private lateinit var autoDialerManager: com.shoption.calltracker.autodialer.AutoDialerManager
-    private lateinit var autoDialerPlugin: com.shoption.calltracker.telecom.AutoDialerPlugin
 
     companion object {
         var methodChannel: MethodChannel? = null
@@ -28,37 +23,9 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        autoDialerManager = com.shoption.calltracker.autodialer.AutoDialerManager(applicationContext)
-        autoDialerPlugin = com.shoption.calltracker.telecom.AutoDialerPlugin(applicationContext, autoDialerManager)
-        autoDialerPlugin.registerWith(flutterEngine)
-
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
-                "requestDefaultDialer" -> {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        val roleManager = getSystemService(Context.ROLE_SERVICE) as android.app.role.RoleManager
-                        if (roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_DIALER)) {
-                            result.success(true)
-                        } else {
-                            pendingRoleResult = result
-                            val intent = roleManager.createRequestRoleIntent(android.app.role.RoleManager.ROLE_DIALER)
-                            startActivityForResult(intent, REQUEST_CODE_SET_DEFAULT_DIALER)
-                        }
-                    } else {
-                        val telecomManager = getSystemService(Context.TELECOM_SERVICE) as android.telecom.TelecomManager
-                        if (telecomManager.defaultDialerPackage == packageName) {
-                            result.success(true)
-                        } else {
-                            pendingRoleResult = result
-                            val intent = Intent(android.telecom.TelecomManager.ACTION_CHANGE_DEFAULT_DIALER).apply {
-                                putExtra(android.telecom.TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, packageName)
-                            }
-                            startActivityForResult(intent, REQUEST_CODE_SET_DEFAULT_DIALER)
-                        }
-                    }
-                }
-
                 /**
                  * Requests READ_PHONE_STATE and READ_CALL_LOG permissions.
                  * Returns true if already granted, otherwise shows the system dialog.
@@ -71,9 +38,7 @@ class MainActivity : FlutterActivity() {
                         pendingPermissionResult = result
                         val permissions = mutableListOf(
                             Manifest.permission.READ_PHONE_STATE,
-                            Manifest.permission.READ_CALL_LOG,
-                            Manifest.permission.CALL_PHONE,
-                            Manifest.permission.RECORD_AUDIO
+                            Manifest.permission.READ_CALL_LOG
                         )
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -129,22 +94,6 @@ class MainActivity : FlutterActivity() {
             }
         }
     }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_CODE_SET_DEFAULT_DIALER) {
-            val isHeld = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val roleManager = getSystemService(Context.ROLE_SERVICE) as android.app.role.RoleManager
-                roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_DIALER)
-            } else {
-                val telecomManager = getSystemService(Context.TELECOM_SERVICE) as android.telecom.TelecomManager
-                telecomManager.defaultDialerPackage == packageName
-            }
-            pendingRoleResult?.success(isHeld)
-            pendingRoleResult = null
-        }
-    }
-
 
 
 

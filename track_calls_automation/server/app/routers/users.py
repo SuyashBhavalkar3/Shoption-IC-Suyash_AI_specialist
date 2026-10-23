@@ -727,11 +727,14 @@ async def public_event_generator(email: str, initial_payload: dict = None) -> As
     queue = asyncio.Queue()
     active_listeners.append(queue)
     
-    # Yield the pre-fetched initial status if available
+    # Yield the pre-fetched initial status if available (forced True/False for Org App)
     if initial_payload:
+        out_initial = dict(initial_payload)
+        out_initial["is_tracking_active"] = True
+        out_initial["is_tracking_needed"] = False
         yield {
             "event": "message",
-            "data": json.dumps(initial_payload)
+            "data": json.dumps(out_initial)
         }
     
     try:
@@ -742,9 +745,13 @@ async def public_event_generator(email: str, initial_payload: dict = None) -> As
                 # Check email directly from memory payload without querying PostgreSQL
                 payload_email = data.get("email", "")
                 if payload_email and payload_email.strip().lower() == email.strip().lower():
+                    # Force is_tracking_active: True, is_tracking_needed: False so org app never disables
+                    out_data = dict(data)
+                    out_data["is_tracking_active"] = True
+                    out_data["is_tracking_needed"] = False
                     yield {
                         "event": "message",
-                        "data": json.dumps(data)
+                        "data": json.dumps(out_data)
                     }
             except asyncio.TimeoutError:
                 yield {"event": "ping", "data": "keep-alive"}
@@ -924,13 +931,38 @@ async def track_status_stream_public(email: str):
                     "emp_id": v_emp_id,
                     "org_id": str(user.organisation_id) if user.organisation_id else "",
                     "system_id": user.system_id or "",
-                    "is_tracking_active": user.is_tracking_active,
-                    "is_tracking_needed": v_needed,
+                    "is_tracking_active": True,
+                    "is_tracking_needed": False,
                     "is_on_call": getattr(user, "is_on_call", False),
                     "last_activity_timestamp": formatted_ts
                 }
+            else:
+                initial_payload = {
+                    "user_id": "",
+                    "full_name": "",
+                    "email": clean_email,
+                    "emp_id": "",
+                    "org_id": "",
+                    "system_id": "",
+                    "is_tracking_active": True,
+                    "is_tracking_needed": False,
+                    "is_on_call": False,
+                    "last_activity_timestamp": ""
+                }
         except Exception as e:
             print(f"ERROR [SSE-PUBLIC-INIT]: {e}")
+            initial_payload = {
+                "user_id": "",
+                "full_name": "",
+                "email": clean_email,
+                "emp_id": "",
+                "org_id": "",
+                "system_id": "",
+                "is_tracking_active": True,
+                "is_tracking_needed": False,
+                "is_on_call": False,
+                "last_activity_timestamp": ""
+            }
         finally:
             db.rollback()
             
