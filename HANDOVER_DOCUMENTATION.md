@@ -18,6 +18,10 @@ Shoption's ecosystem bridges digital enterprise SaaS, conversational commerce, a
 4. **Smart Agricultural IoT & E-Commerce (GBRU)**: Flutter mobile apps for IoT hardware telemetry (solar security cameras, agricultural pumps) and full-featured e-commerce storefronts with payment gateway (PayU) and shipping logistics (India Post).
 5. **Data Cleaning & Lead Ingestion Pipelines**: Automated sanitization of raw lead CSVs and Meta (Facebook) Lead Ads ingestion pipelines to feed cleanly into CRM systems.
 
+> [!IMPORTANT]
+> **Master Secrets & Environment Variables Registry**:  
+> For the complete, project-by-project catalog of all `.env` files, production/UAT connection strings, API keys, and rotation instructions, see [ENVIRONMENT_VARIABLES_HANDOVER.md](file:///Users/suyash3/Desktop/Suyash/shoption_Suyash_IC/ENVIRONMENT_VARIABLES_HANDOVER.md).
+
 ---
 
 ## 2. Architecture & Ecosystem Overview
